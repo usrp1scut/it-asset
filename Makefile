@@ -21,6 +21,9 @@ migrate: ## Apply DB migrations
 makemigration: ## Autogenerate a migration: make makemigration m="message"
 	$(COMPOSE) run --rm backend alembic revision --autogenerate -m "$(m)"
 
+seed: ## Reset DB to a clean fake demo dataset (dev only, destructive)
+	$(COMPOSE) run --rm backend python -m app.seed_demo
+
 test: ## Run backend tests
 	$(COMPOSE) run --rm backend pytest -q
 
