@@ -76,6 +76,21 @@ services:
       redis:
         condition: service_healthy
 
+  lark-ws:
+    build:
+      context: ./backend
+    env_file: .env
+    environment:
+      POSTGRES_HOST: db
+      REDIS_URL: redis://redis:6379/0
+    volumes:
+      - ./backend:/app
+    # Pure-intranet event subscription (outbound WebSocket; no public URL).
+    command: python -m app.lark.ws_client
+    depends_on:
+      db:
+        condition: service_healthy
+
   frontend:
     build:
       context: ./frontend

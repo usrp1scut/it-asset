@@ -5,7 +5,6 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user, get_db, require_roles
 from app.lark.security import WebhookAuthError, process_webhook
 from app.modules.approvals import service
-from app.modules.approvals.models import ApprovalRequest
 from app.modules.approvals.schemas import ApprovalOut, CreateRequestIn
 from app.modules.assets.models import Asset
 from app.modules.inventory.models import EmployeeItemIssue, Sku
@@ -141,18 +140,5 @@ async def lark_webhook(request: Request, db: Session = Depends(get_db)):
         return {"challenge": body.get("challenge")}
 
     action = (body.get("action") or {}).get("value") or {}
-    req_id = action.get("approval_id")
-    decision = action.get("decision")
-    if not req_id or decision not in ("approve", "reject"):
-        return {"ok": True}  # nothing actionable
-
-    req = db.get(ApprovalRequest, int(req_id))
-    if req is None or req.status.value != "pending":
-        return {"ok": True}  # idempotent: already decided / unknown
-
-    sys_user = db.scalar(select(User).limit(1))
-    if decision == "approve":
-        service.approve(db, req.id, sys_user)
-    else:
-        service.reject(db, req.id, sys_user)
+    service.apply_card_decision(db, action.get("approval_id"), action.get("decision"))
     return {"ok": True}

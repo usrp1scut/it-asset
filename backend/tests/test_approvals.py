@@ -105,6 +105,32 @@ def test_lark_webhook_url_verification():
     assert r.status_code == 200 and r.json()["challenge"] == "abc123"
 
 
+def test_apply_card_decision_shared_path():
+    from app.db import SessionLocal
+    from app.modules.approvals import service
+
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    sid = _stocked_sku(admin, 3)
+    rid = client.post(
+        "/api/m/requests",
+        json={"request_type": "consumable", "items": [{"sku_id": sid, "qty": 1}],
+              "reason": "x"},
+        headers=emp_h,
+    ).json()["id"]
+
+    db = SessionLocal()
+    try:
+        assert service.apply_card_decision(db, rid, "approve") is True
+        # idempotent: already decided -> no-op
+        assert service.apply_card_decision(db, rid, "reject") is False
+        # unknown / malformed -> no-op
+        assert service.apply_card_decision(db, 999999999, "approve") is False
+        assert service.apply_card_decision(db, rid, "bogus") is False
+    finally:
+        db.close()
+
+
 def test_dashboard_pending_reflects_requests():
     admin, _ = _login("it_admin")
     emp_h, _ = _login("employee")

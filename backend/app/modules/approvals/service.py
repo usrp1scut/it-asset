@@ -120,6 +120,27 @@ def list_mine(db: Session, user: User) -> list[ApprovalRequest]:
     )
 
 
+def apply_card_decision(db: Session, approval_id, decision: str) -> bool:
+    """Apply an approve/reject from a Lark interactive card.
+
+    Shared by the HTTP webhook and the WebSocket long-connection client.
+    Idempotent: returns False (no-op) for unknown or already-decided requests.
+    """
+    if decision not in ("approve", "reject"):
+        return False
+    try:
+        req = db.get(ApprovalRequest, int(approval_id))
+    except (TypeError, ValueError):
+        return False
+    if req is None or req.status != ApprovalStatus.pending:
+        return False
+    sys_user = db.scalar(select(User).limit(1))
+    if sys_user is None:
+        return False
+    (approve if decision == "approve" else reject)(db, req.id, sys_user)
+    return True
+
+
 __all__ = [
     "ApprovalError",
     "InsufficientStock",
@@ -127,6 +148,7 @@ __all__ = [
     "approve",
     "reject",
     "fulfill",
+    "apply_card_decision",
     "list_for_approver",
     "list_mine",
 ]
