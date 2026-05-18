@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
+from app.modules.users.router import router as auth_router
 
 settings = get_settings()
 
@@ -19,6 +20,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+app.include_router(auth_router)
 
 
 @app.get("/health", tags=["meta"])
