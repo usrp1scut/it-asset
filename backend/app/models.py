@@ -14,6 +14,20 @@ from app.modules.assets.models import (
     AssetType,
     AuditLog,
 )
+from app.modules.inventory.models import (
+    EmployeeItemIssue,
+    InventoryLocation,
+    InventoryOrder,
+    InventoryOrderItem,
+    InventoryStock,
+    InventoryTransaction,
+    IssueStatus,
+    ItemCategory,
+    ManagementMode,
+    OrderType,
+    Sku,
+    TransactionType,
+)
 from app.modules.users.models import Department, Role, User, UserStatus
 
 __all__ = [
@@ -30,4 +44,16 @@ __all__ = [
     "AssetStatus",
     "AssetType",
     "AuditLog",
+    "EmployeeItemIssue",
+    "InventoryLocation",
+    "InventoryOrder",
+    "InventoryOrderItem",
+    "InventoryStock",
+    "InventoryTransaction",
+    "IssueStatus",
+    "ItemCategory",
+    "ManagementMode",
+    "OrderType",
+    "Sku",
+    "TransactionType",
 ]

@@ -5,6 +5,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import engine
 from app.modules.assets.router import router as assets_router
+from app.modules.inventory.router import router as inventory_router
 from app.modules.users.router import router as auth_router
 
 settings = get_settings()
@@ -25,6 +26,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(assets_router)
+app.include_router(inventory_router)
 
 
 @app.get("/health", tags=["meta"])

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     lark_variant: Literal["feishu", "lark"] = "feishu"
     lark_app_id: str = ""
     lark_app_secret: str = ""
+    # Optional chat/group id for stock-warning bot pushes. Empty -> skip push.
+    lark_alert_chat_id: str = ""
     # Explicit overrides; empty -> derive from lark_variant.
     lark_api_base: str = ""
     lark_passport_base: str = ""
