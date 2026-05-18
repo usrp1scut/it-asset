@@ -1,5 +1,16 @@
 import { useState } from 'react'
-import { Button, Descriptions, Drawer, InputNumber, Modal, Tabs, message } from 'antd'
+import {
+  Button,
+  Descriptions,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Switch,
+  Tabs,
+  message,
+} from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { AssetDetail } from './types'
@@ -17,6 +28,8 @@ export default function AssetDrawer({
   const qc = useQueryClient()
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignUser, setAssignUser] = useState<number | null>(null)
+  const [editOpen, setEditOpen] = useState(false)
+  const [form] = Form.useForm()
 
   const { data, isLoading } = useQuery<AssetDetail>({
     queryKey: ['asset', code],
@@ -37,9 +50,52 @@ export default function AssetDrawer({
       message.error(e.response?.data?.detail ?? '操作失败'),
   })
 
+  const editMut = useMutation({
+    mutationFn: async (body: object) => (await api.put(`/assets/${code}`, body)).data,
+    onSuccess: () => {
+      message.success('已保存')
+      qc.invalidateQueries({ queryKey: ['asset', code] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      setEditOpen(false)
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '保存失败'),
+  })
+
   const a = data?.asset
+
+  const openEdit = () => {
+    if (!a) return
+    form.setFieldsValue({
+      brand_model: a.brand_model ?? '',
+      spec: a.spec ?? '',
+      serial_number: a.serial_number ?? '',
+      owner_name: a.owner_name ?? '',
+      department_name: a.department_name ?? '',
+      location: a.location ?? '',
+      purchase_date: a.purchase_date ?? '',
+      purchase_price: a.purchase_price ? Number(a.purchase_price) : undefined,
+      warranty_expire_date: a.warranty_expire_date ?? '',
+      supplier: a.supplier ?? '',
+      remark: a.remark ?? '',
+      scrap_candidate: a.scrap_candidate,
+      needs_review: a.needs_review,
+    })
+    setEditOpen(true)
+  }
+
+  const submitEdit = (v: Record<string, unknown>) => {
+    const body: Record<string, unknown> = {}
+    for (const [k, val] of Object.entries(v)) {
+      body[k] = val === '' ? null : val
+    }
+    editMut.mutate(body)
+  }
+
   const footer = a && (
-    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+      <Button onClick={openEdit}>编辑</Button>
+      <div style={{ display: 'flex', gap: 8 }}>
       {a.status === 'idle' && a.asset_class === 'personal' && (
         <Button type="primary" onClick={() => setAssignOpen(true)}>
           分配给员工
@@ -59,6 +115,7 @@ export default function AssetDrawer({
           申请报废
         </Button>
       )}
+      </div>
     </div>
   )
 
@@ -195,6 +252,68 @@ export default function AssetDrawer({
               value={assignUser ?? undefined}
               onChange={(v) => setAssignUser(v as number | null)}
             />
+          </Modal>
+
+          <Modal
+            open={editOpen}
+            title={`编辑 · ${a.asset_code}`}
+            width={620}
+            onCancel={() => setEditOpen(false)}
+            onOk={() => form.submit()}
+            confirmLoading={editMut.isPending}
+            destroyOnClose
+          >
+            <Form form={form} layout="vertical" onFinish={submitEdit}>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="brand_model" label="品牌型号" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="serial_number" label="序列号" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+              </div>
+              <Form.Item name="spec" label="配置">
+                <Input />
+              </Form.Item>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="owner_name" label="责任人(文本)" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="department_name" label="部门" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="location" label="存放地点" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+                <Form.Item name="supplier" label="供应商" style={{ flex: 1 }}>
+                  <Input />
+                </Form.Item>
+              </div>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="purchase_date" label="采购日期 (YYYY-MM-DD)" style={{ flex: 1 }}>
+                  <Input placeholder="2025-01-15" />
+                </Form.Item>
+                <Form.Item name="warranty_expire_date" label="保修截止 (YYYY-MM-DD)" style={{ flex: 1 }}>
+                  <Input placeholder="2027-01-15" />
+                </Form.Item>
+                <Form.Item name="purchase_price" label="采购价" style={{ flex: 1 }}>
+                  <InputNumber style={{ width: '100%' }} min={0} />
+                </Form.Item>
+              </div>
+              <Form.Item name="remark" label="备注">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+              <div style={{ display: 'flex', gap: 24 }}>
+                <Form.Item name="scrap_candidate" label="报废候选" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+                <Form.Item name="needs_review" label="待核" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+              </div>
+            </Form>
           </Modal>
         </>
       )}
