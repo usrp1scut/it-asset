@@ -1,9 +1,10 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.deps import get_db, require_roles
-from app.modules.assets import service
+from app.modules.assets import importer, service
 from app.modules.assets.schemas import (
     AccessoryOut,
     AssetCreate,
@@ -70,6 +71,37 @@ def create_asset(body: AssetCreate, db: Session = Depends(get_db), user: User = 
     write_audit(db, actor_user_id=user.id, action="asset.create",
                 resource_type="asset", resource_id=asset.asset_code)
     return AssetOut.model_validate(asset)
+
+
+@router.post("/import")
+async def import_assets(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(it_admin),
+):
+    """Phase 0 — 导入云文档/Excel(容脏,脏数据进 needs_review,不卡门)。"""
+    content = await file.read()
+    rows = importer.parse_workbook(content)
+    summary = importer.import_rows(db, rows, user.id)
+    write_audit(db, actor_user_id=user.id, action="asset.import",
+                resource_type="asset", payload=summary)
+    return summary
+
+
+@router.get("/export")
+def export_assets(db: Session = Depends(get_db), _: User = Depends(it_admin)):
+    """导出带编号清单(供 IT 打印贴标 / 回写云文档)。"""
+    data = importer.export_workbook(db)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=assets.xlsx"},
+    )
+
+
+@router.get("/migration-stats")
+def migration_stats(db: Session = Depends(get_db), _: User = Depends(staff)):
+    return importer.stats(db)
 
 
 @router.get("/{code}", response_model=AssetDetailOut)

@@ -1,7 +1,7 @@
 import { useState } from 'react'
-import { Input, Table, Tabs, Tag } from 'antd'
+import { Button, Input, Space, Table, Tabs, Tag, Upload, message } from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Asset, AssetListResponse, AssetStatus } from '../features/assets/types'
 import StatusBadge from '../features/assets/StatusBadge'
@@ -20,14 +20,22 @@ export default function Assets() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [openCode, setOpenCode] = useState<string | null>(null)
+  const [needsReview, setNeedsReview] = useState(false)
   const size = 20
+  const qc = useQueryClient()
 
   const { data, isLoading } = useQuery<AssetListResponse>({
-    queryKey: ['assets', status, q, page],
+    queryKey: ['assets', status, q, page, needsReview],
     queryFn: async () =>
       (
         await api.get('/assets', {
-          params: { status: status || undefined, q: q || undefined, page, size },
+          params: {
+            status: status || undefined,
+            q: q || undefined,
+            needs_review: needsReview || undefined,
+            page,
+            size,
+          },
         })
       ).data,
   })
@@ -83,7 +91,45 @@ export default function Assets() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h2 style={{ marginTop: 0 }}>资产台账</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ marginTop: 0 }}>资产台账</h2>
+        <Space>
+          <Upload
+            accept=".xlsx"
+            showUploadList={false}
+            customRequest={async ({ file, onSuccess, onError }) => {
+              const fd = new FormData()
+              fd.append('file', file as Blob)
+              try {
+                const { data: s } = await api.post('/assets/import', fd)
+                message.success(
+                  `导入完成:新增 ${s.created} · 更新 ${s.updated} · 待核 ${s.needs_review}`,
+                )
+                qc.invalidateQueries({ queryKey: ['assets'] })
+                onSuccess?.(s)
+              } catch (e) {
+                message.error('导入失败')
+                onError?.(e as Error)
+              }
+            }}
+          >
+            <Button>导入云文档 / Excel</Button>
+          </Upload>
+          <Button
+            onClick={async () => {
+              const res = await api.get('/assets/export', { responseType: 'blob' })
+              const url = URL.createObjectURL(res.data as Blob)
+              const a = document.createElement('a')
+              a.href = url
+              a.download = 'assets.xlsx'
+              a.click()
+              URL.revokeObjectURL(url)
+            }}
+          >
+            导出
+          </Button>
+        </Space>
+      </div>
       <Tabs
         activeKey={status}
         onChange={(k) => {
@@ -92,15 +138,31 @@ export default function Assets() {
         }}
         items={STATUS_TABS.map((t) => ({ key: t.key, label: t.label }))}
       />
-      <Input.Search
-        placeholder="搜索编号 / 型号 / 序列号 / 责任人"
-        allowClear
-        style={{ maxWidth: 360, marginBottom: 16 }}
-        onSearch={(v) => {
-          setQ(v)
-          setPage(1)
-        }}
-      />
+      <Space style={{ marginBottom: 16 }}>
+        <Input.Search
+          placeholder="搜索编号 / 型号 / 序列号 / 责任人"
+          allowClear
+          style={{ width: 360 }}
+          onSearch={(v) => {
+            setQ(v)
+            setPage(1)
+          }}
+        />
+        <Tag.CheckableTag
+          checked={needsReview}
+          onChange={(c) => {
+            setNeedsReview(c)
+            setPage(1)
+          }}
+          style={{
+            border: '1px solid var(--border)',
+            padding: '4px 10px',
+            fontSize: 13,
+          }}
+        >
+          仅看待核
+        </Tag.CheckableTag>
+      </Space>
       <Table<Asset>
         rowKey="id"
         loading={isLoading}
