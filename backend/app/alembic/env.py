@@ -2,12 +2,10 @@ from logging.config import fileConfig
 
 from app.config import get_settings
 from app.db import Base
+from app.models import *  # noqa: F401,F403 — register all tables on Base.metadata
 from sqlalchemy import engine_from_config, pool
 
 from alembic import context
-
-# Import models so their tables register on Base.metadata for autogenerate.
-# (No models yet in Sprint 0 — added from Sprint 2 onward.)
 
 config = context.config
 config.set_main_option("sqlalchemy.url", get_settings().database_url)
