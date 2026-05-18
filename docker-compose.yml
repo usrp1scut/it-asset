@@ -80,7 +80,8 @@ services:
     build:
       context: ./frontend
     environment:
-      VITE_API_BASE: http://localhost:${BACKEND_PORT:-8000}
+      # In-container Vite dev-proxy target — use the compose service name.
+      VITE_API_BASE: http://backend:8000
     ports:
       - "${FRONTEND_PORT:-5173}:5173"
     volumes:

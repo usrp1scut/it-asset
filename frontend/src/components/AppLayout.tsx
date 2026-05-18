@@ -1,14 +1,33 @@
-import { Layout } from 'antd'
-import { Outlet } from 'react-router-dom'
+import { Layout, Menu } from 'antd'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Topbar from './Topbar'
 
+const ITEMS = [
+  { key: '/', label: '工作台' },
+  { key: '/assets', label: '资产台账' },
+]
+
 export default function AppLayout() {
+  const navigate = useNavigate()
+  const { pathname } = useLocation()
+
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Topbar />
-      <Layout.Content style={{ background: 'var(--bg-canvas)' }}>
-        <Outlet />
-      </Layout.Content>
+      <Layout>
+        <Layout.Sider theme="light" width={200}>
+          <Menu
+            mode="inline"
+            selectedKeys={[pathname]}
+            items={ITEMS}
+            onClick={({ key }) => navigate(key)}
+            style={{ height: '100%', borderRight: 0 }}
+          />
+        </Layout.Sider>
+        <Layout.Content style={{ background: 'var(--bg-canvas)' }}>
+          <Outlet />
+        </Layout.Content>
+      </Layout>
     </Layout>
   )
 }
