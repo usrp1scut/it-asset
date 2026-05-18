@@ -1,0 +1,44 @@
+/* Lark-native design tokens — 唯一来源,对应 design_handoff README §5。
+   原型 prototype/styles.css 同值;生产以本文件为准。 */
+:root {
+  --lark-blue: #3370FF;
+  --lark-blue-hover: #4E83FD;
+  --lark-blue-press: #245BDB;
+  --lark-blue-bg: #E8F1FF;
+  --lark-blue-bg-strong: #D1E2FF;
+
+  --success: #00B42A;
+  --success-bg: #E8FFEA;
+  --warning: #FF8800;
+  --warning-bg: #FFF7E8;
+  --danger: #F53F3F;
+  --danger-bg: #FFECE8;
+  --purple: #7E5EE5;
+  --purple-bg: #F1ECFF;
+
+  --text-1: #1F2329;
+  --text-2: #4E5969;
+  --text-3: #86909C;
+  --text-4: #C9CDD4;
+
+  --border: #E5E6EB;
+  --border-strong: #C9CDD4;
+  --divider: #F2F3F5;
+
+  --bg-canvas: #F5F6F7;
+  --bg-card: #FFFFFF;
+  --bg-hover: #F2F3F5;
+  --bg-active: #E8F1FF;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(31, 35, 41, 0.04);
+  --shadow-md: 0 4px 16px rgba(31, 35, 41, 0.08);
+  --shadow-lg: 0 8px 32px rgba(31, 35, 41, 0.12);
+
+  --font-sans: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
