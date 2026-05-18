@@ -23,6 +23,13 @@ class DevLoginIn(BaseModel):
     role: Role = Role.employee
 
 
+@router.get("/lark/config")
+def lark_config() -> dict:
+    """Public, non-secret config the frontend JSSDK needs for 免登."""
+    s = get_settings()
+    return {"app_id": s.lark_app_id, "variant": s.lark_variant, "configured": bool(s.lark_app_id)}
+
+
 @router.post("/lark/callback", response_model=LoginResult)
 async def lark_callback(body: LarkCallbackIn, db: Session = Depends(get_db)) -> LoginResult:
     try:

@@ -61,6 +61,8 @@ class LarkClient:
 
     async def get_tenant_access_token(self, *, force: bool = False) -> str:
         """Valid tenant_access_token, Redis-cached, refreshed 5 min before expiry."""
+        if not self.configured:
+            raise LarkNotConfigured("LARK_APP_ID / LARK_APP_SECRET not configured")
         if not force and (cached := get_redis().get(_TENANT_TOKEN_KEY)):
             return cached
         return await self._fetch_internal_token(
@@ -71,6 +73,8 @@ class LarkClient:
 
     async def get_app_access_token(self, *, force: bool = False) -> str:
         """app_access_token — required by the authen/v1 login-code exchange."""
+        if not self.configured:
+            raise LarkNotConfigured("LARK_APP_ID / LARK_APP_SECRET not configured")
         if not force and (cached := get_redis().get(_APP_TOKEN_KEY)):
             return cached
         return await self._fetch_internal_token(

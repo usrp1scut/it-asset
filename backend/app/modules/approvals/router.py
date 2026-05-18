@@ -3,6 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.deps import get_current_user, get_db, require_roles
+from app.lark.security import WebhookAuthError, process_webhook
 from app.modules.approvals import service
 from app.modules.approvals.models import ApprovalRequest
 from app.modules.approvals.schemas import ApprovalOut, CreateRequestIn
@@ -125,10 +126,17 @@ def fulfill(req_id: int, db: Session = Depends(get_db), user: User = Depends(it_
 async def lark_webhook(request: Request, db: Session = Depends(get_db)):
     """Handles Lark URL verification and interactive-card approve/reject.
 
-    TODO(prod): verify the request signature / verification token before trust.
-    Idempotent: re-delivered callbacks for an already-decided request are no-ops.
+    Signature / encrypt / verification-token are checked by process_webhook
+    when configured. Idempotent: re-delivered callbacks for an already-decided
+    request are no-ops.
     """
-    body = await request.json()
+    raw = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    try:
+        body = process_webhook(headers, raw)
+    except WebhookAuthError as e:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, str(e)) from e
+
     if body.get("type") == "url_verification":
         return {"challenge": body.get("challenge")}
 
