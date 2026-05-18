@@ -184,6 +184,53 @@ def export_workbook(db: Session) -> bytes:
     return buf.getvalue()
 
 
+def rematch_dirty(db: Session) -> dict:
+    """Re-resolve owner/department on needs_review assets and recompute the flag.
+
+    Run after a contact sync widens the user/department set. Conservative:
+    needs_review stays true while any gap remains (unresolved owner/dept, or
+    an unrecognised type → OTH prefix).
+    """
+    scanned = owner_matched = dept_matched = still_review = 0
+    rows = db.scalars(select(Asset).where(Asset.needs_review.is_(True))).all()
+    for a in rows:
+        scanned += 1
+        if a.owner_user_id is None and a.owner_name:
+            hits = db.scalars(
+                select(User).where(
+                    User.name == a.owner_name,
+                    User.status == UserStatus.active,
+                    User.deleted_at.is_(None),
+                )
+            ).all()
+            if len(hits) == 1:
+                a.owner_user_id = hits[0].id
+                owner_matched += 1
+        if a.department_id is None and a.department_name:
+            dept = db.scalar(
+                select(Department).where(Department.name == a.department_name)
+            )
+            if dept:
+                a.department_id = dept.id
+                dept_matched += 1
+
+        gap = (
+            (a.owner_name and a.owner_user_id is None)
+            or (a.department_name and a.department_id is None)
+            or a.asset_code.startswith("OTH-")
+        )
+        a.needs_review = bool(gap)
+        if a.needs_review:
+            still_review += 1
+    db.commit()
+    return {
+        "scanned": scanned,
+        "owner_matched": owner_matched,
+        "dept_matched": dept_matched,
+        "still_review": still_review,
+    }
+
+
 def stats(db: Session) -> dict:
     total = db.scalar(select(func.count()).select_from(Asset)) or 0
     review = db.scalar(
