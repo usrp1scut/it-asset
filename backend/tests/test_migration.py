@@ -105,3 +105,41 @@ def test_import_roundtrip():
     net = client.get(f"/api/assets?q={ruijie}", headers=h).json()["items"][0]
     assert net["asset_class"] == "infrastructure"
     assert net["asset_code"].startswith("NET-")
+
+
+def test_rematch_clears_after_user_appears():
+    import uuid
+
+    from app.main import app
+    from fastapi.testclient import TestClient
+
+    client = TestClient(app)
+    tok = client.post(
+        "/api/auth/dev-login",
+        json={"email": f"rm-{uuid.uuid4().hex[:6]}@c.com", "role": "it_admin"},
+    ).json()["token"]
+    h = {"Authorization": f"Bearer {tok}"}
+
+    who = f"责任人{uuid.uuid4().hex[:6]}"
+    # import while no such user exists -> owner unmatched -> needs_review
+    content = _xlsx([["", "PC", "联想", "x", f"SNR-{uuid.uuid4().hex[:8]}",
+                       "", who, "在用", "", "", ""]])
+    client.post(
+        "/api/assets/import",
+        files={"file": ("s.xlsx", content,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        headers=h,
+    )
+    before = client.get(f"/api/assets?q={who}", headers=h).json()["items"][0]
+    assert before["needs_review"] is True
+    assert before["owner_user_id"] is None
+
+    # the matching Lark user now exists
+    client.post("/api/auth/dev-login", json={"email": f"{uuid.uuid4().hex[:6]}@c.com",
+                                             "name": who})
+    s = client.post("/api/assets/rematch", headers=h).json()
+    assert s["owner_matched"] >= 1
+
+    after = client.get(f"/api/assets?q={who}", headers=h).json()["items"][0]
+    assert after["owner_user_id"] is not None
+    assert after["needs_review"] is False

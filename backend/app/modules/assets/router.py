@@ -104,6 +104,15 @@ def migration_stats(db: Session = Depends(get_db), _: User = Depends(staff)):
     return importer.stats(db)
 
 
+@router.post("/rematch")
+def rematch(db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Re-resolve owner/department on needs_review assets (post contact-sync)."""
+    summary = importer.rematch_dirty(db)
+    write_audit(db, actor_user_id=user.id, action="asset.rematch",
+                resource_type="asset", payload=summary)
+    return summary
+
+
 @router.get("/{code}", response_model=AssetDetailOut)
 def get_detail(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
     return _detail(db, code)

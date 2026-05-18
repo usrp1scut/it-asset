@@ -83,6 +83,21 @@ class LarkClient:
             _APP_TOKEN_KEY,
         )
 
+    async def get_json(self, path: str, params: dict | None = None) -> dict:
+        """GET a Lark endpoint, return the `data` object (raises on non-zero code)."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=15) as client:
+            resp = await client.get(
+                self._url(path),
+                headers={"Authorization": f"Bearer {token}"},
+                params=params or {},
+            )
+            resp.raise_for_status()
+            body = resp.json()
+        if body.get("code") not in (0, None):
+            raise RuntimeError(f"Lark {path} failed: {body.get('msg')}")
+        return body.get("data", {})
+
     async def get_paginated(self, path: str, params: dict) -> list[dict]:
         """GET a Lark list endpoint, following page_token until has_more is false."""
         token = await self.get_tenant_access_token()

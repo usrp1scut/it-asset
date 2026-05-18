@@ -63,24 +63,53 @@ async def sync_directory(db: Session) -> dict:
     if not client.configured:
         return {"skipped": "lark_not_configured"}
 
+    def _chunks(seq: list, n: int):
+        for i in range(0, len(seq), n):
+            yield seq[i : i + n]
+
     try:
-        depts = await client.get_paginated(
-            "/open-apis/contact/v3/departments",
-            {"parent_department_id": "0", "fetch_child": True, "page_size": 50},
-        )
-        for d in depts:
-            upsert_department(db, d)
+        # 1) read the app's authorised scope (user_ids + department_ids),
+        #    paginating. This is the source of truth for what we may sync —
+        #    department traversal alone misses 指定成员 grants.
+        user_ids: list[str] = []
+        dept_ids: list[str] = []
+        page_token: str | None = None
+        while True:
+            params = {"page_size": 100}
+            if page_token:
+                params["page_token"] = page_token
+            data = await client.get_json("/open-apis/contact/v3/scopes", params)
+            user_ids += data.get("user_ids", []) or []
+            dept_ids += data.get("department_ids", []) or []
+            if not data.get("has_more"):
+                break
+            page_token = data.get("page_token")
+
+        depts_synced = 0
+        for batch in _chunks(dept_ids, 50):
+            data = await client.get_json(
+                "/open-apis/contact/v3/departments/batch",
+                {"department_ids": batch, "department_id_type": "open_department_id"},
+            )
+            for d in data.get("items", []):
+                upsert_department(db, d)
+                depts_synced += 1
 
         users_synced = 0
-        for d in depts:
-            members = await client.get_paginated(
-                "/open-apis/contact/v3/users/find_by_department",
-                {"department_id": d.get("department_id"), "page_size": 50},
+        for batch in _chunks(user_ids, 50):
+            data = await client.get_json(
+                "/open-apis/contact/v3/users/batch",
+                {"user_ids": batch, "user_id_type": "open_id"},
             )
-            for m in members:
-                upsert_user_from_lark(db, m)
+            for u in data.get("items", []):
+                upsert_user_from_lark(db, u)
                 users_synced += 1
     except LarkNotConfigured:
         return {"skipped": "lark_not_configured"}
 
-    return {"departments": len(depts), "users": users_synced}
+    return {
+        "scope_users": len(user_ids),
+        "scope_depts": len(dept_ids),
+        "departments": depts_synced,
+        "users": users_synced,
+    }
