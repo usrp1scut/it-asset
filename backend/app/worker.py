@@ -18,8 +18,13 @@ celery_app.conf.update(
             # Every day at 02:30 (low-traffic window).
             "schedule": 24 * 60 * 60,
         },
+        "scan-low-stock-daily": {
+            "task": "inventory.scan_low_stock",
+            "schedule": 24 * 60 * 60,
+        },
     },
 )
 
 # Import task modules so Celery registers them.
+import app.modules.inventory.tasks  # noqa: E402,F401
 import app.modules.users.tasks  # noqa: E402,F401

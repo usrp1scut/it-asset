@@ -4,6 +4,7 @@ import AppLayout from './components/AppLayout'
 import Login from './pages/Login'
 import Home from './pages/Home'
 import Assets from './pages/Assets'
+import Inventory from './pages/Inventory'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -15,6 +16,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <Home /> },
           { path: '/assets', element: <Assets /> },
+          { path: '/inventory', element: <Inventory /> },
         ],
       },
     ],

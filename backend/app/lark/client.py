@@ -10,6 +10,8 @@ gracefully: callers get LarkNotConfigured and can fall back to mock data so the
 rest of the system stays runnable before the customer supplies app_id/secret.
 """
 
+import json
+
 import httpx
 
 from app.cache import get_redis
@@ -99,6 +101,22 @@ class LarkClient:
                     break
                 page_token = data.get("page_token")
         return out
+
+    async def send_text(self, chat_id: str, text: str) -> None:
+        """Send a plain-text bot message to a chat. No-op-safe callers only."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                self._url("/open-apis/im/v1/messages"),
+                params={"receive_id_type": "chat_id"},
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "receive_id": chat_id,
+                    "msg_type": "text",
+                    "content": json.dumps({"text": text}),
+                },
+            )
+            resp.raise_for_status()
 
     async def exchange_login_code(self, code: str) -> dict:
         """Exchange a frontend login `code` for the user's Lark profile.
