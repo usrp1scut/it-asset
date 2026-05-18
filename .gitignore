@@ -29,3 +29,6 @@ dist/
 pgdata/
 miniodata/
 *.log
+
+# Real stock data — never commit (PII: names, serials)
+_local_data/

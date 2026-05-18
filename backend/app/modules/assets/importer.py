@@ -27,20 +27,58 @@ _MUTABLE = (
 )
 
 
+def _norm_header(h) -> str:
+    # Lark/WPS headers may carry newlines/notes, e.g. "配置\n(PC规则:...)".
+    return "" if h is None else str(h).strip().splitlines()[0].strip()
+
+
+def _map_headers(headers: tuple) -> list[str | None]:
+    keys: list[str | None] = []
+    for h in headers:
+        nh = _norm_header(h)
+        key = None
+        if nh:
+            for cn, internal in HEADER_ALIASES.items():
+                if nh == cn or nh.startswith(cn) or cn in nh:
+                    key = internal
+                    break
+        keys.append(key)
+    return keys
+
+
 def parse_workbook(content: bytes) -> list[dict]:
-    """First row = headers (云文档列名). Returns rows keyed by internal names."""
-    wb = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
-    ws = wb.active
-    rows_iter = ws.iter_rows(values_only=True)
-    headers = next(rows_iter, None)
-    if not headers:
+    """Parse the ledger sheet → rows keyed by internal names.
+
+    NOT read_only: real Lark/WPS exports omit the sheet <dimension>, which
+    makes read_only mode truncate to a single row. We also pick the sheet
+    whose header row best matches the known columns (skips 软件/empty sheets).
+    """
+    wb = load_workbook(io.BytesIO(content), data_only=True)
+
+    best: tuple[int, list, list[str | None]] | None = None
+    for ws in wb.worksheets:
+        for row in ws.iter_rows(values_only=True):
+            if row is None or all(c is None or str(c).strip() == "" for c in row):
+                continue
+            keys = _map_headers(row)
+            mapped = sum(1 for k in keys if k)
+            if best is None or mapped > best[0]:
+                best = (mapped, list(ws.iter_rows(values_only=True)), keys)
+            break  # only inspect the first non-empty row as the header
+
+    if best is None or best[0] < 3:
         return []
-    keys = [HEADER_ALIASES.get(str(h).strip()) if h is not None else None for h in headers]
+
+    _, all_rows, keys = best
+    header_seen = False
     out: list[dict] = []
-    for raw in rows_iter:
+    for raw in all_rows:
         if raw is None or all(c is None or str(c).strip() == "" for c in raw):
             continue
-        out.append({keys[i]: raw[i] for i in range(len(keys)) if keys[i]})
+        if not header_seen:
+            header_seen = True  # skip the header row itself
+            continue
+        out.append({keys[i]: raw[i] for i in range(min(len(keys), len(raw))) if keys[i]})
     return out
 
 
