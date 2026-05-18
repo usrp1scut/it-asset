@@ -17,10 +17,16 @@ _TYPE_MAP: dict[str, tuple[AssetClass, str]] = {
     "台式机": (AssetClass.personal, "PC"),
     "笔记本": (AssetClass.personal, "PC"),
     "显示器": (AssetClass.personal, "MON"),
+    "手机": (AssetClass.personal, "PHN"),
+    "平板": (AssetClass.personal, "PAD"),
+    "sim卡": (AssetClass.personal, "SIM"),
+    "SIM": (AssetClass.personal, "SIM"),
     "网络设备": (AssetClass.infrastructure, "NET"),
     "交换机": (AssetClass.infrastructure, "NET"),
     "路由器": (AssetClass.infrastructure, "NET"),
     "AP": (AssetClass.infrastructure, "NET"),
+    # 打印机通常为共享设备、无固定使用人 → 基础设施
+    "打印机": (AssetClass.infrastructure, "PRT"),
 }
 
 _STATUS_MAP = {
