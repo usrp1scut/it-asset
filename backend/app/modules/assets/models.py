@@ -1,0 +1,161 @@
+import enum
+from datetime import date, datetime
+from decimal import Decimal
+
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    Date,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    func,
+)
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.db import Base
+
+
+class AssetClass(enum.StrEnum):
+    personal = "personal"          # 个人发放:走领用/归还/离职回收
+    infrastructure = "infrastructure"  # 基础设施(网络设备):仅台账+位置
+
+
+class AssetStatus(enum.StrEnum):
+    # PRD v0.2 §5.1 — 4 态。idle 含旧"库存中/待入库"。
+    in_use = "in_use"
+    idle = "idle"
+    maintenance = "maintenance"
+    scrapped = "scrapped"
+
+
+class AssetType(Base):
+    __tablename__ = "asset_types"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String(128))
+    parent_id: Mapped[int | None] = mapped_column(ForeignKey("asset_types.id"))
+    code_prefix: Mapped[str] = mapped_column(String(16))  # PC / MON / NET …
+    depreciation_years: Mapped[int | None] = mapped_column(Integer)
+
+
+class Asset(Base):
+    __tablename__ = "assets"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_code: Mapped[str] = mapped_column(String(32), unique=True, index=True)
+    asset_class: Mapped[AssetClass] = mapped_column(Enum(AssetClass, name="asset_class"))
+    asset_type_id: Mapped[int | None] = mapped_column(ForeignKey("asset_types.id"))
+
+    brand_model: Mapped[str | None] = mapped_column(String(255))  # 自由文本,不拆分
+    spec: Mapped[str | None] = mapped_column(Text)                # 配置自由文本
+    serial_number: Mapped[str | None] = mapped_column(String(128), index=True)
+    legacy_code: Mapped[str | None] = mapped_column(String(64))   # 旧临时编号(gw-1 等)
+
+    status: Mapped[AssetStatus] = mapped_column(
+        Enum(AssetStatus, name="asset_status"), default=AssetStatus.idle, index=True
+    )
+
+    owner_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    owner_name: Mapped[str | None] = mapped_column(String(255))   # 使用人原文兜底
+    department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
+    department_name: Mapped[str | None] = mapped_column(String(255))
+    location: Mapped[str | None] = mapped_column(String(255))
+
+    purchase_date: Mapped[date | None] = mapped_column(Date)
+    purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    warranty_expire_date: Mapped[date | None] = mapped_column(Date)
+    supplier: Mapped[str | None] = mapped_column(String(255))
+    remark: Mapped[str | None] = mapped_column(Text)
+
+    scrap_candidate: Mapped[bool] = mapped_column(Boolean, default=False)
+    needs_review: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+
+    qr_code_url: Mapped[str | None] = mapped_column(String(512))
+    photo_urls: Mapped[list | None] = mapped_column(JSONB)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+    created_by: Mapped[int | None] = mapped_column(BigInteger)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class AssetAssignment(Base):
+    __tablename__ = "asset_assignments"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    assigned_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    returned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    status: Mapped[str] = mapped_column(String(32), default="active")  # active | returned
+    operator_id: Mapped[int | None] = mapped_column(BigInteger)
+    remark: Mapped[str | None] = mapped_column(Text)
+
+
+class AssetChangeLog(Base):
+    __tablename__ = "asset_change_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    action: Mapped[str] = mapped_column(String(32))  # create|assign|return|repair|scrap|update
+    from_status: Mapped[str | None] = mapped_column(String(32))
+    to_status: Mapped[str | None] = mapped_column(String(32))
+    from_owner_id: Mapped[int | None] = mapped_column(BigInteger)
+    to_owner_id: Mapped[int | None] = mapped_column(BigInteger)
+    operator_id: Mapped[int | None] = mapped_column(BigInteger)
+    reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssetAccessory(Base):
+    __tablename__ = "asset_accessories"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)  # 主资产
+    sku_id: Mapped[int | None] = mapped_column(BigInteger)  # 配件按库存管理时
+    asset_accessory_id: Mapped[int | None] = mapped_column(
+        ForeignKey("assets.id")
+    )  # 配件本身一物一码时
+    quantity: Mapped[int] = mapped_column(Integer, default=1)
+    binding_type: Mapped[str] = mapped_column(String(32), default="follow")  # follow | independent
+    need_return: Mapped[bool] = mapped_column(Boolean, default=True)
+    remark: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class AssetCodeCounter(Base):
+    """Per-prefix allocator for asset codes (PRD §13.1).
+
+    One row per prefix (PC/MON/NET…). Allocation locks the row
+    (SELECT … FOR UPDATE) so concurrent inserts never collide — explicitly
+    NOT `max(code)+1`. Prefixes are data, so new ones need no DDL.
+    """
+
+    __tablename__ = "asset_code_counters"
+
+    prefix: Mapped[str] = mapped_column(String(16), primary_key=True)
+    next_val: Mapped[int] = mapped_column(Integer, default=1)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    actor_user_id: Mapped[int | None] = mapped_column(BigInteger, index=True)
+    action: Mapped[str] = mapped_column(String(64))
+    resource_type: Mapped[str] = mapped_column(String(64), index=True)
+    resource_id: Mapped[str | None] = mapped_column(String(64))
+    payload: Mapped[dict | None] = mapped_column(JSONB)
+    ip: Mapped[str | None] = mapped_column(String(64))
+    ua: Mapped[str | None] = mapped_column(String(512))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
