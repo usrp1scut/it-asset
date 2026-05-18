@@ -14,6 +14,12 @@ from app.modules.assets.models import (
     AssetType,
     AuditLog,
 )
+from app.modules.inspections.models import (
+    ConfirmStatus,
+    InspectionItem,
+    InspectionStatus,
+    InspectionTask,
+)
 from app.modules.inventory.models import (
     EmployeeItemIssue,
     InventoryLocation,
@@ -56,4 +62,8 @@ __all__ = [
     "OrderType",
     "Sku",
     "TransactionType",
+    "ConfirmStatus",
+    "InspectionItem",
+    "InspectionStatus",
+    "InspectionTask",
 ]
