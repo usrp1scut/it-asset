@@ -4,6 +4,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.db import engine
+from app.modules.approvals.router import router as approvals_router
 from app.modules.assets.router import router as assets_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.inspections.router import router as inspections_router
@@ -31,6 +32,7 @@ app.include_router(assets_router)
 app.include_router(inventory_router)
 app.include_router(dashboard_router)
 app.include_router(inspections_router)
+app.include_router(approvals_router)
 
 
 @app.get("/health", tags=["meta"])

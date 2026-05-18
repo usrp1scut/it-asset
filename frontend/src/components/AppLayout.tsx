@@ -6,6 +6,7 @@ const ITEMS = [
   { key: '/', label: '工作台' },
   { key: '/assets', label: '资产台账' },
   { key: '/inventory', label: '库存物品' },
+  { key: '/approvals', label: '审批中心' },
   { key: '/logs', label: '操作日志' },
 ]
 
