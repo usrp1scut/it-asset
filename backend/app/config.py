@@ -39,6 +39,10 @@ class Settings(BaseSettings):
     lark_app_secret: str = ""
     # Optional chat/group id for stock-warning bot pushes. Empty -> skip push.
     lark_alert_chat_id: str = ""
+    # Event Subscription security (from the Lark dev console). Empty -> dev mode:
+    # webhook accepts unsigned payloads (never leave empty in production).
+    lark_verification_token: str = ""
+    lark_encrypt_key: str = ""
     # Explicit overrides; empty -> derive from lark_variant.
     lark_api_base: str = ""
     lark_passport_base: str = ""
