@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.modules.approvals.models import ApprovalRequest, ApprovalStatus
 from app.modules.assets.models import Asset, AssetChangeLog, AssetStatus
 from app.modules.inventory.service import low_stock_skus
 from app.modules.users.models import Department
@@ -40,6 +41,26 @@ def overview(db: Session) -> dict:
     ) or 0
 
     low = low_stock_skus(db)
+
+    pending_approvals = db.scalar(
+        select(func.count())
+        .select_from(ApprovalRequest)
+        .where(ApprovalRequest.status.in_([ApprovalStatus.pending, ApprovalStatus.approved]))
+    ) or 0
+    recent_approvals = [
+        {
+            "request_no": r.request_no,
+            "request_type": r.request_type.value,
+            "requester_id": r.requester_id,
+            "status": r.status.value,
+            "created_at": r.created_at.isoformat(),
+        }
+        for r in db.scalars(
+            select(ApprovalRequest)
+            .order_by(ApprovalRequest.created_at.desc())
+            .limit(8)
+        )
+    ]
 
     # Department distribution (top 8 by count)
     dept_rows = db.execute(
@@ -106,7 +127,7 @@ def overview(db: Session) -> dict:
         "stats": {
             "total_assets": total,
             "total_value": float(total_value),
-            "pending_approvals": 0,  # approvals module deferred (Sprint 4)
+            "pending_approvals": int(pending_approvals),
             "low_stock_count": len(low),
             "in_use_count": counts["in_use"],
             "idle_count": counts["idle"],
@@ -125,5 +146,5 @@ def overview(db: Session) -> dict:
             for s, a in low[:8]
         ],
         "recent_assignments": recent_assignments,
-        "recent_approvals": [],  # approvals module deferred
+        "recent_approvals": recent_approvals,
     }

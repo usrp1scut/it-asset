@@ -31,13 +31,13 @@ def test_overview_shape():
     o = client.get("/api/dashboard/overview", headers=h).json()
     s = o["stats"]
     assert s["total_assets"] >= 1
-    assert s["pending_approvals"] == 0  # approvals deferred -> graceful
+    assert isinstance(s["pending_approvals"], int)  # real once Sprint 4 landed
     assert {"in_use_count", "idle_count", "maintenance_count", "scrapped_count"} <= s.keys()
     assert len(o["status_distribution"]) == 4
     for k in ("assignment", "return", "repair"):
         assert len(o["trends"][k]) == 12
     assert isinstance(o["recent_assignments"], list)
-    assert o["recent_approvals"] == []
+    assert isinstance(o["recent_approvals"], list)
 
 
 def test_audit_logs_admin_only():

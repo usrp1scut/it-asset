@@ -3,6 +3,7 @@
 Add new modules' models to this list as they land in later sprints.
 """
 
+from app.modules.approvals.models import ApprovalRequest, ApprovalStatus, RequestType
 from app.modules.assets.models import (
     Asset,
     AssetAccessory,
@@ -66,4 +67,7 @@ __all__ = [
     "InspectionItem",
     "InspectionStatus",
     "InspectionTask",
+    "ApprovalRequest",
+    "ApprovalStatus",
+    "RequestType",
 ]
