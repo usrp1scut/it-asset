@@ -1,0 +1,39 @@
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import text
+
+from app.config import get_settings
+from app.db import engine
+
+settings = get_settings()
+
+app = FastAPI(
+    title="IT 资产与低值耗材管理系统",
+    version="0.1.0",
+    debug=settings.app_debug,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if settings.app_debug else [],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+@app.get("/health", tags=["meta"])
+def health() -> dict:
+    """Liveness — process is up."""
+    return {"status": "ok", "env": settings.app_env}
+
+
+@app.get("/health/ready", tags=["meta"])
+def ready() -> dict:
+    """Readiness — DB reachable."""
+    db_ok = True
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except Exception:
+        db_ok = False
+    return {"status": "ok" if db_ok else "degraded", "db": db_ok}

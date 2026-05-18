@@ -1,0 +1,90 @@
+/* Lark-native design tokens */
+:root {
+  --lark-blue: #3370FF;
+  --lark-blue-hover: #4E83FD;
+  --lark-blue-press: #245BDB;
+  --lark-blue-bg: #E8F1FF;
+  --lark-blue-bg-strong: #D1E2FF;
+
+  --success: #00B42A;
+  --success-bg: #E8FFEA;
+  --warning: #FF8800;
+  --warning-bg: #FFF7E8;
+  --danger: #F53F3F;
+  --danger-bg: #FFECE8;
+  --purple: #7E5EE5;
+  --purple-bg: #F1ECFF;
+
+  --text-1: #1F2329;
+  --text-2: #4E5969;
+  --text-3: #86909C;
+  --text-4: #C9CDD4;
+
+  --border: #E5E6EB;
+  --border-strong: #C9CDD4;
+  --divider: #F2F3F5;
+
+  --bg-canvas: #F5F6F7;
+  --bg-card: #FFFFFF;
+  --bg-hover: #F2F3F5;
+  --bg-active: #E8F1FF;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+
+  --shadow-sm: 0 1px 2px rgba(31, 35, 41, 0.04);
+  --shadow-md: 0 4px 16px rgba(31, 35, 41, 0.08);
+  --shadow-lg: 0 8px 32px rgba(31, 35, 41, 0.12);
+
+  --font-sans: 'PingFang SC', 'Helvetica Neue', 'Microsoft YaHei', Arial, sans-serif;
+  --font-mono: 'SF Mono', 'JetBrains Mono', Menlo, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  color: var(--text-1);
+  background: #DCDFE3;
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button { font-family: inherit; cursor: pointer; border: none; background: none; padding: 0; color: inherit; }
+input, textarea, select { font-family: inherit; font-size: inherit; color: inherit; }
+table { border-collapse: collapse; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+a { color: inherit; text-decoration: none; }
+
+/* Frame container — centers the browser window */
+.frame-host {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 28px;
+  background: linear-gradient(160deg, #DCE0E6 0%, #C9CFD8 100%);
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #D7D9DC; border-radius: 5px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #B7BAC0; background-clip: padding-box; border: 2px solid transparent; }
+
+/* Animations */
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes slideInRight { from { transform: translateX(100%); } to { transform: translateX(0); } }
+@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+@keyframes shimmer { 0% { background-position: -200% 0; } 100% { background-position: 200% 0; } }
+@keyframes dashFlow { to { stroke-dashoffset: -20; } }
+
+.fade-in { animation: fadeIn 0.24s ease-out; }
+.slide-in-right { animation: slideInRight 0.28s cubic-bezier(0.16, 1, 0.3, 1); }
+
+/* Common utility */
+.text-mono { font-family: var(--font-mono); }
