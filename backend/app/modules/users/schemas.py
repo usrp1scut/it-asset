@@ -15,6 +15,17 @@ class UserOut(BaseModel):
     status: UserStatus
 
 
+class UserPickOut(BaseModel):
+    """Lightweight shape for the employee picker (searchable dropdown)."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str | None
+    department_name: str | None = None
+
+
 class LoginResult(BaseModel):
     token: str
     user: UserOut

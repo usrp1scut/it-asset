@@ -17,6 +17,7 @@ import type { AssetDetail } from './types'
 import StatusBadge from './StatusBadge'
 import Lifecycle from './Lifecycle'
 import AccessoryTree from './AccessoryTree'
+import EmployeeSelect from '../users/EmployeeSelect'
 
 export default function AssetDrawer({
   code,
@@ -297,12 +298,8 @@ export default function AssetDrawer({
             }
             confirmLoading={act.isPending}
           >
-            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>员工用户 ID</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={assignUser ?? undefined}
-              onChange={(v) => setAssignUser(v as number | null)}
-            />
+            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>选择员工</div>
+            <EmployeeSelect value={assignUser} onChange={setAssignUser} />
           </Modal>
 
           <Modal
@@ -316,12 +313,8 @@ export default function AssetDrawer({
             }
             confirmLoading={act.isPending}
           >
-            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>接收员工用户 ID</div>
-            <InputNumber
-              style={{ width: '100%' }}
-              value={transferUser ?? undefined}
-              onChange={(v) => setTransferUser(v as number | null)}
-            />
+            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>选择接收员工</div>
+            <EmployeeSelect value={transferUser} onChange={setTransferUser} placeholder="搜索姓名 / 邮箱选择接收员工" />
           </Modal>
 
           <Modal
