@@ -32,3 +32,7 @@ miniodata/
 
 # Real stock data — never commit (PII: names, serials)
 _local_data/
+
+# Celery beat runtime state
+backend/celerybeat-schedule
+celerybeat-schedule*
