@@ -126,3 +126,21 @@ def test_low_stock_scan_task():
     res = scan_low_stock()
     assert res["low_stock_count"] >= 1
     assert res["pushed"] is False  # no chat id configured in tests
+
+
+def test_delete_category_blocked_when_nonempty():
+    h = _admin()
+    loc = _loc(h)
+    cid = _cat(h)
+    # empty category → deletable
+    assert client.delete(f"/api/item-categories/{cid}", headers=h).status_code == 200
+
+    cid2 = _cat(h)
+    client.post(
+        "/api/skus",
+        json={"category_id": cid2, "name": "鼠标", "default_location_id": loc},
+        headers=h,
+    )
+    blocked = client.delete(f"/api/item-categories/{cid2}", headers=h)
+    assert blocked.status_code == 409
+    assert "物品" in blocked.json()["detail"]

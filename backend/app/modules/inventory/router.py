@@ -121,6 +121,28 @@ def update_category(
     return ItemCategoryOut.model_validate(cat)
 
 
+@router.delete("/api/item-categories/{cat_id}")
+def delete_category(
+    cat_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)
+):
+    cat = db.get(ItemCategory, cat_id)
+    if cat is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "分类不存在")
+    n = db.scalar(
+        select(func.count()).select_from(Sku).where(Sku.category_id == cat_id)
+    ) or 0
+    if n:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"该分类下还有 {n} 个物品,请先转走再删除"
+        )
+    code = cat.code
+    db.delete(cat)
+    db.commit()
+    write_audit(db, actor_user_id=user.id, action="category.delete",
+                resource_type="item_category", resource_id=code)
+    return {"ok": True}
+
+
 # ── SKU ──────────────────────────────────────────────────────────────────────
 
 
