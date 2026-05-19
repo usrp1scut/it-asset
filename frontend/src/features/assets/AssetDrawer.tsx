@@ -39,6 +39,13 @@ export default function AssetDrawer({
     enabled: !!code,
   })
 
+  const { data: qrSvg } = useQuery<string>({
+    queryKey: ['asset-qr', code],
+    queryFn: async () =>
+      (await api.get(`/assets/${code}/qrcode`, { responseType: 'text' })).data,
+    enabled: !!code,
+  })
+
   const act = useMutation({
     mutationFn: async (p: { path: string; body?: object }) =>
       (await api.post(`/assets/${code}/${p.path}`, p.body ?? {})).data,
@@ -226,6 +233,46 @@ export default function AssetDrawer({
                 key: 'accessories',
                 label: `配件绑定 (${data.accessories.length})`,
                 children: <AccessoryTree main={a} accessories={data.accessories} />,
+              },
+              {
+                key: 'qrcode',
+                label: '二维码',
+                children: (
+                  <div style={{ padding: 24, textAlign: 'center' }}>
+                    {qrSvg ? (
+                      <>
+                        <img
+                          src={`data:image/svg+xml;utf8,${encodeURIComponent(qrSvg)}`}
+                          width={200}
+                          height={200}
+                          alt={`二维码 ${a.asset_code}`}
+                          style={{ border: '1px solid var(--border)', borderRadius: 8 }}
+                        />
+                        <div
+                          style={{ color: 'var(--text-3)', fontSize: 12, margin: '10px 0 16px' }}
+                        >
+                          扫码得资产编号{' '}
+                          <span className="text-mono">{a.asset_code}</span>
+                        </div>
+                        <Button
+                          onClick={() => {
+                            const blob = new Blob([qrSvg], { type: 'image/svg+xml' })
+                            const url = URL.createObjectURL(blob)
+                            const el = document.createElement('a')
+                            el.href = url
+                            el.download = `${a.asset_code}.svg`
+                            el.click()
+                            URL.revokeObjectURL(url)
+                          }}
+                        >
+                          下载 SVG
+                        </Button>
+                      </>
+                    ) : (
+                      <span style={{ color: 'var(--text-3)', fontSize: 13 }}>生成中…</span>
+                    )}
+                  </div>
+                ),
               },
               {
                 key: 'attachments',

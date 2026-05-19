@@ -31,6 +31,20 @@ def test_create_generates_code_and_lists():
     assert any(i["asset_code"] == code for i in lst.json()["items"])
 
 
+def test_qrcode_returns_svg():
+    admin = _login()
+    code = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+    ).json()["asset_code"]
+    r = client.get(f"/api/assets/{code}/qrcode", headers=_h(admin))
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("image/svg+xml")
+    assert "<svg" in r.text
+
+    missing = client.get("/api/assets/PC-9999/qrcode", headers=_h(admin))
+    assert missing.status_code == 404
+
+
 def test_sequential_codes_no_collision():
     admin = _login()
     codes = {

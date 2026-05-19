@@ -1,5 +1,8 @@
+import io
+
+import segno
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
@@ -117,6 +120,17 @@ def rematch(db: Session = Depends(get_db), user: User = Depends(it_admin)):
 @router.get("/{code}", response_model=AssetDetailOut)
 def get_detail(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
     return _detail(db, code)
+
+
+@router.get("/{code}/qrcode")
+def asset_qrcode(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
+    """SVG QR encoding the asset_code (Phase 1: image only, print → Phase 2)."""
+    asset = service.get_asset(db, code)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    buf = io.BytesIO()
+    segno.make(asset.asset_code, error="m").save(buf, kind="svg", scale=4, border=2)
+    return Response(content=buf.getvalue(), media_type="image/svg+xml")
 
 
 @router.put("/{code}", response_model=AssetOut)
