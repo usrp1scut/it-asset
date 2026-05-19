@@ -27,11 +27,20 @@ def _loc(h) -> int:
     ).json()["id"]
 
 
+def _cat(h) -> int:
+    r = client.post(
+        "/api/item-categories",
+        json={"name": "测试分类", "code": uuid.uuid4().hex[:8].upper()},
+        headers=h,
+    )
+    assert r.status_code == 201, r.text
+    return r.json()["id"]
+
+
 def _sku(h, loc, safety=5) -> dict:
-    code = f"SKU-{uuid.uuid4().hex[:8]}"
     r = client.post(
         "/api/skus",
-        json={"sku_code": code, "name": "测试鼠标", "safety_stock": safety,
+        json={"category_id": _cat(h), "name": "测试鼠标", "safety_stock": safety,
               "default_location_id": loc, "unit": "个"},
         headers=h,
     )

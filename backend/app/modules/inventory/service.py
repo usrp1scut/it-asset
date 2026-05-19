@@ -20,12 +20,33 @@ from app.modules.inventory.models import (
     InventoryTransaction,
     OrderType,
     Sku,
+    SkuCodeCounter,
     TransactionType,
 )
 
 
 class InsufficientStock(ValueError):
     pass
+
+
+def generate_sku_code(db: Session, category_code: str) -> str:
+    """Allocate the next sku_code for a category, concurrency-safe.
+
+    Locks the counter row (SELECT … FOR UPDATE) so parallel creates under
+    the same category code can't collide. Mirrors generate_asset_code.
+    """
+    prefix = category_code.upper()
+    counter = db.execute(
+        select(SkuCodeCounter).where(SkuCodeCounter.prefix == prefix).with_for_update()
+    ).scalar_one_or_none()
+    if counter is None:
+        counter = SkuCodeCounter(prefix=prefix, next_val=1)
+        db.add(counter)
+        db.flush()
+    n = counter.next_val
+    counter.next_val = n + 1
+    db.flush()
+    return f"{prefix}-{n:03d}"
 
 
 def _order_no(order_type: OrderType) -> str:

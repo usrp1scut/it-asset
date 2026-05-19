@@ -6,8 +6,30 @@ from pydantic import BaseModel, ConfigDict
 from app.modules.inventory.models import ManagementMode
 
 
+class ItemCategoryCreate(BaseModel):
+    name: str
+    code: str
+    management_mode: ManagementMode = ManagementMode.inventory
+
+
+class ItemCategoryUpdate(BaseModel):
+    name: str | None = None
+    code: str | None = None
+
+
+class ItemCategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    code: str
+    management_mode: ManagementMode
+    sku_count: int = 0
+
+
 class SkuCreate(BaseModel):
-    sku_code: str
+    # sku_code is server-generated from the category code (<code>-001 …).
+    category_id: int
     name: str
     brand: str | None = None
     spec: str | None = None
@@ -40,6 +62,9 @@ class SkuOut(BaseModel):
     id: int
     sku_code: str
     name: str
+    category_id: int | None
+    category_name: str | None = None
+    category_code: str | None = None
     brand: str | None
     spec: str | None
     unit: str

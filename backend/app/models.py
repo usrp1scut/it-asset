@@ -33,6 +33,7 @@ from app.modules.inventory.models import (
     ManagementMode,
     OrderType,
     Sku,
+    SkuCodeCounter,
     TransactionType,
 )
 from app.modules.users.models import Department, Role, User, UserStatus
@@ -62,6 +63,7 @@ __all__ = [
     "ManagementMode",
     "OrderType",
     "Sku",
+    "SkuCodeCounter",
     "TransactionType",
     "ConfirmStatus",
     "InspectionItem",

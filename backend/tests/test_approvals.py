@@ -18,9 +18,14 @@ def _stocked_sku(h, qty: int) -> int:
     loc = client.post(
         "/api/inventory/locations", json={"name": f"L-{uuid.uuid4().hex[:5]}"}, headers=h
     ).json()["id"]
+    cat = client.post(
+        "/api/item-categories",
+        json={"name": "鼠标", "code": uuid.uuid4().hex[:8].upper()},
+        headers=h,
+    ).json()
     sku = client.post(
         "/api/skus",
-        json={"sku_code": f"SK-{uuid.uuid4().hex[:8]}", "name": "鼠标",
+        json={"category_id": cat["id"], "name": "鼠标",
               "default_location_id": loc, "safety_stock": 0},
         headers=h,
     ).json()
