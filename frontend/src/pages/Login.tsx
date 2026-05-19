@@ -63,6 +63,10 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [larkBusy, setLarkBusy] = useState(false)
+  const [diag, setDiag] = useState('收集中…')
+  const [diagVisible, setDiagVisible] = useState(
+    () => new URLSearchParams(window.location.search).get('diag') === '1',
+  )
   const setAuth = useAuth((s) => s.setAuth)
   const navigate = useNavigate()
 
@@ -109,10 +113,30 @@ export default function Login() {
           JSON.stringify(err))
       console.error('Lark 免登失败:', err)
       message.error(`Lark 免登失败:${detail}`, 8)
+      setDiag((d) => `error: ${detail}\n${d}`)
+      setDiagVisible(true)
     } finally {
       setLarkBusy(false)
     }
   }, [finishLogin])
+
+  // Surface the real runtime values Lark validates against, so 免登
+  // failures (e.g. invalid url 10236) can be diagnosed without devtools.
+  useEffect(() => {
+    const base = {
+      href: window.location.href,
+      origin: window.location.origin,
+      ua: navigator.userAgent,
+      h5sdk: !!window.h5sdk,
+    }
+    setDiag(JSON.stringify(base, null, 2))
+    api
+      .get('/auth/lark/config')
+      .then((r) =>
+        setDiag(JSON.stringify({ ...base, config: r.data }, null, 2)),
+      )
+      .catch(() => {})
+  }, [])
 
   // Auto-run免登 only when actually inside the Lark client.
   useEffect(() => {
@@ -160,6 +184,30 @@ export default function Login() {
         <Button type="primary" block loading={loading} disabled={!email} onClick={devSubmit}>
           登录
         </Button>
+        {diagVisible && (
+          <>
+            <Divider plain style={{ color: 'var(--text-3)', fontSize: 12 }}>
+              诊断信息(截图发我)
+            </Divider>
+            <pre
+              style={{
+                fontSize: 11,
+                lineHeight: 1.5,
+                background: 'var(--fill-2, #f5f5f5)',
+                padding: 8,
+                borderRadius: 6,
+                margin: 0,
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-all',
+                maxHeight: 240,
+                overflow: 'auto',
+                userSelect: 'text',
+              }}
+            >
+              {diag}
+            </pre>
+          </>
+        )}
       </Card>
     </div>
   )
