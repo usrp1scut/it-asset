@@ -14,15 +14,21 @@ from app.modules.approvals.models import RequestType
 from app.modules.assets import service as assets
 from app.modules.assets.models import Asset, AssetClass, AssetStatus
 from app.modules.inventory import service as inv
-from app.modules.inventory.models import InventoryLocation, ManagementMode, Sku
+from app.modules.inventory.models import (
+    InventoryLocation,
+    ItemCategory,
+    ManagementMode,
+    Sku,
+)
 from app.modules.users.models import Department, Role, User, UserStatus
 
 _TABLES = [
     "asset_accessories", "asset_assignments", "asset_change_logs",
     "inspection_items", "inspection_tasks", "approval_requests",
     "employee_item_issues", "inventory_order_items", "inventory_orders",
-    "inventory_transactions", "inventory_stocks", "skus", "item_categories",
-    "inventory_locations", "audit_logs", "assets", "asset_code_counters",
+    "inventory_transactions", "inventory_stocks", "skus", "sku_code_counters",
+    "item_categories", "inventory_locations", "audit_logs", "assets",
+    "asset_code_counters",
     "asset_types", "users", "departments",
 ]
 
@@ -61,32 +67,45 @@ def seed() -> dict:
         loc = InventoryLocation(name="IT 仓库·B 区", type="warehouse")
         db.add(loc)
         db.flush()
+        cats = {}
+        for cname, ccode, cmode in [
+            ("鼠标", "MS", ManagementMode.inventory),
+            ("转接头", "AD", ManagementMode.inventory),
+            ("键盘", "KB", ManagementMode.inventory),
+            ("线缆", "CB", ManagementMode.consumable),
+        ]:
+            c = ItemCategory(name=cname, code=ccode, management_mode=cmode)
+            db.add(c)
+            db.flush()
+            cats[ccode] = c.id
+        db.commit()
         skus = {}
-        for code, name, brand, spec, unit, mode, safety in [
-            ("SKU-MS-001", "罗技 M185 鼠标", "Logitech", "无线", "个",
+        for ccode, name, brand, spec, unit, mode, safety in [
+            ("MS", "罗技 M185 鼠标", "Logitech", "无线", "个",
              ManagementMode.inventory, 10),
-            ("SKU-AD-001", "USB-C 转 HDMI 转接头", "绿联", "4K@60Hz", "个",
+            ("AD", "USB-C 转 HDMI 转接头", "绿联", "4K@60Hz", "个",
              ManagementMode.inventory, 5),
-            ("SKU-KB-001", "罗技 K380 键盘", "Logitech", "蓝牙", "个",
+            ("KB", "罗技 K380 键盘", "Logitech", "蓝牙", "个",
              ManagementMode.inventory, 5),
-            ("SKU-CB-001", "CAT6 网线", "山泽", "3m", "根",
+            ("CB", "CAT6 网线", "山泽", "3m", "根",
              ManagementMode.consumable, 20),
         ]:
-            s = Sku(sku_code=code, name=name, brand=brand, spec=spec, unit=unit,
+            s = Sku(sku_code=inv.generate_sku_code(db, ccode), name=name,
+                    category_id=cats[ccode], brand=brand, spec=spec, unit=unit,
                     management_mode=mode, safety_stock=safety,
                     default_location_id=loc.id)
             db.add(s)
             db.flush()
-            skus[code] = s.id
+            skus[ccode] = s.id
         db.commit()
         # stock levels: mouse LOW (3<10), others healthy
-        inv.receive(db, sku_id=skus["SKU-MS-001"], quantity=3,
+        inv.receive(db, sku_id=skus["MS"], quantity=3,
                     location_id=loc.id, operator_id=admin.id)
-        inv.receive(db, sku_id=skus["SKU-AD-001"], quantity=24,
+        inv.receive(db, sku_id=skus["AD"], quantity=24,
                     location_id=loc.id, operator_id=admin.id)
-        inv.receive(db, sku_id=skus["SKU-KB-001"], quantity=12,
+        inv.receive(db, sku_id=skus["KB"], quantity=12,
                     location_id=loc.id, operator_id=admin.id)
-        inv.receive(db, sku_id=skus["SKU-CB-001"], quantity=45,
+        inv.receive(db, sku_id=skus["CB"], quantity=45,
                     location_id=loc.id, operator_id=admin.id)
 
         # ── assets ───────────────────────────────────────────────────
@@ -131,7 +150,7 @@ def seed() -> dict:
         # ── a pending approval from 张伟 ──────────────────────────────
         appr.create_request(
             db, requester=zhang, request_type=RequestType.consumable,
-            payload={"items": [{"sku_id": skus["SKU-AD-001"], "qty": 1}],
+            payload={"items": [{"sku_id": skus["AD"], "qty": 1}],
                      "reason": "会议室投屏需要转接头", "urgency": "normal",
                      "deliver_to": "self_desk"},
         )

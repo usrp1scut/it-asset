@@ -1,9 +1,20 @@
 export type StockLevel = 'normal' | 'warn' | 'low'
 
+export interface ItemCategory {
+  id: number
+  name: string
+  code: string
+  management_mode: 'asset' | 'inventory' | 'consumable' | 'accessory'
+  sku_count: number
+}
+
 export interface Sku {
   id: number
   sku_code: string
   name: string
+  category_id: number | null
+  category_name: string | null
+  category_code: string | null
   brand: string | null
   spec: string | null
   unit: string

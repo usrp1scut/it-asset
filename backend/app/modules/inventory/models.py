@@ -63,10 +63,25 @@ class ItemCategory(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(String(128))
+    # Short prefix that drives auto-generated sku_code: <code>-001, -002 …
+    code: Mapped[str] = mapped_column(String(16), unique=True, index=True)
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("item_categories.id"))
     management_mode: Mapped[ManagementMode] = mapped_column(
         Enum(ManagementMode, name="management_mode"), default=ManagementMode.inventory
     )
+
+
+class SkuCodeCounter(Base):
+    """Per-category-code allocator for sku_code (mirrors AssetCodeCounter).
+
+    One row per category code; allocation locks the row (SELECT … FOR UPDATE)
+    so parallel SKU creates under the same category can't collide.
+    """
+
+    __tablename__ = "sku_code_counters"
+
+    prefix: Mapped[str] = mapped_column(String(16), primary_key=True)
+    next_val: Mapped[int] = mapped_column(Integer, default=1)
 
 
 class Sku(Base):
