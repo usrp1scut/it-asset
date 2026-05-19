@@ -14,8 +14,9 @@ _LARK_ENDPOINTS = {
     "lark": {
         "api_base": "https://open.larksuite.com",
         "passport_base": "https://passport.larksuite.com",
-        "jssdk": "https://lf16-package-sg.larksuitecdn.com/obj/lark-web-static-sg/"
-        "lark/op/h5-js-sdk-1.5.36.js",
+        # bytegoofy CDN is global — Lark's own international H5 samples load the
+        # JSSDK from this same host (no larksuite-specific CDN exists).
+        "jssdk": "https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.36.js",
     },
 }
 

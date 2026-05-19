@@ -88,20 +88,27 @@ export default function Login() {
         return
       }
       const code: string = await new Promise((resolve, reject) => {
-        window.h5sdk!.error((e) => reject(e))
+        window.h5sdk!.error((e) => reject({ stage: 'h5sdk.error', e }))
         window.h5sdk!.ready(() => {
-          if (!window.tt?.requestAuthCode) return reject(new Error('tt.requestAuthCode 不可用'))
+          if (!window.tt?.requestAuthCode)
+            return reject({ stage: 'requestAuthCode', e: 'tt.requestAuthCode 不可用' })
           window.tt.requestAuthCode({
             appId: cfg.app_id,
             success: (r) => resolve(r.code),
-            fail: reject,
+            fail: (e) => reject({ stage: 'requestAuthCode.fail', e }),
           })
         })
       })
       const { data } = await api.post('/auth/lark/callback', { code })
       finishLogin(data.token, data.user)
-    } catch {
-      message.error('Lark 免登失败,请重试或用开发登录')
+    } catch (err) {
+      const staged = err as { stage?: string; e?: unknown }
+      const detail = staged?.stage
+        ? `[${staged.stage}] ${JSON.stringify(staged.e)}`
+        : ((err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
+          JSON.stringify(err))
+      console.error('Lark 免登失败:', err)
+      message.error(`Lark 免登失败:${detail}`, 8)
     } finally {
       setLarkBusy(false)
     }
