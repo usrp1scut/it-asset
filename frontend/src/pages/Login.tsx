@@ -4,9 +4,14 @@ import { Alert, Button, Card, Divider, Input, Typography, message } from 'antd'
 import { api } from '../api/client'
 import { useAuth } from '../stores/auth'
 
-// Lark H5 JSSDK (injected by the Lark/Feishu webview container).
+// Lark H5 JSSDK globals (the SDK script must be loaded first; it is NOT
+// auto-injected just by opening inside the Lark client).
 declare global {
   interface Window {
+    h5sdk?: {
+      ready: (cb: () => void) => void
+      error: (cb: (e: unknown) => void) => void
+    }
     tt?: {
       requestAuthCode?: (opts: {
         appId: string
@@ -16,6 +21,43 @@ declare global {
     }
   }
 }
+
+interface LarkCfg {
+  app_id: string
+  variant: string
+  configured: boolean
+  jssdk_url: string
+}
+
+const SDK_ID = 'lark-h5-jssdk'
+
+function loadJssdk(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    if (window.h5sdk) return resolve(true)
+    if (document.getElementById(SDK_ID)) {
+      // already injected, give it a tick
+      const t = setInterval(() => {
+        if (window.h5sdk) {
+          clearInterval(t)
+          resolve(true)
+        }
+      }, 100)
+      setTimeout(() => {
+        clearInterval(t)
+        resolve(!!window.h5sdk)
+      }, 4000)
+      return
+    }
+    const s = document.createElement('script')
+    s.id = SDK_ID
+    s.src = url
+    s.onload = () => resolve(!!window.h5sdk)
+    s.onerror = () => resolve(false)
+    document.head.appendChild(s)
+  })
+}
+
+const inLarkClient = /Lark|Feishu/i.test(navigator.userAgent)
 
 export default function Login() {
   const [email, setEmail] = useState('')
@@ -32,22 +74,30 @@ export default function Login() {
     [setAuth, navigate],
   )
 
-  // Silent SSO when opened inside the Lark webview.
   const larkLogin = useCallback(async () => {
     setLarkBusy(true)
     try {
-      const cfg = (await api.get('/auth/lark/config')).data
-      if (!cfg.configured || !window.tt?.requestAuthCode) {
-        message.info('未在 Lark 客户端内或应用未配置,请用开发登录')
+      const cfg: LarkCfg = (await api.get('/auth/lark/config')).data
+      if (!cfg.configured) {
+        message.info('后端未配置 Lark 应用凭据')
         return
       }
-      const code: string = await new Promise((resolve, reject) =>
-        window.tt!.requestAuthCode!({
-          appId: cfg.app_id,
-          success: (r) => resolve(r.code),
-          fail: reject,
-        }),
-      )
+      const ok = await loadJssdk(cfg.jssdk_url)
+      if (!ok || !window.h5sdk) {
+        message.error('Lark JSSDK 加载失败:请确认在 Lark 客户端内打开,且域名已在开发者后台「可信域名」中配置')
+        return
+      }
+      const code: string = await new Promise((resolve, reject) => {
+        window.h5sdk!.error((e) => reject(e))
+        window.h5sdk!.ready(() => {
+          if (!window.tt?.requestAuthCode) return reject(new Error('tt.requestAuthCode 不可用'))
+          window.tt.requestAuthCode({
+            appId: cfg.app_id,
+            success: (r) => resolve(r.code),
+            fail: reject,
+          })
+        })
+      })
       const { data } = await api.post('/auth/lark/callback', { code })
       finishLogin(data.token, data.user)
     } catch {
@@ -57,9 +107,9 @@ export default function Login() {
     }
   }, [finishLogin])
 
-  // Auto-attempt免登 if the Lark JSSDK is present.
+  // Auto-run免登 only when actually inside the Lark client.
   useEffect(() => {
-    if (window.tt?.requestAuthCode) larkLogin()
+    if (inLarkClient) larkLogin()
   }, [larkLogin])
 
   const devSubmit = async () => {
@@ -91,7 +141,7 @@ export default function Login() {
           showIcon
           style={{ marginBottom: 16 }}
           message="开发登录"
-          description="生产在 Lark 工作台内自动免登;此表单仅用于浏览器联调。"
+          description="在 Lark 工作台内打开会自动免登;此表单仅用于浏览器联调。"
         />
         <Input
           placeholder="邮箱"

@@ -9,10 +9,13 @@ _LARK_ENDPOINTS = {
     "feishu": {
         "api_base": "https://open.feishu.cn",
         "passport_base": "https://passport.feishu.cn",
+        "jssdk": "https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.36.js",
     },
     "lark": {
         "api_base": "https://open.larksuite.com",
         "passport_base": "https://passport.larksuite.com",
+        "jssdk": "https://lf16-package-sg.larksuitecdn.com/obj/lark-web-static-sg/"
+        "lark/op/h5-js-sdk-1.5.36.js",
     },
 }
 
@@ -43,9 +46,19 @@ class Settings(BaseSettings):
     # webhook accepts unsigned payloads (never leave empty in production).
     lark_verification_token: str = ""
     lark_encrypt_key: str = ""
+    # H5 JSSDK script URL (免登). Defaults below per variant; override per
+    # tenant/region if Lark serves a different CDN.
+    lark_jssdk_url: str = ""
     # Explicit overrides; empty -> derive from lark_variant.
     lark_api_base: str = ""
     lark_passport_base: str = ""
+
+    @computed_field
+    @property
+    def lark_jssdk_url_resolved(self) -> str:
+        if self.lark_jssdk_url:
+            return self.lark_jssdk_url
+        return _LARK_ENDPOINTS[self.lark_variant]["jssdk"]
 
     @computed_field
     @property
