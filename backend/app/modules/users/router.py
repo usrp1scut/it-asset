@@ -27,7 +27,12 @@ class DevLoginIn(BaseModel):
 def lark_config() -> dict:
     """Public, non-secret config the frontend JSSDK needs for 免登."""
     s = get_settings()
-    return {"app_id": s.lark_app_id, "variant": s.lark_variant, "configured": bool(s.lark_app_id)}
+    return {
+        "app_id": s.lark_app_id,
+        "variant": s.lark_variant,
+        "configured": bool(s.lark_app_id),
+        "jssdk_url": s.lark_jssdk_url_resolved,
+    }
 
 
 @router.post("/lark/callback", response_model=LoginResult)
