@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Row,
   Select,
   Space,
@@ -101,15 +102,29 @@ export default function Inventory() {
       message.error(e.response?.data?.detail ?? '操作失败'),
   })
 
+  const catDelMut = useMutation({
+    mutationFn: async (id: number) => api.delete(`/item-categories/${id}`),
+    onSuccess: () => {
+      message.success('分类已删除')
+      invalidate()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '删除失败'),
+  })
+
   const items = data?.items ?? []
   const warnCount = items.filter((s) => s.level !== 'normal').length
 
   // group SKUs under their category (uncategorized → bucket)
   const cats = categories ?? []
+  // When filtering, only show categories with matches; on the default
+  // unfiltered view show every category (incl. empty) so they stay
+  // manageable (edit/delete) even with no items.
+  const filtering = !!q || !!mode || warningOnly
   const groups: { cat: ItemCategory | null; skus: Sku[] }[] = []
   for (const c of cats) {
     const gs = items.filter((s) => s.category_id === c.id)
-    if (gs.length) groups.push({ cat: c, skus: gs })
+    if (gs.length || !filtering) groups.push({ cat: c, skus: gs })
   }
   const orphan = items.filter((s) => s.category_id == null)
   if (orphan.length) groups.push({ cat: null, skus: orphan })
@@ -292,6 +307,31 @@ export default function Inventory() {
                 >
                   编辑
                 </Button>
+                {cat.sku_count === 0 ? (
+                  <Popconfirm
+                    title={`删除分类「${cat.name}」?`}
+                    onConfirm={() => catDelMut.mutate(cat.id)}
+                    okText="删除"
+                    cancelText="取消"
+                  >
+                    <Button size="small" type="link" danger>
+                      删除
+                    </Button>
+                  </Popconfirm>
+                ) : (
+                  <Button
+                    size="small"
+                    type="link"
+                    danger
+                    onClick={() =>
+                      message.warning(
+                        `该分类下还有 ${cat.sku_count} 个物品,请先转走再删除`,
+                      )
+                    }
+                  >
+                    删除
+                  </Button>
+                )}
               </>
             ) : (
               <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-3)' }}>
