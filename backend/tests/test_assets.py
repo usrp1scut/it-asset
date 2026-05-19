@@ -45,6 +45,32 @@ def test_qrcode_returns_svg():
     assert missing.status_code == 404
 
 
+def test_assign_backfills_owner_and_clears_review():
+    admin = _login()
+    emp = client.post(
+        "/api/auth/dev-login",
+        json={"email": f"e-{uuid.uuid4().hex[:6]}@c.com", "name": "李测试"},
+    ).json()["user"]
+    pc = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC",
+              "owner_name": "实习生(脏)", "needs_review": True},
+        headers=_h(admin),
+    ).json()
+    code = pc["asset_code"]
+
+    a = client.post(
+        f"/api/assets/{code}/assign", json={"user_id": emp["id"]}, headers=_h(admin)
+    ).json()
+    assert a["owner_user_id"] == emp["id"]
+    assert a["owner_name"] == "李测试"          # backfilled from directory
+    assert a["needs_review"] is False           # explicit assign resolves review
+
+    r = client.post(f"/api/assets/{code}/return", json={}, headers=_h(admin)).json()
+    assert r["owner_user_id"] is None
+    assert r["owner_name"] is None              # no stale 责任人 after return
+
+
 def test_sequential_codes_no_collision():
     admin = _login()
     codes = {
