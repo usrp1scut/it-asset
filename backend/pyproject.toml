@@ -22,6 +22,7 @@ dependencies = [
     "structlog>=24.4",
     "segno>=1.6",
     "minio>=7.2",
+    "pypinyin>=0.53",
 ]
 
 [project.optional-dependencies]
