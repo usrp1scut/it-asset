@@ -14,6 +14,30 @@ from app.modules.assets.state_machine import (
     assert_assignable,
     assert_transition,
 )
+from app.modules.users.models import Department, User
+
+
+def _apply_owner(db: Session, asset: Asset, user_id: int) -> None:
+    """Bind owner to a real user: backfill display name + department from the
+    directory and clear needs_review (an explicit assignment is the human
+    reconciliation the Phase-0 review queue was waiting for)."""
+    user = db.get(User, user_id)
+    if user is None:
+        raise IllegalTransition("目标员工不存在")
+    asset.owner_user_id = user_id
+    asset.owner_name = user.name
+    if user.department_id:
+        asset.department_id = user.department_id
+        dept = db.get(Department, user.department_id)
+        if dept is not None:
+            asset.department_name = dept.name
+    asset.needs_review = False
+
+
+def _clear_owner(asset: Asset) -> None:
+    """Owner gone (return/scrap) — don't leave stale责任人 text behind."""
+    asset.owner_user_id = None
+    asset.owner_name = None
 
 
 def generate_asset_code(db: Session, prefix: str) -> str:
@@ -146,7 +170,7 @@ def assign(db: Session, asset: Asset, user_id: int, operator_id: int, note: str 
     assert_transition(asset.status, AssetStatus.in_use)
     prev_owner = asset.owner_user_id
     asset.status = AssetStatus.in_use
-    asset.owner_user_id = user_id
+    _apply_owner(db, asset, user_id)
     db.add(
         AssetAssignment(
             asset_id=asset.id, user_id=user_id, operator_id=operator_id, remark=note
@@ -167,7 +191,7 @@ def return_asset(db: Session, asset: Asset, operator_id: int, note: str | None) 
     assert_transition(asset.status, AssetStatus.idle)
     prev_owner = asset.owner_user_id
     asset.status = AssetStatus.idle
-    asset.owner_user_id = None
+    _clear_owner(asset)
     active = db.scalar(
         select(AssetAssignment).where(
             AssetAssignment.asset_id == asset.id, AssetAssignment.status == "active"
@@ -194,7 +218,7 @@ def transfer(
     if asset.status != AssetStatus.in_use:
         raise IllegalTransition("仅在用资产可转移")
     prev_owner = asset.owner_user_id
-    asset.owner_user_id = to_user_id
+    _apply_owner(db, asset, to_user_id)
     active = db.scalar(
         select(AssetAssignment).where(
             AssetAssignment.asset_id == asset.id, AssetAssignment.status == "active"
@@ -233,7 +257,7 @@ def scrap(db: Session, asset: Asset, operator_id: int, reason: str | None) -> As
     assert_transition(asset.status, AssetStatus.scrapped)
     prev = asset.status
     asset.status = AssetStatus.scrapped
-    asset.owner_user_id = None
+    _clear_owner(asset)
     _log(db, asset, "scrap", from_status=prev, to_status=AssetStatus.scrapped,
          operator_id=operator_id, reason=reason)
     db.commit()
