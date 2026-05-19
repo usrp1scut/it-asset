@@ -6,10 +6,10 @@ from openpyxl import Workbook, load_workbook
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.modules.assets.matching import build_dept_index, build_user_index, name_key
 from app.modules.assets.migration import HEADER_ALIASES, clean_row
 from app.modules.assets.models import Asset
 from app.modules.assets.service import generate_asset_code
-from app.modules.users.models import Department, User, UserStatus
 
 _MUTABLE = (
     "asset_class",
@@ -84,28 +84,24 @@ def parse_workbook(content: bytes) -> list[dict]:
 
 def import_rows(db: Session, rows: list[dict], operator_id: int | None) -> dict:
     created = updated = needs_review = 0
+    users = build_user_index(db)
+    depts = build_dept_index(db)
 
     for row in rows:
         cleaned = clean_row(row)
         data = cleaned.data
 
-        # owner / department matching needs the DB; unmatched -> needs_review.
+        # fuzzy owner/department resolve; unresolved -> needs_review.
         if data["owner_name"]:
-            matches = db.scalars(
-                select(User).where(
-                    User.name == data["owner_name"],
-                    User.status == UserStatus.active,
-                    User.deleted_at.is_(None),
-                )
-            ).all()
-            if len(matches) == 1:
-                data["owner_user_id"] = matches[0].id
+            uid = users.resolve(data["owner_name"])
+            if uid is not None:
+                data["owner_user_id"] = uid
             else:
                 cleaned.flag("使用人待匹配飞书账号")
         if data["department_name"]:
-            dept = db.scalar(select(Department).where(Department.name == data["department_name"]))
-            if dept:
-                data["department_id"] = dept.id
+            did = depts.get(name_key(data["department_name"]))
+            if did is not None:
+                data["department_id"] = did
             else:
                 cleaned.flag("部门待匹配")
 
@@ -192,26 +188,20 @@ def rematch_dirty(db: Session) -> dict:
     an unrecognised type → OTH prefix).
     """
     scanned = owner_matched = dept_matched = still_review = 0
+    users = build_user_index(db)
+    depts = build_dept_index(db)
     rows = db.scalars(select(Asset).where(Asset.needs_review.is_(True))).all()
     for a in rows:
         scanned += 1
         if a.owner_user_id is None and a.owner_name:
-            hits = db.scalars(
-                select(User).where(
-                    User.name == a.owner_name,
-                    User.status == UserStatus.active,
-                    User.deleted_at.is_(None),
-                )
-            ).all()
-            if len(hits) == 1:
-                a.owner_user_id = hits[0].id
+            uid = users.resolve(a.owner_name)
+            if uid is not None:
+                a.owner_user_id = uid
                 owner_matched += 1
         if a.department_id is None and a.department_name:
-            dept = db.scalar(
-                select(Department).where(Department.name == a.department_name)
-            )
-            if dept:
-                a.department_id = dept.id
+            did = depts.get(name_key(a.department_name))
+            if did is not None:
+                a.department_id = did
                 dept_matched += 1
 
         gap = (
