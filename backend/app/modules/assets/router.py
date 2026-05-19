@@ -17,6 +17,7 @@ from app.modules.assets.schemas import (
     ChangeLogOut,
     NoteIn,
     ReasonIn,
+    TransferIn,
 )
 from app.modules.assets.state_machine import (
     IllegalTransition,
@@ -160,6 +161,18 @@ def return_asset(
     asset = _load(db, code)
     try:
         asset = service.return_asset(db, asset, user.id, body.note)
+    except (IllegalTransition, InfrastructureNotAssignable) as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return AssetOut.model_validate(asset)
+
+
+@router.post("/{code}/transfer", response_model=AssetOut)
+def transfer(
+    code: str, body: TransferIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
+):
+    asset = _load(db, code)
+    try:
+        asset = service.transfer(db, asset, body.to_user_id, user.id, body.reason)
     except (IllegalTransition, InfrastructureNotAssignable) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return AssetOut.model_validate(asset)

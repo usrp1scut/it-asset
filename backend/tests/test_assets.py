@@ -90,3 +90,38 @@ def test_detail_has_lifecycle():
 def test_employee_cannot_list():
     emp = _login("employee")
     assert client.get("/api/assets", headers=_h(emp)).status_code == 403
+
+
+def test_transfer_reassigns_owner():
+    admin = _login()
+    e1 = client.post("/api/auth/dev-login",
+                     json={"email": f"a-{uuid.uuid4().hex[:6]}@c.com"}).json()["user"]
+    e2 = client.post("/api/auth/dev-login",
+                     json={"email": f"b-{uuid.uuid4().hex[:6]}@c.com"}).json()["user"]
+    pc = client.post("/api/assets", json={"asset_class": "personal", "prefix": "PC"},
+                     headers=_h(admin)).json()
+    code = pc["asset_code"]
+    client.post(f"/api/assets/{code}/assign", json={"user_id": e1["id"]}, headers=_h(admin))
+
+    r = client.post(f"/api/assets/{code}/transfer",
+                    json={"to_user_id": e2["id"], "reason": "转岗"}, headers=_h(admin))
+    assert r.status_code == 200
+    assert r.json()["status"] == "in_use" and r.json()["owner_user_id"] == e2["id"]
+    actions = [e["action"] for e in
+               client.get(f"/api/assets/{code}", headers=_h(admin)).json()["lifecycle"]]
+    assert "transfer" in actions
+
+
+def test_transfer_requires_in_use():
+    admin = _login()
+    e1 = client.post("/api/auth/dev-login",
+                     json={"email": f"c-{uuid.uuid4().hex[:6]}@c.com"}).json()["user"]
+    idle = client.post("/api/assets", json={"asset_class": "personal", "prefix": "PC"},
+                       headers=_h(admin)).json()
+    assert client.post(f"/api/assets/{idle['asset_code']}/transfer",
+                       json={"to_user_id": e1["id"]}, headers=_h(admin)).status_code == 409
+    net = client.post("/api/assets",
+                      json={"asset_class": "infrastructure", "prefix": "NET"},
+                      headers=_h(admin)).json()
+    assert client.post(f"/api/assets/{net['asset_code']}/transfer",
+                       json={"to_user_id": e1["id"]}, headers=_h(admin)).status_code == 409

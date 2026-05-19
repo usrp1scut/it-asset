@@ -9,7 +9,11 @@ from app.modules.assets.models import (
     AssetCodeCounter,
     AssetStatus,
 )
-from app.modules.assets.state_machine import assert_assignable, assert_transition
+from app.modules.assets.state_machine import (
+    IllegalTransition,
+    assert_assignable,
+    assert_transition,
+)
 
 
 def generate_asset_code(db: Session, prefix: str) -> str:
@@ -176,6 +180,38 @@ def return_asset(db: Session, asset: Asset, operator_id: int, note: str | None) 
         db, asset, "return",
         from_status=AssetStatus.in_use, to_status=AssetStatus.idle,
         from_owner=prev_owner, operator_id=operator_id, reason=note,
+    )
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def transfer(
+    db: Session, asset: Asset, to_user_id: int, operator_id: int, reason: str | None
+) -> Asset:
+    """Reassign an in-use personal asset to another employee (stays in_use)."""
+    assert_assignable(asset.asset_class)
+    if asset.status != AssetStatus.in_use:
+        raise IllegalTransition("仅在用资产可转移")
+    prev_owner = asset.owner_user_id
+    asset.owner_user_id = to_user_id
+    active = db.scalar(
+        select(AssetAssignment).where(
+            AssetAssignment.asset_id == asset.id, AssetAssignment.status == "active"
+        )
+    )
+    if active:
+        active.status = "returned"
+        active.returned_at = func.now()
+    db.add(
+        AssetAssignment(
+            asset_id=asset.id, user_id=to_user_id, operator_id=operator_id, remark=reason
+        )
+    )
+    _log(
+        db, asset, "transfer",
+        from_status=AssetStatus.in_use, to_status=AssetStatus.in_use,
+        from_owner=prev_owner, to_owner=to_user_id, operator_id=operator_id, reason=reason,
     )
     db.commit()
     db.refresh(asset)
