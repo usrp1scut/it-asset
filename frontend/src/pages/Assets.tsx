@@ -1,7 +1,20 @@
 import { useState } from 'react'
-import { Button, Input, Space, Table, Tabs, Tag, Upload, message } from 'antd'
+import {
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tabs,
+  Tag,
+  Upload,
+  message,
+} from 'antd'
 import type { ColumnsType } from 'antd/es/table'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import type { Asset, AssetListResponse, AssetStatus } from '../features/assets/types'
 import StatusBadge from '../features/assets/StatusBadge'
@@ -21,8 +34,22 @@ export default function Assets() {
   const [page, setPage] = useState(1)
   const [openCode, setOpenCode] = useState<string | null>(null)
   const [needsReview, setNeedsReview] = useState(false)
+  const [createOpen, setCreateOpen] = useState(false)
+  const [form] = Form.useForm()
   const size = 20
   const qc = useQueryClient()
+
+  const createMut = useMutation({
+    mutationFn: async (body: object) => (await api.post('/assets', body)).data,
+    onSuccess: (a: { asset_code: string }) => {
+      message.success(`已创建 ${a.asset_code}`)
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      setCreateOpen(false)
+      form.resetFields()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '创建失败'),
+  })
 
   const { data, isLoading } = useQuery<AssetListResponse>({
     queryKey: ['assets', status, q, page, needsReview],
@@ -94,6 +121,9 @@ export default function Assets() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ marginTop: 0 }}>资产台账</h2>
         <Space>
+          <Button type="primary" onClick={() => setCreateOpen(true)}>
+            新增资产
+          </Button>
           <Upload
             accept=".xlsx"
             showUploadList={false}
@@ -177,6 +207,91 @@ export default function Assets() {
           showTotal: (t) => `共 ${t} 条`,
         }}
       />
+      <Modal
+        open={createOpen}
+        title="新增资产"
+        width={620}
+        onCancel={() => setCreateOpen(false)}
+        onOk={() => form.submit()}
+        confirmLoading={createMut.isPending}
+        destroyOnClose
+      >
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{ asset_class: 'personal', prefix: 'PC' }}
+          onFinish={(v: Record<string, unknown>) => {
+            const body: Record<string, unknown> = {}
+            for (const [k, val] of Object.entries(v)) {
+              if (val !== '' && val !== undefined) body[k] = val
+            }
+            createMut.mutate(body)
+          }}
+        >
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item
+              name="asset_class"
+              label="资产类别"
+              rules={[{ required: true }]}
+              style={{ flex: 1 }}
+            >
+              <Select
+                options={[
+                  { value: 'personal', label: '个人发放' },
+                  { value: 'infrastructure', label: '基础设施' },
+                ]}
+              />
+            </Form.Item>
+            <Form.Item
+              name="prefix"
+              label="编号前缀"
+              rules={[{ required: true }]}
+              style={{ flex: 1 }}
+            >
+              <Select
+                options={['PC', 'MON', 'NET', 'PHN', 'PAD', 'PRT'].map((p) => ({
+                  value: p,
+                  label: p,
+                }))}
+              />
+            </Form.Item>
+          </div>
+          <Form.Item name="brand_model" label="品牌型号">
+            <Input placeholder="如 Apple MacBook Pro 14" />
+          </Form.Item>
+          <Form.Item name="spec" label="配置">
+            <Input placeholder="如 M3 Pro-18g-512g" />
+          </Form.Item>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item name="serial_number" label="序列号" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="owner_name" label="责任人(文本)" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item name="location" label="存放地点" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+            <Form.Item name="supplier" label="供应商" style={{ flex: 1 }}>
+              <Input />
+            </Form.Item>
+          </div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <Form.Item name="purchase_date" label="采购日期 (YYYY-MM-DD)" style={{ flex: 1 }}>
+              <Input placeholder="2025-01-15" />
+            </Form.Item>
+            <Form.Item name="purchase_price" label="采购价" style={{ flex: 1 }}>
+              <InputNumber style={{ width: '100%' }} min={0} />
+            </Form.Item>
+          </div>
+          <Form.Item name="remark" label="备注">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <AssetDrawer code={openCode} onClose={() => setOpenCode(null)} />
     </div>
   )

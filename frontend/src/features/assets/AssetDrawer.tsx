@@ -29,6 +29,8 @@ export default function AssetDrawer({
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignUser, setAssignUser] = useState<number | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  const [transferUser, setTransferUser] = useState<number | null>(null)
   const [form] = Form.useForm()
 
   const { data, isLoading } = useQuery<AssetDetail>({
@@ -45,6 +47,7 @@ export default function AssetDrawer({
       qc.invalidateQueries({ queryKey: ['asset', code] })
       qc.invalidateQueries({ queryKey: ['assets'] })
       setAssignOpen(false)
+      setTransferOpen(false)
     },
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '操作失败'),
@@ -104,6 +107,7 @@ export default function AssetDrawer({
       {a.status === 'in_use' && (
         <>
           <Button onClick={() => act.mutate({ path: 'repair' })}>报修</Button>
+          <Button onClick={() => setTransferOpen(true)}>转移</Button>
           <Button onClick={() => act.mutate({ path: 'return' })}>归还入库</Button>
         </>
       )}
@@ -251,6 +255,25 @@ export default function AssetDrawer({
               style={{ width: '100%' }}
               value={assignUser ?? undefined}
               onChange={(v) => setAssignUser(v as number | null)}
+            />
+          </Modal>
+
+          <Modal
+            open={transferOpen}
+            title="转移给其他员工"
+            onCancel={() => setTransferOpen(false)}
+            onOk={() =>
+              transferUser
+                ? act.mutate({ path: 'transfer', body: { to_user_id: transferUser } })
+                : message.warning('请输入接收员工 ID')
+            }
+            confirmLoading={act.isPending}
+          >
+            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>接收员工用户 ID</div>
+            <InputNumber
+              style={{ width: '100%' }}
+              value={transferUser ?? undefined}
+              onChange={(v) => setTransferUser(v as number | null)}
             />
           </Modal>
 

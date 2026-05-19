@@ -117,5 +117,10 @@ class NoteIn(BaseModel):
     note: str | None = None
 
 
+class TransferIn(BaseModel):
+    to_user_id: int
+    reason: str | None = None
+
+
 class BindAccessoriesIn(BaseModel):
     child_ids: list[int]
