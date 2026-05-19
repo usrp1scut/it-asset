@@ -21,6 +21,7 @@ dependencies = [
     "python-jose[cryptography]>=3.3",
     "structlog>=24.4",
     "segno>=1.6",
+    "minio>=7.2",
 ]
 
 [project.optional-dependencies]

@@ -17,6 +17,7 @@ import type { AssetDetail } from './types'
 import StatusBadge from './StatusBadge'
 import Lifecycle from './Lifecycle'
 import AccessoryTree from './AccessoryTree'
+import AssetAttachments from './AssetAttachments'
 import EmployeeSelect from '../users/EmployeeSelect'
 
 export default function AssetDrawer({
@@ -278,11 +279,7 @@ export default function AssetDrawer({
               {
                 key: 'attachments',
                 label: '附件 / 照片',
-                children: (
-                  <div style={{ color: 'var(--text-3)', fontSize: 13, padding: 24 }}>
-                    附件上传将在后续 Sprint 接入对象存储。
-                  </div>
-                ),
+                children: <AssetAttachments code={a.asset_code} />,
               },
             ]}
           />

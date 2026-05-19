@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     s3_access_key: str = "minioadmin"
     s3_secret_key: str = "minioadmin"
     s3_bucket: str = "it-asset"
+    # Required by AWS S3 / Aliyun OSS (empty = none, fine for MinIO).
+    s3_region: str = ""
+    # Managed clouds pre-provision the bucket and creds usually lack
+    # CreateBucket — set false in production to skip the bucket_exists/
+    # make_bucket round-trip entirely.
+    s3_auto_create_bucket: bool = True
 
     jwt_secret: str = "change-me-in-production"
     jwt_expire_minutes: int = 720

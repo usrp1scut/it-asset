@@ -1,4 +1,6 @@
 import io
+import uuid
+from datetime import UTC, datetime
 
 import segno
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -6,6 +8,7 @@ from fastapi.responses import Response, StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
+from app.core.storage import get_object, put_object, remove_object
 from app.deps import get_db, require_roles
 from app.modules.assets import importer, service
 from app.modules.assets.schemas import (
@@ -16,6 +19,7 @@ from app.modules.assets.schemas import (
     AssetOut,
     AssetUpdate,
     AssignIn,
+    AttachmentOut,
     BindAccessoriesIn,
     ChangeLogOut,
     NoteIn,
@@ -131,6 +135,106 @@ def asset_qrcode(code: str, db: Session = Depends(get_db), _: User = Depends(sta
     buf = io.BytesIO()
     segno.make(asset.asset_code, error="m").save(buf, kind="svg", scale=4, border=2)
     return Response(content=buf.getvalue(), media_type="image/svg+xml")
+
+
+_ATTACH_TYPES = {
+    "image/png", "image/jpeg", "image/jpg", "image/gif", "image/webp",
+    "application/pdf",
+}
+_ATTACH_MAX = 10 * 1024 * 1024  # 10 MB
+
+
+def _safe_name(name: str | None) -> str:
+    base = (name or "file").replace("\\", "/").split("/")[-1]
+    cleaned = "".join(c for c in base if c.isalnum() or c in "._- ").strip()
+    return cleaned[:120] or "file"
+
+
+def _attachments(asset) -> list[dict]:
+    return [a for a in (asset.photo_urls or []) if isinstance(a, dict)]
+
+
+@router.get("/{code}/attachments", response_model=list[AttachmentOut])
+def list_attachments(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
+    asset = service.get_asset(db, code)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    return [AttachmentOut(**a) for a in _attachments(asset)]
+
+
+@router.post("/{code}/attachments", response_model=list[AttachmentOut],
+             status_code=status.HTTP_201_CREATED)
+async def upload_attachment(
+    code: str,
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    user: User = Depends(it_admin),
+):
+    asset = service.get_asset(db, code)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    ctype = (file.content_type or "").lower()
+    if ctype not in _ATTACH_TYPES:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"不支持的文件类型: {ctype}")
+    data = await file.read()
+    if len(data) > _ATTACH_MAX:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "文件超过 10MB 上限")
+    if not data:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "空文件")
+    name = _safe_name(file.filename)
+    key = f"assets/{asset.asset_code}/{uuid.uuid4().hex}-{name}"
+    put_object(key, data, ctype)
+    desc = {
+        "key": key,
+        "name": name,
+        "content_type": ctype,
+        "size": len(data),
+        "uploaded_at": datetime.now(UTC).isoformat(),
+    }
+    asset.photo_urls = [*_attachments(asset), desc]
+    db.commit()
+    db.refresh(asset)
+    write_audit(db, actor_user_id=user.id, action="asset.attachment.add",
+                resource_type="asset", resource_id=code)
+    return [AttachmentOut(**a) for a in _attachments(asset)]
+
+
+@router.get("/{code}/attachments/raw")
+def get_attachment(
+    code: str, key: str = Query(...), db: Session = Depends(get_db),
+    _: User = Depends(staff),
+):
+    asset = service.get_asset(db, code)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    match = next((a for a in _attachments(asset) if a["key"] == key), None)
+    if match is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found")
+    data = get_object(key)
+    return Response(
+        content=data,
+        media_type=match["content_type"],
+        headers={"Content-Disposition": f'inline; filename="{match["name"]}"'},
+    )
+
+
+@router.delete("/{code}/attachments")
+def delete_attachment(
+    code: str, key: str = Query(...), db: Session = Depends(get_db),
+    user: User = Depends(it_admin),
+):
+    asset = service.get_asset(db, code)
+    if asset is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    rest = [a for a in _attachments(asset) if a["key"] != key]
+    if len(rest) == len(_attachments(asset)):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "attachment not found")
+    remove_object(key)
+    asset.photo_urls = rest
+    db.commit()
+    write_audit(db, actor_user_id=user.id, action="asset.attachment.remove",
+                resource_type="asset", resource_id=code)
+    return {"ok": True}
 
 
 @router.put("/{code}", response_model=AssetOut)

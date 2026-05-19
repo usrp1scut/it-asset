@@ -6,6 +6,14 @@ from pydantic import BaseModel, ConfigDict
 from app.modules.assets.models import AssetClass, AssetStatus
 
 
+class AttachmentOut(BaseModel):
+    key: str
+    name: str
+    content_type: str
+    size: int
+    uploaded_at: str
+
+
 class AssetCreate(BaseModel):
     asset_class: AssetClass
     asset_type_id: int | None = None

@@ -71,6 +71,52 @@ def test_assign_backfills_owner_and_clears_review():
     assert r["owner_name"] is None              # no stale 责任人 after return
 
 
+def test_attachment_upload_list_fetch_delete():
+    import base64
+
+    admin = _login()
+    code = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+    ).json()["asset_code"]
+    png = base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAeImBZsAAAAASUVORK5CYII="
+    )
+
+    up = client.post(
+        f"/api/assets/{code}/attachments",
+        files={"file": ("photo.png", png, "image/png")},
+        headers=_h(admin),
+    )
+    assert up.status_code == 201, up.text
+    items = up.json()
+    assert len(items) == 1 and items[0]["name"] == "photo.png"
+    key = items[0]["key"]
+
+    lst = client.get(f"/api/assets/{code}/attachments", headers=_h(admin))
+    assert lst.status_code == 200 and len(lst.json()) == 1
+
+    raw = client.get(
+        f"/api/assets/{code}/attachments/raw", params={"key": key}, headers=_h(admin)
+    )
+    assert raw.status_code == 200
+    assert raw.headers["content-type"] == "image/png"
+    assert raw.content == png
+
+    bad = client.post(
+        f"/api/assets/{code}/attachments",
+        files={"file": ("x.exe", b"MZ", "application/octet-stream")},
+        headers=_h(admin),
+    )
+    assert bad.status_code == 400
+
+    d = client.request(
+        "DELETE", f"/api/assets/{code}/attachments",
+        params={"key": key}, headers=_h(admin),
+    )
+    assert d.status_code == 200
+    assert client.get(f"/api/assets/{code}/attachments", headers=_h(admin)).json() == []
+
+
 def test_sequential_codes_no_collision():
     admin = _login()
     codes = {
