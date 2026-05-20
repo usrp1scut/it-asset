@@ -82,3 +82,56 @@ def test_inspection_flow():
 
     detail = client.get(f"/api/inspections/{task['id']}", headers=h).json()
     assert detail["progress"]["ok"] >= 1
+    # detail items now include brand_model / owner_name / asset_status / location
+    assert any("brand_model" in it and "asset_status" in it for it in detail["items"])
+
+    # list endpoint shows the task with progress
+    lst = client.get("/api/inspections", headers=h).json()
+    assert any(t["id"] == task["id"] and t["progress"]["ok"] >= 1 for t in lst)
+
+
+def test_inspection_scopes_and_mismatches():
+    h = _admin()
+    # personal_in_use with no in-use assets → empty task is still valid
+    t1 = client.post(
+        "/api/inspections",
+        json={"name": "scope-personal_in_use", "scope_type": "personal_in_use"},
+        headers=h,
+    )
+    assert t1.status_code == 201 and t1.json()["scope_type"] == "personal_in_use"
+
+    # infrastructure scope
+    net = client.post(
+        "/api/assets", json={"asset_class": "infrastructure", "prefix": "NET"}, headers=h
+    ).json()
+    t2 = client.post(
+        "/api/inspections",
+        json={"name": "scope-infra", "scope_type": "infrastructure"},
+        headers=h,
+    ).json()
+    assert t2["scope_type"] == "infrastructure" and t2["item_count"] >= 1
+
+    # bad scope
+    bad = client.post(
+        "/api/inspections", json={"name": "x", "scope_type": "nonsense"}, headers=h
+    )
+    assert bad.status_code == 400
+
+    # by_location without location → 400
+    miss = client.post(
+        "/api/inspections", json={"name": "x", "scope_type": "by_location"}, headers=h
+    )
+    assert miss.status_code == 400
+
+    # mismatch flow
+    emp = client.post(
+        "/api/auth/dev-login", json={"email": f"m-{uuid.uuid4().hex[:6]}@c.com"}
+    ).json()
+    client.post(
+        f"/api/inspections/{t2['id']}/items/{net['asset_code']}/confirm",
+        json={"status": "mismatch", "remark": "序列号对不上"},
+        headers={"Authorization": f"Bearer {emp['token']}"},
+    )
+    mm = client.get(f"/api/inspections/{t2['id']}/mismatches", headers=h)
+    assert mm.status_code == 200
+    assert any(i["asset_code"] == net["asset_code"] and i["remark"] for i in mm.json())
