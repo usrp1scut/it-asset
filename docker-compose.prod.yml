@@ -1,0 +1,122 @@
+# Production / UAT compose.
+# Run with:  docker compose -f docker-compose.prod.yml --env-file .env -p it-asset-prod up -d --build
+#
+# Differences vs dev compose:
+#   - built images, no bind-mounted source, no --reload
+#   - backend entrypoint runs `alembic upgrade head` before serving
+#   - db / redis / minio NOT published to host (intra-network only)
+#   - frontend = built static served by nginx, which also reverse-proxies /api
+#   - restart policies + log size caps
+#
+# Intranet HTTP UAT phase: Lark 免登 服务端硬要求 https,所以登录走
+# /api/auth/dev-login(需 .env 里 APP_DEBUG=true)。接上 https 域名后
+# 把 APP_DEBUG 关掉,并把域名加进 Lark 可信域名 / 重定向 URL,免登恢复。
+
+x-backend-base: &backend-base
+  build:
+    context: ./backend
+    dockerfile: Dockerfile.prod
+  image: it-asset-backend:prod
+  env_file: .env
+  environment:
+    POSTGRES_HOST: db
+    REDIS_URL: redis://redis:6379/0
+  restart: unless-stopped
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-itasset}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-itasset}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-itasset}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: &log
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    logging: *log
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
+    volumes:
+      - miniodata:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *log
+
+  backend:
+    <<: *backend-base
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    # CMD from Dockerfile.prod handles migrate + serve.
+
+  worker:
+    <<: *backend-base
+    command: celery -A app.worker worker -B --loglevel=info
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  lark-ws:
+    <<: *backend-base
+    command: python -m app.lark.ws_client
+    depends_on:
+      db:
+        condition: service_healthy
+      backend:
+        condition: service_started
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.prod
+    image: it-asset-frontend:prod
+    restart: unless-stopped
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+    depends_on:
+      - backend
+    logging: *log
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:

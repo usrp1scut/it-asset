@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Deps first for layer caching; no [dev] extras in prod.
+COPY pyproject.toml ./
+RUN pip install --upgrade pip && pip install .
+
+COPY . .
+
+EXPOSE 8000
+# Migrate then serve. exec keeps uvicorn as PID 1 so SIGTERM goes through.
+CMD ["sh", "-c", "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000"]
