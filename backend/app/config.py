@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me-in-production"
     jwt_expire_minutes: int = 720
 
+    # First-run admin bootstrap. If both email + password are set and no user
+    # with that email exists yet, create one as it_admin on startup. Idempotent.
+    initial_admin_email: str = ""
+    initial_admin_password: str = ""
+    initial_admin_name: str = "管理员"
+
     lark_variant: Literal["feishu", "lark"] = "feishu"
     lark_app_id: str = ""
     lark_app_secret: str = ""

@@ -1,7 +1,35 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.modules.users.models import Department, User
+from app.config import get_settings
+from app.core.security import hash_password
+from app.modules.users.models import Department, Role, User, UserStatus
+
+
+def ensure_initial_admin(db: Session) -> bool:
+    """Idempotent first-run admin bootstrap from env (INITIAL_ADMIN_*).
+
+    Returns True iff a new admin row was created on this call. Safe to call
+    on every startup; later runs with the same email are no-ops.
+    """
+    s = get_settings()
+    if not (s.initial_admin_email and s.initial_admin_password):
+        return False
+    email = s.initial_admin_email.strip()
+    existing = db.scalar(select(User).where(User.email.ilike(email)))
+    if existing is not None:
+        return False
+    db.add(
+        User(
+            name=s.initial_admin_name or "管理员",
+            email=email,
+            role=Role.it_admin,
+            status=UserStatus.active,
+            password_hash=hash_password(s.initial_admin_password),
+        )
+    )
+    db.commit()
+    return True
 
 
 def upsert_user_from_lark(db: Session, profile: dict) -> User:

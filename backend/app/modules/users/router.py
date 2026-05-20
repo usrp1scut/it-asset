@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
-from app.core.security import create_access_token
+from app.core.security import create_access_token, hash_password, verify_password
 from app.deps import get_current_user, get_db
 from app.lark.client import LarkNotConfigured, get_lark_client
 from app.modules.users.models import Role, User
@@ -21,6 +21,16 @@ class DevLoginIn(BaseModel):
     email: str
     name: str | None = None
     role: Role = Role.employee
+
+
+class PasswordLoginIn(BaseModel):
+    email: str
+    password: str
+
+
+class PasswordChangeIn(BaseModel):
+    old_password: str
+    new_password: str
 
 
 @router.get("/lark/config")
@@ -44,6 +54,38 @@ async def lark_callback(body: LarkCallbackIn, db: Session = Depends(get_db)) -> 
     user = upsert_user_from_lark(db, profile)
     token = create_access_token(str(user.id), {"role": user.role})
     return LoginResult(token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/login", response_model=LoginResult)
+def password_login(body: PasswordLoginIn, db: Session = Depends(get_db)) -> LoginResult:
+    """Email + password login (the only path that works when APP_DEBUG=false)."""
+    email = body.email.strip().lower()
+    user = (
+        db.query(User)
+        .filter(User.email.is_not(None))
+        .filter(User.email.ilike(email))
+        .one_or_none()
+    )
+    if user is None or not verify_password(body.password, user.password_hash):
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "邮箱或密码错误")
+    if user.deleted_at is not None:
+        raise HTTPException(status.HTTP_401_UNAUTHORIZED, "账号已停用")
+    token = create_access_token(str(user.id), {"role": user.role})
+    return LoginResult(token=token, user=UserOut.model_validate(user))
+
+
+@router.post("/change-password", status_code=status.HTTP_204_NO_CONTENT)
+def change_password(
+    body: PasswordChangeIn,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> None:
+    if user.password_hash and not verify_password(body.old_password, user.password_hash):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "原密码不正确")
+    if len(body.new_password) < 8:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "新密码至少 8 位")
+    user.password_hash = hash_password(body.new_password)
+    db.commit()
 
 
 @router.post("/dev-login", response_model=LoginResult)

@@ -23,6 +23,59 @@ def test_dev_login_then_me():
     assert me.json()["permissions"] == ["employee"]
 
 
+def test_password_login_and_change_password():
+    from app.core.security import hash_password
+    from app.db import SessionLocal
+    from app.modules.users.models import Role, User, UserStatus
+
+    db = SessionLocal()
+    email = f"pwd-{uuid.uuid4().hex[:8]}@c.com"
+    try:
+        u = User(
+            name="测试", email=email, role=Role.it_admin, status=UserStatus.active,
+            password_hash=hash_password("Init#1234"),
+        )
+        db.add(u)
+        db.commit()
+        db.refresh(u)
+    finally:
+        db.close()
+
+    bad = client.post("/api/auth/login", json={"email": email, "password": "nope"})
+    assert bad.status_code == 401
+
+    ok = client.post("/api/auth/login", json={"email": email, "password": "Init#1234"})
+    assert ok.status_code == 200
+    token = ok.json()["token"]
+
+    short = client.post(
+        "/api/auth/change-password",
+        json={"old_password": "Init#1234", "new_password": "short"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert short.status_code == 400
+
+    wrong_old = client.post(
+        "/api/auth/change-password",
+        json={"old_password": "wrong", "new_password": "NewSecret!9"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert wrong_old.status_code == 400
+
+    changed = client.post(
+        "/api/auth/change-password",
+        json={"old_password": "Init#1234", "new_password": "NewSecret!9"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert changed.status_code == 204
+
+    # Old password no longer works; new one does.
+    r1 = client.post("/api/auth/login", json={"email": email, "password": "Init#1234"})
+    assert r1.status_code == 401
+    r2 = client.post("/api/auth/login", json={"email": email, "password": "NewSecret!9"})
+    assert r2.status_code == 200
+
+
 def test_invalid_token_rejected():
     r = client.get("/api/auth/me", headers={"Authorization": "Bearer not-a-jwt"})
     assert r.status_code == 401

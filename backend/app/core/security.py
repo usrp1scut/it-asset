@@ -1,10 +1,30 @@
 from datetime import UTC, datetime, timedelta
 
+import bcrypt
 from jose import JWTError, jwt
 
 from app.config import get_settings
 
 ALGORITHM = "HS256"
+
+
+def _enc(p: str) -> bytes:
+    # bcrypt caps at 72 bytes; truncate utf-8 bytes to avoid raising on long /
+    # multibyte passwords. Standard mitigation, consistent across hash & verify.
+    return p.encode("utf-8")[:72]
+
+
+def hash_password(plaintext: str) -> str:
+    return bcrypt.hashpw(_enc(plaintext), bcrypt.gensalt()).decode()
+
+
+def verify_password(plaintext: str, hashed: str | None) -> bool:
+    if not hashed:
+        return False
+    try:
+        return bcrypt.checkpw(_enc(plaintext), hashed.encode())
+    except ValueError:
+        return False
 
 
 def create_access_token(subject: str, extra: dict | None = None) -> str:
