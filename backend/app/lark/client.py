@@ -84,7 +84,12 @@ class LarkClient:
         )
 
     async def get_json(self, path: str, params: dict | None = None) -> dict:
-        """GET a Lark endpoint, return the `data` object (raises on non-zero code)."""
+        """GET a Lark endpoint, return the `data` object.
+
+        Surfaces Lark's own `code`/`msg` in the raised error — Lark uses HTTP
+        400 with a JSON body containing the real reason (missing scope, wrong
+        app type, etc.), which is what an operator actually needs to fix it.
+        """
         token = await self.get_tenant_access_token()
         async with httpx.AsyncClient(timeout=15) as client:
             resp = await client.get(
@@ -92,10 +97,15 @@ class LarkClient:
                 headers={"Authorization": f"Bearer {token}"},
                 params=params or {},
             )
-            resp.raise_for_status()
+        try:
             body = resp.json()
-        if body.get("code") not in (0, None):
-            raise RuntimeError(f"Lark {path} failed: {body.get('msg')}")
+        except ValueError:
+            body = {}
+        code, msg = body.get("code"), body.get("msg")
+        if resp.is_error or (code not in (0, None)):
+            raise RuntimeError(
+                f"Lark {path} HTTP {resp.status_code} code={code} msg={msg!r}"
+            )
         return body.get("data", {})
 
     async def get_paginated(self, path: str, params: dict) -> list[dict]:
