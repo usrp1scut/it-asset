@@ -27,7 +27,7 @@ export default function Topbar() {
         lineHeight: '56px',
       }}
     >
-      <Typography.Text strong>IT 资产管理</Typography.Text>
+      <Typography.Text strong>资产与耗材管理系统</Typography.Text>
       <Dropdown
         menu={{ items: [{ key: 'logout', label: '退出登录', onClick: logout }] }}
         placement="bottomRight"

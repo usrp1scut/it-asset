@@ -1,6 +1,6 @@
-# IT 资产与低值耗材管理系统
+# 资产与耗材管理系统
 
-基于 Lark/飞书的轻量 IT 资产 + 耗材库存管理系统。管理端 Web 后台 + 员工端 Lark H5。
+基于 Lark/飞书的轻量资产与耗材库存管理系统。管理端 Web 后台 + 员工端 Lark H5。
 
 > **设计与需求文档**(唯一基准 = PRD v0.2):
 > - 业务需求:[`design_handoff_it_asset/PRD.md`](design_handoff_it_asset/PRD.md)

@@ -159,7 +159,7 @@ export default function Login() {
     <div style={{ display: 'grid', placeItems: 'center', height: '100vh' }}>
       <Card style={{ width: 360 }}>
         <Typography.Title level={4} style={{ marginTop: 0 }}>
-          IT 资产管理 · 登录
+          资产与耗材管理系统 · 登录
         </Typography.Title>
         <Button block loading={larkBusy} onClick={larkLogin} style={{ marginBottom: 12 }}>
           使用 Lark 登录

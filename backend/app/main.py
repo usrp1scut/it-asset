@@ -15,7 +15,7 @@ from app.modules.users.router import router as auth_router
 settings = get_settings()
 
 app = FastAPI(
-    title="IT 资产与低值耗材管理系统",
+    title="资产与耗材管理系统",
     version="0.1.0",
     debug=settings.app_debug,
 )
