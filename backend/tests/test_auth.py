@@ -46,3 +46,54 @@ def test_user_search_picker():
     rows = hit.json()
     assert any(u["name"] == name for u in rows)
     assert all({"id", "name", "email", "department_name"} <= set(u) for u in rows)
+
+
+def _login(role: str = "it_admin") -> tuple[dict, dict]:
+    j = client.post(
+        "/api/auth/dev-login",
+        json={"email": f"{role}-{uuid.uuid4().hex[:8]}@c.com", "role": role},
+    ).json()
+    return {"Authorization": f"Bearer {j['token']}"}, j["user"]
+
+
+def test_role_change_requires_admin_and_guards():
+    admin_h, admin = _login("it_admin")
+    other_h, other = _login("employee")
+
+    # admin can list /manage and gets role field
+    rows = client.get(
+        "/api/users/manage", params={"q": other["email"]}, headers=admin_h,
+    ).json()
+    assert any(r["id"] == other["id"] and "role" in r for r in rows)
+    # non-admin cannot list, cannot PATCH (do this BEFORE we promote `other`)
+    assert client.get("/api/users/manage", headers=other_h).status_code == 403
+    forbidden = client.patch(
+        f"/api/users/{other['id']}/role",
+        json={"role": "employee"}, headers=other_h,
+    )
+    assert forbidden.status_code == 403
+
+    # cannot mint sys_admin via UI
+    bad = client.patch(
+        f"/api/users/{other['id']}/role",
+        json={"role": "sys_admin"}, headers=admin_h,
+    )
+    assert bad.status_code == 400
+    # missing user → 404
+    miss = client.patch(
+        "/api/users/999999/role", json={"role": "employee"}, headers=admin_h,
+    )
+    assert miss.status_code == 404
+    # cannot change self
+    self_chg = client.patch(
+        f"/api/users/{admin['id']}/role",
+        json={"role": "employee"}, headers=admin_h,
+    )
+    assert self_chg.status_code == 400 and "自己" in self_chg.json()["detail"]
+
+    # promote other → it_admin (last so it doesn't poison earlier role checks)
+    r = client.patch(
+        f"/api/users/{other['id']}/role",
+        json={"role": "it_admin"}, headers=admin_h,
+    )
+    assert r.status_code == 200 and r.json()["role"] == "it_admin"
