@@ -35,6 +35,7 @@ export default function Assets() {
   const [openCode, setOpenCode] = useState<string | null>(null)
   const [needsReview, setNeedsReview] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [form] = Form.useForm()
   const size = 20
   const qc = useQueryClient()
@@ -158,6 +159,29 @@ export default function Assets() {
           >
             导出
           </Button>
+          <Button
+            disabled={!selectedCodes.length}
+            onClick={async () => {
+              try {
+                const res = await api.post(
+                  '/assets/labels',
+                  { codes: selectedCodes },
+                  { responseType: 'blob' },
+                )
+                const url = URL.createObjectURL(res.data as Blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'asset-labels.pdf'
+                a.click()
+                URL.revokeObjectURL(url)
+              } catch (e) {
+                const err = e as { response?: { data?: { detail?: string } } }
+                message.error(err.response?.data?.detail ?? '生成 PDF 失败')
+              }
+            }}
+          >
+            打印标签{selectedCodes.length ? ` (${selectedCodes.length})` : ''}
+          </Button>
         </Space>
       </div>
       <Tabs
@@ -194,11 +218,16 @@ export default function Assets() {
         </Tag.CheckableTag>
       </Space>
       <Table<Asset>
-        rowKey="id"
+        rowKey="asset_code"
         loading={isLoading}
         columns={columns}
         dataSource={data?.items ?? []}
         onRow={(r) => ({ onClick: () => setOpenCode(r.asset_code), style: { cursor: 'pointer' } })}
+        rowSelection={{
+          selectedRowKeys: selectedCodes,
+          preserveSelectedRowKeys: true,
+          onChange: (keys) => setSelectedCodes(keys as string[]),
+        }}
         pagination={{
           current: page,
           pageSize: size,

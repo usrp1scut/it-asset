@@ -117,6 +117,30 @@ def test_attachment_upload_list_fetch_delete():
     assert client.get(f"/api/assets/{code}/attachments", headers=_h(admin)).json() == []
 
 
+def test_labels_pdf_generation():
+    admin = _login()
+    codes = [
+        client.post(
+            "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+        ).json()["asset_code"]
+        for _ in range(3)
+    ]
+
+    r = client.post("/api/assets/labels", json={"codes": codes}, headers=_h(admin))
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF") and len(r.content) > 1000
+
+    assert client.post(
+        "/api/assets/labels", json={"codes": []}, headers=_h(admin)
+    ).status_code == 400
+
+    miss = client.post(
+        "/api/assets/labels", json={"codes": ["PC-9999"]}, headers=_h(admin)
+    )
+    assert miss.status_code == 404
+
+
 def test_sequential_codes_no_collision():
     admin = _login()
     codes = {

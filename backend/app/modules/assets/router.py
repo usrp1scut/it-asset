@@ -5,12 +5,15 @@ from datetime import UTC, datetime
 import segno
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response, StreamingResponse
+from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.core.storage import get_object, put_object, remove_object
 from app.deps import get_db, require_roles
-from app.modules.assets import importer, service
+from app.modules.assets import importer, labels, service
+from app.modules.assets.models import Asset
 from app.modules.assets.schemas import (
     AccessoryOut,
     AssetCreate,
@@ -104,6 +107,36 @@ def export_assets(db: Session = Depends(get_db), _: User = Depends(it_admin)):
         iter([data]),
         media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         headers={"Content-Disposition": "attachment; filename=assets.xlsx"},
+    )
+
+
+class LabelsIn(BaseModel):
+    codes: list[str]
+
+
+@router.post("/labels")
+def print_labels(
+    body: LabelsIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
+):
+    """A4 PDF with QR + asset_code, 32 labels/page (Phase 2 §7.7)."""
+    codes = [c.strip() for c in body.codes if c and c.strip()]
+    if not codes:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "请至少选择一个资产")
+    if len(codes) > 500:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "单次最多 500 个")
+    found = {a.asset_code for a in db.scalars(select(Asset).where(Asset.asset_code.in_(codes)))}
+    missing = [c for c in codes if c not in found]
+    if missing:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND, f"以下资产编号不存在: {', '.join(missing[:5])}"
+        )
+    pdf = labels.render_labels_pdf(codes)
+    write_audit(db, actor_user_id=user.id, action="asset.labels.print",
+                resource_type="asset", payload={"count": len(codes)})
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="asset-labels.pdf"'},
     )
 
 
