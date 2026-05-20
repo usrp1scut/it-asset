@@ -150,3 +150,16 @@ def test_role_change_requires_admin_and_guards():
         json={"role": "it_admin"}, headers=admin_h,
     )
     assert r.status_code == 200 and r.json()["role"] == "it_admin"
+
+
+def test_users_sync_endpoint():
+    admin_h, _ = _login("it_admin")
+    other_h, _ = _login("employee")
+
+    assert client.post("/api/users/sync", headers=other_h).status_code == 403
+
+    r = client.post("/api/users/sync", headers=admin_h)
+    assert r.status_code == 200
+    # No Lark creds in tests → degrades cleanly, never crashes.
+    body = r.json()
+    assert "skipped" in body or "scope_users" in body
