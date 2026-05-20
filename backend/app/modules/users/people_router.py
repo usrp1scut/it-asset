@@ -46,9 +46,14 @@ async def sync_contacts(
     """Manual trigger of the same daily contact sync (scope-driven Lark pull).
 
     Returns the sync summary verbatim so the admin can see scope_users /
-    users / departments straight away.
+    users / departments straight away. Lark errors are turned into 502 with
+    the Lark `msg` in detail (typical reasons: missing scope, scope not yet
+    approved, app's 可用范围 too narrow).
     """
-    summary = await sync_directory(db)
+    try:
+        summary = await sync_directory(db)
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     write_audit(db, actor_user_id=user.id, action="users.sync",
                 resource_type="user", payload=summary)
     return summary
