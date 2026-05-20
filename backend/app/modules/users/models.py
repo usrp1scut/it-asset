@@ -52,6 +52,8 @@ class User(Base):
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
     manager_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
 
+    # bcrypt hash. Null for Lark-only users; required for password login.
+    password_hash: Mapped[str | None] = mapped_column(String(255))
     role: Mapped[Role] = mapped_column(Enum(Role, name="user_role"), default=Role.employee)
     status: Mapped[UserStatus] = mapped_column(
         Enum(UserStatus, name="user_status"), default=UserStatus.active

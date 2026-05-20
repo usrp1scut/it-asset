@@ -2,7 +2,11 @@
 
 针对**内网服务器、IP + HTTP** 的测试部署形态。前置:目标机器装好 Docker 和 compose v2,能 `git pull` 本仓库,内网用户能通过 IP 访问该机器的 `HTTP_PORT`(默认 8080)。
 
-> 已知前提:Lark 免登服务端硬要求 https。本部署用 IP+HTTP,UAT 期间登录走 `dev-login`(输邮箱)。等接入 https 域名后,关掉 `APP_DEBUG`、把域名加进 Lark 后台 可信域名 / 重定向 URL,免登自动恢复——见末段「升级到 https」。
+> 登录方式:
+> - **密码登录**:`.env` 里设 `INITIAL_ADMIN_EMAIL` + `INITIAL_ADMIN_PASSWORD`,首次启动后端会自动建出这个 IT 管理员(幂等)。
+> - **Lark 免登**:内网 HTTP 也可用——Lark 客户端能访问该 IP、且 Lark 开发者后台「重定向 URL」配为 `http://<IP>:<PORT>/login`(完整路径精确匹配)即可。需在 `.env` 填齐 `LARK_APP_ID/SECRET` 等。
+>
+> **生产 `.env` 中 `APP_DEBUG` 必须 `false`** —— `true` 会重新打开 `/api/auth/dev-login` 那条"任填邮箱即登录"的调试路径。
 
 ---
 
@@ -36,15 +40,20 @@ docker compose -p it-asset-prod ps
 docker compose -p it-asset-prod logs -f backend frontend
 ```
 
-访问 `http://<服务器内网IP>:<HTTP_PORT>/`(默认 `http://x.x.x.x:8080/`)。登录页输邮箱,角色默认 employee;首个 IT 管理员可用接口直接造:
+访问 `http://<服务器内网IP>:<HTTP_PORT>/`(默认 `http://x.x.x.x:8080/`)。
+
+登录页输入 `.env` 里设的 `INITIAL_ADMIN_EMAIL` + `INITIAL_ADMIN_PASSWORD` 即可,该账号是 IT 管理员。**首次登录后立即改密码**(后续可通过 `POST /api/auth/change-password` 或后续提供的 UI 修改)。
 
 ```bash
-curl -X POST http://<IP>:<PORT>/api/auth/dev-login \
-  -H 'Content-Type: application/json' \
-  -d '{"email":"admin@yourco.com","name":"管理员","role":"it_admin"}'
+# 改密码示例(也可在前端改)
+TOKEN=$(curl -s -XPOST http://<IP>:<PORT>/api/auth/login -H 'Content-Type: application/json' \
+  -d '{"email":"<EMAIL>","password":"<INITIAL>"}' | python3 -c "import sys,json;print(json.load(sys.stdin)['token'])")
+curl -XPOST http://<IP>:<PORT>/api/auth/change-password \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"old_password":"<INITIAL>","new_password":"<新密码,至少 8 位>"}'
 ```
 
-返回的 token 可手动塞进浏览器 localStorage `it_asset_token`,或后续从登录页用同邮箱登录(已存在则复用账号)。
+其他员工通过 Lark 免登(若已配)或由管理员在「用户管理」页授予角色后再登录。
 
 ## 2. (可选)灌入 demo 演示数据
 
@@ -94,17 +103,17 @@ docker run --rm -v it-asset-prod_miniodata:/v -v $PWD:/out alpine \
 
 或在 Postgres 容器内用 `pg_dump`,任选其一。
 
-## 6. 升级到 https(免登恢复)
+## 6. Lark 免登配置(内网 HTTP 同样适用)
 
-加 https 后,Lark 免登可用,可关 `dev-login`。最小改动:
+填齐 `.env` 里的 `LARK_APP_ID/SECRET`,然后到 Lark 开发者后台(对应 variant):
 
-1. 在 `nginx`(本 compose 内置那个)前面再放一层反向代理:**Caddy** 自动签证书最省事(只要域名 A 记录到该服务器、80/443 可达),或用你们已有的 nginx + 证书。
-2. `.env` 中 `APP_DEBUG=false`、补齐 `LARK_APP_ID` / `LARK_APP_SECRET` / `LARK_VERIFICATION_TOKEN` / `LARK_ENCRYPT_KEY`。
-3. Lark 开发者后台(对应 variant):
-   - 网页能力 → 桌面端主页:`https://<your-domain>/login`
-   - 安全设置 → H5 可信域名:`https://<your-domain>`(域名,不带路径/斜杠)
-   - 安全设置 → 重定向 URL:`https://<your-domain>/login`(**完整路径精确匹配**,这是踩过的坑)
-4. 完全退出 Lark 客户端重开,从工作台应用入口进。
+- 网页能力 → 桌面端主页:`http://<内网IP>:<HTTP_PORT>/login`
+- 安全设置 → H5 可信域名:`http://<内网IP>:<HTTP_PORT>`(只到端口,不带路径/斜杠)
+- 安全设置 → 重定向 URL:`http://<内网IP>:<HTTP_PORT>/login`(**完整路径精确匹配**,这是踩过的坑)
+
+完全退出 Lark 客户端重开,从工作台应用入口进。改完上面三个字段任意一个都要重启客户端。
+
+> 如果将来接入 https(对外或希望统一加密),在本 compose 前面再叠一层反向代理(Caddy 自动签证书最省事),然后把上面三个 URL 改成 https 域名版本即可——其余不变。
 
 ## 7. 故障排查
 
@@ -112,6 +121,6 @@ docker run --rm -v it-asset-prod_miniodata:/v -v $PWD:/out alpine \
 |---|---|
 | 浏览器打不开 | `docker compose -p it-asset-prod ps` 看 `frontend` 是否 `Up`;`curl -I http://localhost:${HTTP_PORT}` 在服务器本机自检;防火墙是否开了端口 |
 | 页面打开但 `/api` 404 | 看 `backend` 日志、`alembic upgrade head` 是否成功 |
-| 登录失败 | 确认 `APP_DEBUG=true`(无 https 阶段);后端日志看 401/500 |
+| 登录失败 | 确认 `INITIAL_ADMIN_EMAIL/PASSWORD` 设了;首次启动后端日志会显示是否新建了 admin;后端 401 看密码、500 看异常 |
 | 附件上传 413 | nginx `client_max_body_size` 已设 16M,超大文件先压缩 |
 | `worker` / `lark-ws` 反复重启 | `docker compose -p it-asset-prod logs lark-ws` 看是不是 `LARK_*` 凭据空 |

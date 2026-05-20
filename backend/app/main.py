@@ -1,9 +1,11 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.config import get_settings
-from app.db import engine
+from app.db import SessionLocal, engine
 from app.modules.approvals.router import router as approvals_router
 from app.modules.assets.router import router as assets_router
 from app.modules.dashboard.router import router as dashboard_router
@@ -11,13 +13,27 @@ from app.modules.inspections.router import router as inspections_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.users.people_router import router as users_router
 from app.modules.users.router import router as auth_router
+from app.modules.users.service import ensure_initial_admin
 
 settings = get_settings()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    # First-run admin bootstrap from env (idempotent).
+    db = SessionLocal()
+    try:
+        ensure_initial_admin(db)
+    finally:
+        db.close()
+    yield
+
 
 app = FastAPI(
     title="资产与耗材管理系统",
     version="0.1.0",
     debug=settings.app_debug,
+    lifespan=lifespan,
 )
 
 app.add_middleware(

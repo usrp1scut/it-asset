@@ -23,6 +23,7 @@ dependencies = [
     "segno>=1.6",
     "minio>=7.2",
     "pypinyin>=0.53",
+    "bcrypt>=4.1",
 ]
 
 [project.optional-dependencies]

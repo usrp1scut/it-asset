@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Alert, Button, Card, Divider, Input, Typography, message } from 'antd'
+import { Button, Card, Divider, Input, Typography, message } from 'antd'
 import { api } from '../api/client'
 import { useAuth } from '../stores/auth'
 
@@ -61,6 +61,7 @@ const inLarkClient = /Lark|Feishu/i.test(navigator.userAgent)
 
 export default function Login() {
   const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [larkBusy, setLarkBusy] = useState(false)
   const [diag, setDiag] = useState('收集中…')
@@ -143,13 +144,15 @@ export default function Login() {
     if (inLarkClient) larkLogin()
   }, [larkLogin])
 
-  const devSubmit = async () => {
+  const passwordSubmit = async () => {
     setLoading(true)
     try {
-      const { data } = await api.post('/auth/dev-login', { email })
+      const { data } = await api.post('/auth/login', { email, password })
       finishLogin(data.token, data.user)
-    } catch {
-      message.error('登录失败,请检查后端是否在 APP_DEBUG 模式')
+    } catch (err) {
+      const detail = (err as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail
+      message.error(detail ?? '登录失败')
     } finally {
       setLoading(false)
     }
@@ -165,23 +168,28 @@ export default function Login() {
           使用 Lark 登录
         </Button>
         <Divider plain style={{ color: 'var(--text-3)', fontSize: 12 }}>
-          或开发登录
+          或密码登录
         </Divider>
-        <Alert
-          type="info"
-          showIcon
-          style={{ marginBottom: 16 }}
-          message="开发登录"
-          description="在 Lark 工作台内打开会自动免登;此表单仅用于浏览器联调。"
-        />
         <Input
           placeholder="邮箱"
           value={email}
           onChange={(e) => setEmail(e.target.value)}
-          onPressEnter={devSubmit}
           style={{ marginBottom: 12 }}
         />
-        <Button type="primary" block loading={loading} disabled={!email} onClick={devSubmit}>
+        <Input.Password
+          placeholder="密码"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          onPressEnter={passwordSubmit}
+          style={{ marginBottom: 12 }}
+        />
+        <Button
+          type="primary"
+          block
+          loading={loading}
+          disabled={!email || !password}
+          onClick={passwordSubmit}
+        >
           登录
         </Button>
         {diagVisible && (
