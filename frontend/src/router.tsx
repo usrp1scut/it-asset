@@ -7,6 +7,7 @@ import Assets from './pages/Assets'
 import Inventory from './pages/Inventory'
 import AuditLogs from './pages/AuditLogs'
 import Approvals from './pages/Approvals'
+import Users from './pages/Users'
 import MobileApp from './pages/mobile/MobileApp'
 
 export const router = createBrowserRouter([
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
           { path: '/assets', element: <Assets /> },
           { path: '/inventory', element: <Inventory /> },
           { path: '/approvals', element: <Approvals /> },
+          { path: '/users', element: <Users /> },
           { path: '/logs', element: <AuditLogs /> },
         ],
       },

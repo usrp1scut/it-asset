@@ -26,6 +26,23 @@ class UserPickOut(BaseModel):
     department_name: str | None = None
 
 
+class UserManageOut(BaseModel):
+    """Richer shape for the user-management page."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    email: str | None
+    department_name: str | None = None
+    role: Role
+    status: UserStatus
+
+
+class RoleChangeIn(BaseModel):
+    role: Role
+
+
 class LoginResult(BaseModel):
     token: str
     user: UserOut
