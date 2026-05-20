@@ -52,6 +52,24 @@ export default function Users() {
       message.error(e.response?.data?.detail ?? '更新失败'),
   })
 
+  const syncMut = useMutation({
+    mutationFn: async () => (await api.post('/users/sync')).data,
+    onSuccess: (s: Record<string, unknown>) => {
+      if (s.skipped) {
+        message.warning(`同步跳过:${s.skipped}(请先在 .env 配 LARK_APP_ID / SECRET)`)
+      } else {
+        message.success(
+          `同步完成:授权范围 ${s.scope_users ?? 0} 人 / ${s.scope_depts ?? 0} 部门` +
+            `,本次写入 ${s.users ?? 0} 人 / ${s.departments ?? 0} 部门`,
+          6,
+        )
+      }
+      qc.invalidateQueries({ queryKey: ['users-manage'] })
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '同步失败'),
+  })
+
   const openEdit = (row: UserRow) => {
     setEditing(row)
     setNextRole(ASSIGNABLE.includes(row.role) ? row.role : 'employee')
@@ -113,6 +131,9 @@ export default function Users() {
             style={{ width: 260 }}
             onSearch={setQ}
           />
+          <Button loading={syncMut.isPending} onClick={() => syncMut.mutate()}>
+            立即同步通讯录
+          </Button>
         </Space>
       </div>
       <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 12 }}>

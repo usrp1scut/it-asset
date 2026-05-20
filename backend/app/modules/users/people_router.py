@@ -6,6 +6,7 @@ from app.core.audit import write_audit
 from app.deps import get_db, require_roles
 from app.modules.users.models import Department, Role, User, UserStatus
 from app.modules.users.schemas import RoleChangeIn, UserManageOut, UserPickOut
+from app.modules.users.service import sync_directory
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -36,6 +37,21 @@ def search_users(
         o.department_name = dept.get(u.department_id)
         out.append(o)
     return out
+
+
+@router.post("/sync")
+async def sync_contacts(
+    db: Session = Depends(get_db), user: User = Depends(admin)
+):
+    """Manual trigger of the same daily contact sync (scope-driven Lark pull).
+
+    Returns the sync summary verbatim so the admin can see scope_users /
+    users / departments straight away.
+    """
+    summary = await sync_directory(db)
+    write_audit(db, actor_user_id=user.id, action="users.sync",
+                resource_type="user", payload=summary)
+    return summary
 
 
 @router.get("/manage", response_model=list[UserManageOut])
