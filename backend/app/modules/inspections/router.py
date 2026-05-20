@@ -19,8 +19,16 @@ router = APIRouter(prefix="/api/inspections", tags=["inspections"])
 it_admin = require_roles(Role.it_admin)
 
 
+_SCOPES = {
+    "personal_in_use", "personal_all", "infrastructure", "by_location", "by_department",
+}
+
+
 class CreateIn(BaseModel):
     name: str
+    scope_type: str = "personal_in_use"
+    location: str | None = None
+    department_id: int | None = None
 
 
 class ConfirmIn(BaseModel):
@@ -28,25 +36,112 @@ class ConfirmIn(BaseModel):
     remark: str | None = None
 
 
-@router.post("", status_code=status.HTTP_201_CREATED)
-def create_task(body: CreateIn, db: Session = Depends(get_db), user: User = Depends(it_admin)):
-    """Snapshot every personal in-use asset into a stocktake task."""
-    task = InspectionTask(name=body.name, created_by=user.id)
-    db.add(task)
-    db.flush()
-    assets = db.scalars(
-        select(Asset).where(
-            Asset.deleted_at.is_(None),
+def _scope_query(body: CreateIn):
+    if body.scope_type not in _SCOPES:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"未知 scope_type: {body.scope_type}"
+        )
+    stmt = select(Asset).where(Asset.deleted_at.is_(None))
+    if body.scope_type == "personal_in_use":
+        stmt = stmt.where(
             Asset.asset_class == AssetClass.personal,
             Asset.status == AssetStatus.in_use,
         )
-    ).all()
+    elif body.scope_type == "personal_all":
+        stmt = stmt.where(
+            Asset.asset_class == AssetClass.personal,
+            Asset.status != AssetStatus.scrapped,
+        )
+    elif body.scope_type == "infrastructure":
+        stmt = stmt.where(Asset.asset_class == AssetClass.infrastructure)
+    elif body.scope_type == "by_location":
+        if not body.location:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "by_location 需要 location")
+        stmt = stmt.where(Asset.location == body.location)
+    elif body.scope_type == "by_department":
+        if not body.department_id:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "by_department 需要 department_id"
+            )
+        stmt = stmt.where(Asset.department_id == body.department_id)
+    return stmt
+
+
+@router.post("", status_code=status.HTTP_201_CREATED)
+def create_task(body: CreateIn, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Snapshot assets matching the chosen scope into a stocktake task."""
+    task = InspectionTask(
+        name=body.name, scope_type=body.scope_type, created_by=user.id
+    )
+    db.add(task)
+    db.flush()
+    assets = db.scalars(_scope_query(body)).all()
     for a in assets:
         db.add(
             InspectionItem(task_id=task.id, asset_id=a.id, expected_owner_id=a.owner_user_id)
         )
     db.commit()
-    return {"id": task.id, "name": task.name, "item_count": len(assets)}
+    return {
+        "id": task.id, "name": task.name, "scope_type": task.scope_type,
+        "item_count": len(assets),
+    }
+
+
+def _progress(db: Session, task_id: int) -> dict[str, int]:
+    agg = dict(
+        db.execute(
+            select(InspectionItem.confirm_status, func.count())
+            .where(InspectionItem.task_id == task_id)
+            .group_by(InspectionItem.confirm_status)
+        ).all()
+    )
+    return {s.value: int(agg.get(s, 0)) for s in ConfirmStatus}
+
+
+@router.get("")
+def list_tasks(db: Session = Depends(get_db), _: User = Depends(it_admin)):
+    rows = db.scalars(
+        select(InspectionTask).order_by(InspectionTask.started_at.desc())
+    ).all()
+    return [
+        {
+            "id": t.id,
+            "name": t.name,
+            "scope_type": t.scope_type,
+            "status": t.status.value,
+            "started_at": t.started_at.isoformat() if t.started_at else None,
+            "ended_at": t.ended_at.isoformat() if t.ended_at else None,
+            "progress": _progress(db, t.id),
+        }
+        for t in rows
+    ]
+
+
+def _item_rows(db: Session, task_id: int, only_mismatch: bool = False):
+    stmt = (
+        select(
+            InspectionItem,
+            Asset.asset_code, Asset.brand_model, Asset.owner_name, Asset.status,
+            Asset.location,
+        )
+        .join(Asset, Asset.id == InspectionItem.asset_id)
+        .where(InspectionItem.task_id == task_id)
+    )
+    if only_mismatch:
+        stmt = stmt.where(InspectionItem.confirm_status == ConfirmStatus.mismatch)
+    out = []
+    for it, code, brand, owner, st, loc in db.execute(stmt).all():
+        out.append({
+            "asset_code": code,
+            "brand_model": brand,
+            "owner_name": owner,
+            "asset_status": st.value if st else None,
+            "location": loc,
+            "confirm_status": it.confirm_status.value,
+            "expected_owner_id": it.expected_owner_id,
+            "remark": it.remark,
+        })
+    return out
 
 
 @router.get("/{task_id}")
@@ -54,33 +149,26 @@ def get_task(task_id: int, db: Session = Depends(get_db), _: User = Depends(it_a
     task = db.get(InspectionTask, task_id)
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found")
-    items = db.execute(
-        select(InspectionItem, Asset.asset_code)
-        .join(Asset, Asset.id == InspectionItem.asset_id)
-        .where(InspectionItem.task_id == task_id)
-    ).all()
-    by = dict(
-        db.execute(
-            select(InspectionItem.confirm_status, func.count())
-            .where(InspectionItem.task_id == task_id)
-            .group_by(InspectionItem.confirm_status)
-        ).all()
-    )
     return {
         "id": task.id,
         "name": task.name,
+        "scope_type": task.scope_type,
         "status": task.status.value,
-        "progress": {s.value: int(by.get(s, 0)) for s in ConfirmStatus},
-        "items": [
-            {
-                "asset_code": code,
-                "confirm_status": it.confirm_status.value,
-                "expected_owner_id": it.expected_owner_id,
-                "remark": it.remark,
-            }
-            for it, code in items
-        ],
+        "started_at": task.started_at.isoformat() if task.started_at else None,
+        "ended_at": task.ended_at.isoformat() if task.ended_at else None,
+        "progress": _progress(db, task_id),
+        "items": _item_rows(db, task_id),
     }
+
+
+@router.get("/{task_id}/mismatches")
+def get_mismatches(
+    task_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)
+):
+    task = db.get(InspectionTask, task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found")
+    return _item_rows(db, task_id, only_mismatch=True)
 
 
 @router.post("/{task_id}/items/{asset_code}/confirm")

@@ -8,6 +8,7 @@ const ITEMS = [
   { key: '/assets', label: '资产台账' },
   { key: '/inventory', label: '库存物品' },
   { key: '/approvals', label: '审批中心' },
+  { key: '/inspections', label: '资产盘点', adminOnly: true },
   { key: '/users', label: '用户管理', adminOnly: true },
   { key: '/logs', label: '操作日志' },
 ]
