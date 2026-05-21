@@ -17,6 +17,7 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import CameraScanner from '../features/scanner/CameraScanner'
 
 type ConfirmStatus = 'pending' | 'ok' | 'mismatch'
 type InspStatus = 'open' | 'closed'
@@ -67,6 +68,7 @@ export default function Inspections() {
   const [createForm] = Form.useForm()
   const [scanCode, setScanCode] = useState('')
   const [scanRemark, setScanRemark] = useState('')
+  const [scannerOpen, setScannerOpen] = useState(false)
   const [tab, setTab] = useState<'all' | ConfirmStatus>('all')
 
   const { data: tasks } = useQuery<TaskListRow[]>({
@@ -251,6 +253,7 @@ export default function Inspections() {
                 }
                 style={{ flex: 1 }}
               />
+              <Button onClick={() => setScannerOpen(true)}>扫码</Button>
               <Input
                 placeholder="差异备注(标差异时必填)"
                 value={scanRemark}
@@ -339,6 +342,15 @@ export default function Inspections() {
           说明:扫码/输入编号 → 选 OK 或差异;差异行可在「资产台账」打开抽屉做转移/报修等处置。
         </span>
       </Space>
+
+      <CameraScanner
+        open={scannerOpen}
+        onClose={() => setScannerOpen(false)}
+        onCode={(c) => {
+          setScanCode(c)
+          setScannerOpen(false)
+        }}
+      />
     </div>
   )
 }
