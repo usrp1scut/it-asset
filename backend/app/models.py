@@ -14,6 +14,9 @@ from app.modules.assets.models import (
     AssetStatus,
     AssetType,
     AuditLog,
+    DispositionMethod,
+    ScrapRequest,
+    ScrapRequestStatus,
 )
 from app.modules.inspections.models import (
     ConfirmStatus,
@@ -52,6 +55,9 @@ __all__ = [
     "AssetStatus",
     "AssetType",
     "AuditLog",
+    "DispositionMethod",
+    "ScrapRequest",
+    "ScrapRequestStatus",
     "EmployeeItemIssue",
     "InventoryLocation",
     "InventoryOrder",
