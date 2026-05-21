@@ -30,6 +30,8 @@ export default function AssetDrawer({
   const qc = useQueryClient()
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignUser, setAssignUser] = useState<number | null>(null)
+  const [scrapOpen, setScrapOpen] = useState(false)
+  const [scrapReason, setScrapReason] = useState('')
   const [editOpen, setEditOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferUser, setTransferUser] = useState<number | null>(null)
@@ -60,6 +62,21 @@ export default function AssetDrawer({
     },
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '操作失败'),
+  })
+
+  const scrapReqMut = useMutation({
+    mutationFn: async (reason: string) =>
+      (await api.post(`/assets/${code}/scrap-request`, { reason })).data,
+    onSuccess: () => {
+      message.success('已提交报废申请,等待另一管理员审批')
+      qc.invalidateQueries({ queryKey: ['asset', code] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      qc.invalidateQueries({ queryKey: ['scrap-requests'] })
+      setScrapOpen(false)
+      setScrapReason('')
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '提交失败'),
   })
 
   const editMut = useMutation({
@@ -124,8 +141,8 @@ export default function AssetDrawer({
         <Button onClick={() => act.mutate({ path: 'return' })}>维修完成 · 归还入库</Button>
       )}
       {a.status !== 'scrapped' && (
-        <Button danger onClick={() => act.mutate({ path: 'scrap' })}>
-          申请报废
+        <Button danger disabled={a.scrap_candidate} onClick={() => setScrapOpen(true)}>
+          {a.scrap_candidate ? '报废申请进行中' : '申请报废'}
         </Button>
       )}
       </div>
@@ -312,6 +329,32 @@ export default function AssetDrawer({
           >
             <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>选择接收员工</div>
             <EmployeeSelect value={transferUser} onChange={setTransferUser} placeholder="搜索姓名 / 邮箱选择接收员工" />
+          </Modal>
+
+          <Modal
+            open={scrapOpen}
+            title={`申请报废 · ${a.asset_code}`}
+            onCancel={() => setScrapOpen(false)}
+            onOk={() =>
+              scrapReason.trim()
+                ? scrapReqMut.mutate(scrapReason.trim())
+                : message.warning('请填写报废原因')
+            }
+            confirmLoading={scrapReqMut.isPending}
+            okText="提交申请"
+            cancelText="取消"
+          >
+            <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>报废原因</div>
+            <Input.TextArea
+              rows={3}
+              value={scrapReason}
+              onChange={(e) => setScrapReason(e.target.value)}
+              placeholder="如:硬盘损坏无法点亮;已超 10 年;摔机屏幕碎裂等"
+            />
+            <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text-3)' }}>
+              提交后,需另一位 IT/财务管理员在「资产报废」页批准与录入处置方式,
+              资产才会真正变为已报废。
+            </div>
           </Modal>
 
           <Modal

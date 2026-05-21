@@ -159,3 +159,56 @@ class AuditLog(Base):
     ip: Mapped[str | None] = mapped_column(String(64))
     ua: Mapped[str | None] = mapped_column(String(512))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ScrapRequestStatus(enum.StrEnum):
+    pending = "pending"
+    approved = "approved"
+    rejected = "rejected"
+    disposed = "disposed"
+
+
+class DispositionMethod(enum.StrEnum):
+    recycle = "recycle"      # 回收
+    resale = "resale"        # 转售
+    writeoff = "writeoff"    # 报销/直接核销
+    exchange = "exchange"    # 换货抵扣
+    other = "other"
+
+
+class ScrapRequest(Base):
+    """报废处置工作流(Phase 2):申请 → 审批 → 处置 → 资产 scrapped。
+
+    资产状态在 disposed 阶段才真正翻 scrapped;之前都停留在原态,
+    `Asset.scrap_candidate=True` 标识"有进行中的报废申请"。
+    """
+
+    __tablename__ = "scrap_requests"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    proposer_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str] = mapped_column(Text)
+    status: Mapped[ScrapRequestStatus] = mapped_column(
+        Enum(ScrapRequestStatus, name="scrap_request_status"),
+        default=ScrapRequestStatus.pending,
+    )
+
+    approver_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    approve_remark: Mapped[str | None] = mapped_column(Text)
+
+    disposition_method: Mapped[DispositionMethod | None] = mapped_column(
+        Enum(DispositionMethod, name="disposition_method")
+    )
+    residual_value: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    disposed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    disposed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    disposal_remark: Mapped[str | None] = mapped_column(Text)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

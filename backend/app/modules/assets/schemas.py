@@ -3,7 +3,51 @@ from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
-from app.modules.assets.models import AssetClass, AssetStatus
+from app.modules.assets.models import (
+    AssetClass,
+    AssetStatus,
+    DispositionMethod,
+    ScrapRequestStatus,
+)
+
+
+class ScrapRequestSubmitIn(BaseModel):
+    reason: str
+
+
+class ScrapRequestApproveIn(BaseModel):
+    remark: str | None = None
+
+
+class ScrapRequestRejectIn(BaseModel):
+    remark: str
+
+
+class ScrapRequestDisposeIn(BaseModel):
+    disposition_method: DispositionMethod
+    residual_value: Decimal | None = None
+    remark: str | None = None
+
+
+class ScrapRequestOut(BaseModel):
+    id: int
+    asset_id: int
+    asset_code: str
+    brand_model: str | None
+    proposer_id: int
+    proposer_name: str | None
+    reason: str
+    status: ScrapRequestStatus
+    approver_id: int | None
+    approver_name: str | None
+    approved_at: datetime | None
+    approve_remark: str | None
+    disposition_method: DispositionMethod | None
+    residual_value: Decimal | None
+    disposed_by: int | None
+    disposed_at: datetime | None
+    disposal_remark: str | None
+    created_at: datetime
 
 
 class AttachmentOut(BaseModel):
