@@ -31,6 +31,21 @@ def test_create_generates_code_and_lists():
     assert any(i["asset_code"] == code for i in lst.json()["items"])
 
 
+def test_qr_payload_deep_link_when_configured():
+    from app.config import get_settings
+    from app.modules.assets.service import qr_payload
+
+    s = get_settings()
+    old = s.public_base_url
+    try:
+        s.public_base_url = ""
+        assert qr_payload("PC-0001") == "PC-0001"
+        s.public_base_url = "https://assets.example.com/"  # trailing slash trimmed
+        assert qr_payload("PC-0001") == "https://assets.example.com/assets?code=PC-0001"
+    finally:
+        s.public_base_url = old
+
+
 def test_qrcode_returns_svg():
     admin = _login()
     code = client.post(

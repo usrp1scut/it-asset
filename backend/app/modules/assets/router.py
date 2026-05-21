@@ -161,12 +161,15 @@ def get_detail(code: str, db: Session = Depends(get_db), _: User = Depends(staff
 
 @router.get("/{code}/qrcode")
 def asset_qrcode(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
-    """SVG QR encoding the asset_code (Phase 1: image only, print → Phase 2)."""
+    """SVG QR. Payload is a deep-link URL when PUBLIC_BASE_URL is configured,
+    else plain asset_code (scanner shows text but can't tap)."""
     asset = service.get_asset(db, code)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
     buf = io.BytesIO()
-    segno.make(asset.asset_code, error="m").save(buf, kind="svg", scale=4, border=2)
+    segno.make(service.qr_payload(asset.asset_code), error="m").save(
+        buf, kind="svg", scale=4, border=2
+    )
     return Response(content=buf.getvalue(), media_type="image/svg+xml")
 
 

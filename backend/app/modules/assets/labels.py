@@ -12,6 +12,8 @@ import io
 import segno
 from fpdf import FPDF
 
+from app.modules.assets.service import qr_payload
+
 # Page (mm)
 _PAGE_W, _PAGE_H = 210, 297
 _MARGIN = 5
@@ -41,7 +43,12 @@ def render_labels_pdf(codes: list[str]) -> bytes:
         y = _MARGIN + row * _CELL_H
         qr_x = x + (_CELL_W - _QR_MM) / 2
         qr_y = y + 2
-        pdf.image(io.BytesIO(_qr_png_bytes(code)), x=qr_x, y=qr_y, w=_QR_MM, h=_QR_MM)
+        # QR carries the deep-link URL (if PUBLIC_BASE_URL set) so any phone
+        # camera resolves to a tap; printed text below stays the bare code.
+        pdf.image(
+            io.BytesIO(_qr_png_bytes(qr_payload(code))),
+            x=qr_x, y=qr_y, w=_QR_MM, h=_QR_MM,
+        )
         pdf.set_xy(x, qr_y + _QR_MM + _TEXT_GAP)
         pdf.cell(_CELL_W, 4, code, align="C")
     return bytes(pdf.output())

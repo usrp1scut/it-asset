@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import {
   Button,
   Form,
@@ -33,6 +34,16 @@ export default function Assets() {
   const [q, setQ] = useState('')
   const [page, setPage] = useState(1)
   const [openCode, setOpenCode] = useState<string | null>(null)
+  const [params, setParams] = useSearchParams()
+  // Deep link from scanned QR: /assets?code=PC-0099 → auto-open the drawer.
+  useEffect(() => {
+    const c = params.get('code')
+    if (c) {
+      setOpenCode(c)
+      params.delete('code')
+      setParams(params, { replace: true })
+    }
+  }, [params, setParams])
   const [needsReview, setNeedsReview] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])

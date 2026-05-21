@@ -50,6 +50,11 @@ class Settings(BaseSettings):
     initial_admin_password: str = ""
     initial_admin_name: str = "管理员"
 
+    # Public base URL of the deployed app, used to encode scannable QR codes.
+    # Empty -> QR encodes only the asset_code (text); set -> QR becomes
+    # "<base>/assets?code=<code>", which any phone camera resolves to a tap.
+    public_base_url: str = ""
+
     lark_variant: Literal["feishu", "lark"] = "feishu"
     lark_app_id: str = ""
     lark_app_secret: str = ""
