@@ -7,6 +7,8 @@ from app.modules.assets.models import (
     AssetClass,
     AssetStatus,
     DispositionMethod,
+    RepairOrderStatus,
+    RepairType,
     ScrapRequestStatus,
 )
 
@@ -47,6 +49,56 @@ class ScrapRequestOut(BaseModel):
     disposed_by: int | None
     disposed_at: datetime | None
     disposal_remark: str | None
+    created_at: datetime
+
+
+class RepairOpenIn(BaseModel):
+    reason: str
+    repair_type: RepairType = RepairType.in_house
+    vendor: str | None = None
+    shipped_at: date | None = None
+    expected_return_at: date | None = None
+    note: str | None = None
+
+
+class RepairUpdateIn(BaseModel):
+    vendor: str | None = None
+    shipped_at: date | None = None
+    expected_return_at: date | None = None
+    note: str | None = None
+
+
+class RepairCompleteIn(BaseModel):
+    cost: Decimal | None = None
+    warranty_covered: bool = False
+    warranty_until: date | None = None
+    resolution: str
+
+
+class RepairCancelIn(BaseModel):
+    reason: str
+
+
+class RepairOrderOut(BaseModel):
+    id: int
+    asset_id: int
+    asset_code: str
+    brand_model: str | None
+    opened_by: int
+    opened_by_name: str | None
+    reason: str
+    repair_type: RepairType
+    vendor: str | None
+    shipped_at: date | None
+    expected_return_at: date | None
+    status: RepairOrderStatus
+    cost: Decimal | None
+    warranty_covered: bool
+    warranty_until: date | None
+    resolution: str | None
+    notes: str | None
+    closed_by: int | None
+    closed_at: datetime | None
     created_at: datetime
 
 

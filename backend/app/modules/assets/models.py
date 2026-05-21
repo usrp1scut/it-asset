@@ -212,3 +212,57 @@ class ScrapRequest(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+
+class RepairType(enum.StrEnum):
+    in_house = "in_house"      # 内部修
+    external = "external"      # 外送维修商
+
+
+class RepairOrderStatus(enum.StrEnum):
+    open = "open"              # 已报修,未送出
+    in_progress = "in_progress"  # 维修中(已送出 / 自修中)
+    completed = "completed"    # 已完结,资产归还
+    cancelled = "cancelled"    # 取消,资产归还
+
+
+class RepairOrder(Base):
+    """维修工单(Phase 2)——绑定到资产,记录送修商/费用/保修等运营数据。
+
+    开单时调用 service.repair 把资产置 maintenance;完结/取消时调
+    service.return_asset 让资产回到 idle。一台资产同时只能有一张未关闭工单。
+    """
+
+    __tablename__ = "repair_orders"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    asset_id: Mapped[int] = mapped_column(ForeignKey("assets.id"), index=True)
+    opened_by: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    reason: Mapped[str] = mapped_column(Text)
+    repair_type: Mapped[RepairType] = mapped_column(
+        Enum(RepairType, name="repair_type"), default=RepairType.in_house
+    )
+    vendor: Mapped[str | None] = mapped_column(String(255))
+    shipped_at: Mapped[date | None] = mapped_column(Date)
+    expected_return_at: Mapped[date | None] = mapped_column(Date)
+
+    status: Mapped[RepairOrderStatus] = mapped_column(
+        Enum(RepairOrderStatus, name="repair_order_status"),
+        default=RepairOrderStatus.open,
+    )
+
+    cost: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))
+    warranty_covered: Mapped[bool] = mapped_column(Boolean, default=False)
+    warranty_until: Mapped[date | None] = mapped_column(Date)
+    resolution: Mapped[str | None] = mapped_column(Text)
+    notes: Mapped[str | None] = mapped_column(Text)
+
+    closed_by: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
+    closed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )

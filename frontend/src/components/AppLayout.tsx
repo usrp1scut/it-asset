@@ -10,6 +10,7 @@ const ITEMS = [
   { key: '/approvals', label: '审批中心' },
   { key: '/inspections', label: '资产盘点', adminOnly: true },
   { key: '/scrap', label: '资产报废', adminOnly: true },
+  { key: '/repair', label: '维修中心', adminOnly: true },
   { key: '/users', label: '用户管理', adminOnly: true },
   { key: '/logs', label: '操作日志' },
 ]
