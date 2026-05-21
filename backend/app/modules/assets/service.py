@@ -1,6 +1,7 @@
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
 from app.modules.assets.models import (
     Asset,
     AssetAccessory,
@@ -15,6 +16,12 @@ from app.modules.assets.state_machine import (
     assert_transition,
 )
 from app.modules.users.models import Department, User
+
+
+def qr_payload(asset_code: str) -> str:
+    """QR payload: deep-link URL if PUBLIC_BASE_URL configured, else plain code."""
+    base = get_settings().public_base_url.rstrip("/")
+    return f"{base}/assets?code={asset_code}" if base else asset_code
 
 
 def _apply_owner(db: Session, asset: Asset, user_id: int) -> None:
