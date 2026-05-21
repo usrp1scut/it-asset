@@ -1,16 +1,21 @@
 import { useState } from 'react'
 import {
   Button,
+  DatePicker,
   Descriptions,
   Drawer,
   Form,
   Input,
   InputNumber,
   Modal,
+  Select,
   Switch,
+  Table,
   Tabs,
+  Tag,
   message,
 } from 'antd'
+import type { Dayjs } from 'dayjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { AssetDetail } from './types'
@@ -32,6 +37,10 @@ export default function AssetDrawer({
   const [assignUser, setAssignUser] = useState<number | null>(null)
   const [scrapOpen, setScrapOpen] = useState(false)
   const [scrapReason, setScrapReason] = useState('')
+  const [repairOpen, setRepairOpen] = useState(false)
+  const [completeOpen, setCompleteOpen] = useState(false)
+  const [repairForm] = Form.useForm()
+  const [completeForm] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferUser, setTransferUser] = useState<number | null>(null)
@@ -42,6 +51,25 @@ export default function AssetDrawer({
     queryFn: async () => (await api.get(`/assets/${code}`)).data,
     enabled: !!code,
   })
+
+  type RepairRow = {
+    id: number
+    created_at: string
+    repair_type: 'in_house' | 'external'
+    vendor: string | null
+    reason: string
+    status: 'open' | 'in_progress' | 'completed' | 'cancelled'
+    cost: string | null
+    resolution: string | null
+  }
+  const { data: repairOrders } = useQuery<RepairRow[]>({
+    queryKey: ['asset-repairs', code],
+    queryFn: async () => (await api.get(`/assets/${code}/repair-orders`)).data,
+    enabled: !!code,
+  })
+  const openRepairOrder = repairOrders?.find(
+    (r) => r.status === 'open' || r.status === 'in_progress',
+  )
 
   const { data: qrSvg } = useQuery<string>({
     queryKey: ['asset-qr', code],
@@ -77,6 +105,39 @@ export default function AssetDrawer({
     },
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '提交失败'),
+  })
+
+  const invalidateRepair = () => {
+    qc.invalidateQueries({ queryKey: ['asset', code] })
+    qc.invalidateQueries({ queryKey: ['assets'] })
+    qc.invalidateQueries({ queryKey: ['asset-repairs', code] })
+    qc.invalidateQueries({ queryKey: ['repair-orders'] })
+  }
+
+  const openRepairMut = useMutation({
+    mutationFn: async (body: object) =>
+      (await api.post(`/assets/${code}/repair-order`, body)).data,
+    onSuccess: () => {
+      message.success('已开维修单,资产置维修中')
+      invalidateRepair()
+      setRepairOpen(false)
+      repairForm.resetFields()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '开单失败'),
+  })
+
+  const completeRepairMut = useMutation({
+    mutationFn: async (body: object) =>
+      (await api.post(`/repair-orders/${openRepairOrder!.id}/complete`, body)).data,
+    onSuccess: () => {
+      message.success('维修单已完结,资产归还')
+      invalidateRepair()
+      setCompleteOpen(false)
+      completeForm.resetFields()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '完结失败'),
   })
 
   const editMut = useMutation({
@@ -132,13 +193,21 @@ export default function AssetDrawer({
       )}
       {a.status === 'in_use' && (
         <>
-          <Button onClick={() => act.mutate({ path: 'repair' })}>报修</Button>
+          <Button onClick={() => setRepairOpen(true)}>报修</Button>
           <Button onClick={() => setTransferOpen(true)}>转移</Button>
           <Button onClick={() => act.mutate({ path: 'return' })}>归还入库</Button>
         </>
       )}
       {a.status === 'maintenance' && (
-        <Button onClick={() => act.mutate({ path: 'return' })}>维修完成 · 归还入库</Button>
+        openRepairOrder ? (
+          <Button type="primary" onClick={() => setCompleteOpen(true)}>
+            完结维修单
+          </Button>
+        ) : (
+          <Button onClick={() => act.mutate({ path: 'return' })}>
+            维修完成 · 归还入库
+          </Button>
+        )
       )}
       {a.status !== 'scrapped' && (
         <Button danger disabled={a.scrap_candidate} onClick={() => setScrapOpen(true)}>
@@ -294,6 +363,54 @@ export default function AssetDrawer({
                 ),
               },
               {
+                key: 'repairs',
+                label: `维修记录 (${repairOrders?.length ?? 0})`,
+                children: (
+                  <Table<RepairRow>
+                    rowKey="id"
+                    size="small"
+                    pagination={false}
+                    dataSource={repairOrders ?? []}
+                    columns={[
+                      {
+                        title: '时间',
+                        dataIndex: 'created_at',
+                        render: (v: string) => v?.slice(0, 10),
+                      },
+                      {
+                        title: '类型',
+                        dataIndex: 'repair_type',
+                        render: (v) => (v === 'external' ? '外送' : '内部修'),
+                      },
+                      {
+                        title: '维修商 / 备注',
+                        render: (_, r) => r.vendor ?? r.reason,
+                      },
+                      {
+                        title: '状态',
+                        dataIndex: 'status',
+                        render: (v: RepairRow['status']) => {
+                          const m = {
+                            open: { c: 'gold', l: '已报修' },
+                            in_progress: { c: 'blue', l: '维修中' },
+                            completed: { c: 'green', l: '已完结' },
+                            cancelled: { c: 'default', l: '已取消' },
+                          }[v]
+                          return <Tag color={m.c}>{m.l}</Tag>
+                        },
+                      },
+                      {
+                        title: '费用 / 解决',
+                        render: (_, r) =>
+                          r.cost || r.resolution
+                            ? `${r.cost ? '¥' + r.cost : ''} ${r.resolution ?? ''}`
+                            : '—',
+                      },
+                    ]}
+                  />
+                ),
+              },
+              {
                 key: 'attachments',
                 label: '附件 / 照片',
                 children: <AssetAttachments code={a.asset_code} />,
@@ -355,6 +472,94 @@ export default function AssetDrawer({
               提交后,需另一位 IT/财务管理员在「资产报废」页批准与录入处置方式,
               资产才会真正变为已报废。
             </div>
+          </Modal>
+
+          <Modal
+            open={repairOpen}
+            title={`报修 · ${a.asset_code}`}
+            onCancel={() => setRepairOpen(false)}
+            onOk={() => repairForm.submit()}
+            confirmLoading={openRepairMut.isPending}
+            okText="开维修单"
+            cancelText="取消"
+            destroyOnClose
+          >
+            <Form
+              form={repairForm}
+              layout="vertical"
+              initialValues={{ repair_type: 'in_house' }}
+              onFinish={(v: Record<string, unknown>) => {
+                const body: Record<string, unknown> = { ...v }
+                for (const k of ['shipped_at', 'expected_return_at']) {
+                  if (body[k]) body[k] = (body[k] as Dayjs).format('YYYY-MM-DD')
+                }
+                openRepairMut.mutate(body)
+              }}
+            >
+              <Form.Item name="reason" label="报修原因" rules={[{ required: true }]}>
+                <Input.TextArea rows={2} placeholder="如:键盘 B 键失灵" />
+              </Form.Item>
+              <Form.Item name="repair_type" label="类型" rules={[{ required: true }]}>
+                <Select
+                  options={[
+                    { value: 'in_house', label: '内部修' },
+                    { value: 'external', label: '外送维修商' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="vendor" label="维修商(外送必填)">
+                <Input placeholder="如 Apple 上海店" />
+              </Form.Item>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="shipped_at" label="送修日" style={{ flex: 1 }}>
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+                <Form.Item name="expected_return_at" label="预计回" style={{ flex: 1 }}>
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+              <Form.Item name="note" label="备注">
+                <Input.TextArea rows={2} />
+              </Form.Item>
+            </Form>
+          </Modal>
+
+          <Modal
+            open={completeOpen}
+            title={`完结维修单 · ${a.asset_code}`}
+            onCancel={() => setCompleteOpen(false)}
+            onOk={() => completeForm.submit()}
+            confirmLoading={completeRepairMut.isPending}
+            okText="完结"
+            cancelText="取消"
+            destroyOnClose
+          >
+            <Form
+              form={completeForm}
+              layout="vertical"
+              initialValues={{ warranty_covered: false }}
+              onFinish={(v: Record<string, unknown>) => {
+                const body: Record<string, unknown> = { ...v }
+                if (body.warranty_until)
+                  body.warranty_until = (body.warranty_until as Dayjs).format('YYYY-MM-DD')
+                completeRepairMut.mutate(body)
+              }}
+            >
+              <Form.Item name="resolution" label="解决说明" rules={[{ required: true }]}>
+                <Input.TextArea rows={2} placeholder="如:更换键盘模组,清灰" />
+              </Form.Item>
+              <Form.Item name="cost" label="费用(¥,可空)">
+                <InputNumber style={{ width: '100%' }} min={0} step={0.01} />
+              </Form.Item>
+              <div style={{ display: 'flex', gap: 12 }}>
+                <Form.Item name="warranty_covered" label="保修内" valuePropName="checked">
+                  <Switch />
+                </Form.Item>
+                <Form.Item name="warranty_until" label="新保修截止" style={{ flex: 1 }}>
+                  <DatePicker style={{ width: '100%' }} />
+                </Form.Item>
+              </div>
+            </Form>
           </Modal>
 
           <Modal

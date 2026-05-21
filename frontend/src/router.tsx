@@ -10,6 +10,7 @@ import Approvals from './pages/Approvals'
 import Users from './pages/Users'
 import Inspections from './pages/Inspections'
 import ScrapApprovals from './pages/ScrapApprovals'
+import RepairOrders from './pages/RepairOrders'
 import MobileApp from './pages/mobile/MobileApp'
 
 export const router = createBrowserRouter([
@@ -28,6 +29,7 @@ export const router = createBrowserRouter([
           { path: '/approvals', element: <Approvals /> },
           { path: '/inspections', element: <Inspections /> },
           { path: '/scrap', element: <ScrapApprovals /> },
+          { path: '/repair', element: <RepairOrders /> },
           { path: '/users', element: <Users /> },
           { path: '/logs', element: <AuditLogs /> },
         ],

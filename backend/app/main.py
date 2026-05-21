@@ -7,6 +7,7 @@ from sqlalchemy import text
 from app.config import get_settings
 from app.db import SessionLocal, engine
 from app.modules.approvals.router import router as approvals_router
+from app.modules.assets.repair_router import router as repair_router
 from app.modules.assets.router import router as assets_router
 from app.modules.assets.scrap_router import router as scrap_router
 from app.modules.dashboard.router import router as dashboard_router
@@ -49,6 +50,7 @@ app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(assets_router)
 app.include_router(scrap_router)
+app.include_router(repair_router)
 app.include_router(inventory_router)
 app.include_router(dashboard_router)
 app.include_router(inspections_router)
