@@ -141,6 +141,8 @@ async def sync_directory(db: Session) -> dict:
 
         users_synced = 0
         users_with_dept = 0
+        diag_fields: list[str] = []
+        diag_department_ids = None
         for batch in _chunks(user_ids, 50):
             data = await client.get_json(
                 "/open-apis/contact/v3/users/batch",
@@ -152,7 +154,14 @@ async def sync_directory(db: Session) -> dict:
                     "department_id_type": "open_department_id",
                 },
             )
-            for u in data.get("items", []):
+            items = data.get("items", [])
+            # Capture the shape of the first profile Lark actually returns —
+            # surfaces why department linking finds nothing (missing field =
+            # the app lacks the scope to read department membership).
+            if items and not diag_fields:
+                diag_fields = sorted(items[0].keys())
+                diag_department_ids = items[0].get("department_ids")
+            for u in items:
                 synced = upsert_user_from_lark(db, u)
                 users_synced += 1
                 if synced.department_id is not None:
@@ -166,4 +175,6 @@ async def sync_directory(db: Session) -> dict:
         "departments": depts_synced,
         "users": users_synced,
         "users_with_department": users_with_dept,
+        "diag_user_fields": diag_fields,
+        "diag_sample_department_ids": diag_department_ids,
     }

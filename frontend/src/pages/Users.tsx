@@ -58,12 +58,34 @@ export default function Users() {
       if (s.skipped) {
         message.warning(`同步跳过:${s.skipped}(请先在 .env 配 LARK_APP_ID / SECRET)`)
       } else {
+        const users = (s.users as number) ?? 0
+        const linked = (s.users_with_department as number) ?? 0
         message.success(
           `同步完成:授权范围 ${s.scope_users ?? 0} 人 / ${s.scope_depts ?? 0} 部门` +
-            `,本次写入 ${s.users ?? 0} 人 / ${s.departments ?? 0} 部门` +
-            `,其中 ${s.users_with_department ?? 0} 人已关联部门`,
+            `,本次写入 ${users} 人 / ${s.departments ?? 0} 部门` +
+            `,其中 ${linked} 人已关联部门`,
           6,
         )
+        if (users > 0 && linked === 0) {
+          Modal.warning({
+            title: '没有用户关联到部门 — 诊断信息',
+            width: 560,
+            content: (
+              <div style={{ fontSize: 13, lineHeight: 1.7 }}>
+                <p>Lark 返回的用户字段:</p>
+                <code style={{ wordBreak: 'break-all' }}>
+                  {JSON.stringify(s.diag_user_fields ?? null)}
+                </code>
+                <p style={{ marginTop: 10 }}>首个用户的 department_ids:</p>
+                <code>{JSON.stringify(s.diag_sample_department_ids ?? null)}</code>
+                <p style={{ marginTop: 10, color: 'var(--text-3)' }}>
+                  若字段列表里没有 department_ids,说明 Lark 应用缺少读取成员部门的权限。
+                  把以上两行发给开发即可定位。
+                </p>
+              </div>
+            ),
+          })
+        }
       }
       qc.invalidateQueries({ queryKey: ['users-manage'] })
     },
