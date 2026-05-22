@@ -128,6 +128,34 @@ def test_low_stock_scan_task():
     assert res["pushed"] is False  # no chat id configured in tests
 
 
+def test_delete_sku_clean_ok_blocked_when_has_history():
+    h = _admin()
+    loc = _loc(h)
+
+    # clean SKU — no stock, no ledger → deletable
+    clean = _sku(h, loc)
+    assert client.delete(f"/api/skus/{clean['sku_code']}", headers=h).status_code == 200
+    assert client.get(f"/api/skus?q={clean['sku_code']}", headers=h).json()["total"] == 0
+    # already gone → 404
+    assert client.delete(f"/api/skus/{clean['sku_code']}", headers=h).status_code == 404
+
+    # SKU holding stock → refused
+    used = _sku(h, loc)
+    client.post("/api/inventory/receive",
+                json={"sku_id": used["id"], "quantity": 4}, headers=h)
+    blocked = client.delete(f"/api/skus/{used['sku_code']}", headers=h)
+    assert blocked.status_code == 409
+    assert "库存" in blocked.json()["detail"]
+
+    # drain to zero — ledger history remains → still refused
+    emp = _emp()
+    client.post("/api/inventory/issue",
+                json={"sku_id": used["id"], "quantity": 4, "user_id": emp}, headers=h)
+    blocked2 = client.delete(f"/api/skus/{used['sku_code']}", headers=h)
+    assert blocked2.status_code == 409
+    assert "流水" in blocked2.json()["detail"]
+
+
 def test_delete_category_blocked_when_nonempty():
     h = _admin()
     loc = _loc(h)

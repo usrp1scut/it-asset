@@ -200,6 +200,38 @@ def update_sku(
     return _sku_out(db, sku)
 
 
+@router.delete("/api/skus/{sku_code}")
+def delete_sku(sku_code: str, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Delete an SKU. Refused while it still holds stock or has any ledger
+    history — the transaction ledger is the source of truth and must never be
+    orphaned. Clean (never-moved) SKUs are removed outright."""
+    sku = db.scalar(select(Sku).where(Sku.sku_code == sku_code))
+    if sku is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "SKU 不存在")
+    avail = service.total_available(db, sku.id)
+    if avail > 0:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"该物品仍有库存 {avail},请先发放或退库清零再删除",
+        )
+    txns = db.scalar(
+        select(func.count()).select_from(InventoryTransaction)
+        .where(InventoryTransaction.sku_id == sku.id)
+    ) or 0
+    if txns:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"该物品有 {txns} 条出入库流水,不能删除(台账需留痕)",
+        )
+    for st in db.scalars(select(InventoryStock).where(InventoryStock.sku_id == sku.id)):
+        db.delete(st)
+    db.delete(sku)
+    db.commit()
+    write_audit(db, actor_user_id=user.id, action="sku.delete",
+                resource_type="sku", resource_id=sku_code)
+    return {"ok": True}
+
+
 @router.get("/api/skus/{sku_code}/transactions", response_model=list[TxnOut])
 def sku_transactions(sku_code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
     sku = db.scalar(select(Sku).where(Sku.sku_code == sku_code))

@@ -296,6 +296,16 @@ def _load(db: Session, code: str):
     return asset
 
 
+@router.delete("/{code}")
+def delete_asset(code: str, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Soft-delete an asset — drops it from the ledger (recoverable in DB)."""
+    asset = _load(db, code)
+    service.delete_asset(db, asset, user.id)
+    write_audit(db, actor_user_id=user.id, action="asset.delete",
+                resource_type="asset", resource_id=code)
+    return {"ok": True}
+
+
 @router.post("/{code}/assign", response_model=AssetOut)
 def assign(
     code: str, body: AssignIn, db: Session = Depends(get_db), user: User = Depends(it_admin)

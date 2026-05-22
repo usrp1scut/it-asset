@@ -8,6 +8,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Select,
   Switch,
   Table,
@@ -152,6 +153,17 @@ export default function AssetDrawer({
       message.error(e.response?.data?.detail ?? '保存失败'),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: async () => (await api.delete(`/assets/${code}`)).data,
+    onSuccess: () => {
+      message.success('资产已删除')
+      qc.invalidateQueries({ queryKey: ['assets'] })
+      onClose()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '删除失败'),
+  })
+
   const a = data?.asset
 
   const openEdit = () => {
@@ -184,7 +196,21 @@ export default function AssetDrawer({
 
   const footer = a && (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-      <Button onClick={openEdit}>编辑</Button>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <Button onClick={openEdit}>编辑</Button>
+        <Popconfirm
+          title="删除该资产?"
+          description="删除后将从台账移除(记录保留,可在数据库恢复)"
+          onConfirm={() => deleteMut.mutate()}
+          okText="删除"
+          cancelText="取消"
+          okButtonProps={{ danger: true }}
+        >
+          <Button danger loading={deleteMut.isPending}>
+            删除
+          </Button>
+        </Popconfirm>
+      </div>
       <div style={{ display: 'flex', gap: 8 }}>
       {a.status === 'idle' && a.asset_class === 'personal' && (
         <Button type="primary" onClick={() => setAssignOpen(true)}>
