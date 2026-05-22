@@ -13,6 +13,7 @@ const ITEMS = [
   { key: '/repair', label: '维修中心', adminOnly: true },
   { key: '/users', label: '用户管理', adminOnly: true },
   { key: '/logs', label: '操作日志' },
+  { key: '/m', label: '员工视图', adminOnly: true },
 ]
 
 export default function AppLayout() {
