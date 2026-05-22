@@ -289,3 +289,37 @@ def bind_accessories(db: Session, main: Asset, child_ids: list[int]) -> None:
     _log(db, main, "bind_accessory", operator_id=None,
          reason=f"绑定配件 {len(child_ids)} 件")
     db.commit()
+
+
+def refresh_owner_snapshots(db: Session) -> int:
+    """Re-pull owner_name / department onto every asset that has a linked
+    owner, so the display snapshot tracks directory changes (renames, newly
+    added aliases). Returns the number of assets whose snapshot changed.
+    """
+    changed = 0
+    dept_names: dict[int, str] = {}
+    assets = db.scalars(
+        select(Asset).where(
+            Asset.owner_user_id.is_not(None), Asset.deleted_at.is_(None)
+        )
+    ).all()
+    for asset in assets:
+        user = db.get(User, asset.owner_user_id)
+        if user is None:
+            continue
+        dirty = False
+        if asset.owner_name != user.name:
+            asset.owner_name = user.name
+            dirty = True
+        if user.department_id and asset.department_id != user.department_id:
+            asset.department_id = user.department_id
+            if user.department_id not in dept_names:
+                d = db.get(Department, user.department_id)
+                dept_names[user.department_id] = d.name if d else ""
+            asset.department_name = dept_names[user.department_id]
+            dirty = True
+        if dirty:
+            changed += 1
+    if changed:
+        db.commit()
+    return changed

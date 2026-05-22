@@ -32,6 +32,16 @@ def ensure_initial_admin(db: Session) -> bool:
     return True
 
 
+def _display_name(profile: dict) -> str:
+    """Display name the way Lark shows it — the main name plus the alias
+    (别名 / nickname) in parens, e.g. 'Jacob(谢博)'."""
+    name = (profile.get("name") or profile.get("en_name") or "").strip()
+    alias = (profile.get("nickname") or "").strip()
+    if name and alias and alias != name:
+        return f"{name}（{alias}）"
+    return name or alias or "未命名"
+
+
 def upsert_user_from_lark(db: Session, profile: dict) -> User:
     """Idempotently create/update a user from a Lark profile.
 
@@ -48,14 +58,14 @@ def upsert_user_from_lark(db: Session, profile: dict) -> User:
         user = db.scalar(select(User).where(User.lark_open_id == open_id))
 
     if user is None:
-        user = User(name=profile.get("name") or profile.get("en_name") or "未命名")
+        user = User(name=_display_name(profile))
         db.add(user)
 
     user.lark_union_id = union_id or user.lark_union_id
     user.lark_open_id = open_id or user.lark_open_id
     user.lark_user_id = profile.get("user_id") or user.lark_user_id
-    if profile.get("name"):
-        user.name = profile["name"]
+    if profile.get("name") or profile.get("en_name") or profile.get("nickname"):
+        user.name = _display_name(profile)
     user.email = profile.get("email") or user.email
     user.mobile = profile.get("mobile") or user.mobile
 
@@ -141,6 +151,7 @@ async def sync_directory(db: Session) -> dict:
 
         users_synced = 0
         users_with_dept = 0
+        users_with_nickname = 0
         diag_fields: list[str] = []
         diag_department_ids = None
         for batch in _chunks(user_ids, 50):
@@ -156,16 +167,24 @@ async def sync_directory(db: Session) -> dict:
             )
             items = data.get("items", [])
             # Capture the shape of the first profile Lark actually returns —
-            # surfaces why department linking finds nothing (missing field =
-            # the app lacks the scope to read department membership).
+            # surfaces why department / alias fields may come back empty
+            # (a missing field = the app lacks the scope to read it).
             if items and not diag_fields:
                 diag_fields = sorted(items[0].keys())
                 diag_department_ids = items[0].get("department_ids")
             for u in items:
+                if (u.get("nickname") or "").strip():
+                    users_with_nickname += 1
                 synced = upsert_user_from_lark(db, u)
                 users_synced += 1
                 if synced.department_id is not None:
                     users_with_dept += 1
+
+        # keep each asset's owner_name / department display current with the
+        # directory (renames, newly added aliases, …)
+        from app.modules.assets.service import refresh_owner_snapshots
+
+        assets_refreshed = refresh_owner_snapshots(db)
     except LarkNotConfigured:
         return {"skipped": "lark_not_configured"}
 
@@ -175,6 +194,8 @@ async def sync_directory(db: Session) -> dict:
         "departments": depts_synced,
         "users": users_synced,
         "users_with_department": users_with_dept,
+        "users_with_nickname": users_with_nickname,
+        "assets_refreshed": assets_refreshed,
         "diag_user_fields": diag_fields,
         "diag_sample_department_ids": diag_department_ids,
     }

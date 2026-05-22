@@ -61,9 +61,9 @@ export default function Users() {
         const users = (s.users as number) ?? 0
         const linked = (s.users_with_department as number) ?? 0
         message.success(
-          `同步完成:授权范围 ${s.scope_users ?? 0} 人 / ${s.scope_depts ?? 0} 部门` +
-            `,本次写入 ${users} 人 / ${s.departments ?? 0} 部门` +
-            `,其中 ${linked} 人已关联部门`,
+          `同步完成:写入 ${users} 人 / ${s.departments ?? 0} 部门` +
+            `(${linked} 人关联部门、${s.users_with_nickname ?? 0} 人有别名)` +
+            `;刷新 ${s.assets_refreshed ?? 0} 项资产责任人`,
           6,
         )
         if (users > 0 && linked === 0) {
