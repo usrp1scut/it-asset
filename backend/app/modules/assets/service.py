@@ -272,6 +272,17 @@ def scrap(db: Session, asset: Asset, operator_id: int, reason: str | None) -> As
     return asset
 
 
+def delete_asset(db: Session, asset: Asset, operator_id: int | None) -> None:
+    """Soft-delete — set deleted_at so the asset drops out of every query.
+
+    The row stays in the DB (recoverable, keeps change-log / FK integrity
+    with inspections, repair orders, scrap requests that still point at it).
+    """
+    asset.deleted_at = func.now()
+    _log(db, asset, "delete", from_status=asset.status, operator_id=operator_id)
+    db.commit()
+
+
 def bind_accessories(db: Session, main: Asset, child_ids: list[int]) -> None:
     for cid in child_ids:
         db.add(AssetAccessory(asset_id=main.id, asset_accessory_id=cid))

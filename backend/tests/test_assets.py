@@ -237,6 +237,30 @@ def test_transfer_reassigns_owner():
     assert "transfer" in actions
 
 
+def test_delete_asset_soft_removes_from_ledger():
+    admin = _login()
+    code = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+    ).json()["asset_code"]
+    # present before delete
+    assert any(
+        i["asset_code"] == code
+        for i in client.get("/api/assets", headers=_h(admin)).json()["items"]
+    )
+
+    d = client.delete(f"/api/assets/{code}", headers=_h(admin))
+    assert d.status_code == 200
+
+    # gone from list and detail 404s after soft-delete
+    assert all(
+        i["asset_code"] != code
+        for i in client.get("/api/assets", headers=_h(admin)).json()["items"]
+    )
+    assert client.get(f"/api/assets/{code}", headers=_h(admin)).status_code == 404
+    # deleting an already-deleted / missing asset → 404
+    assert client.delete(f"/api/assets/{code}", headers=_h(admin)).status_code == 404
+
+
 def test_transfer_requires_in_use():
     admin = _login()
     e1 = client.post("/api/auth/dev-login",

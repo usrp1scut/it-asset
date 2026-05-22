@@ -112,6 +112,16 @@ export default function Inventory() {
       message.error(e.response?.data?.detail ?? '删除失败'),
   })
 
+  const skuDelMut = useMutation({
+    mutationFn: async (code: string) => api.delete(`/skus/${code}`),
+    onSuccess: () => {
+      message.success('物品已删除')
+      invalidate()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '删除失败'),
+  })
+
   const items = data?.items ?? []
   const warnCount = items.filter((s) => s.level !== 'normal').length
 
@@ -201,6 +211,18 @@ export default function Inventory() {
               <Button size="small" type="primary" onClick={() => setModal({ kind: 'out', sku: s })}>
                 发放
               </Button>
+              <Popconfirm
+                title={`删除物品「${s.name}」?`}
+                description="仅在无库存、无出入库记录时可删除"
+                onConfirm={() => skuDelMut.mutate(s.sku_code)}
+                okText="删除"
+                cancelText="取消"
+                okButtonProps={{ danger: true }}
+              >
+                <Button size="small" type="text" danger>
+                  删除
+                </Button>
+              </Popconfirm>
             </Space>
           </div>
         </Card>
@@ -443,9 +465,13 @@ export default function Inventory() {
             ? `${modal.kind === 'in' ? '入库' : '发放'} · ${modal.sku.name}`
             : ''
         }
-        onCancel={() => setModal(null)}
+        onCancel={() => {
+          setModal(null)
+          form.resetFields()
+        }}
         onOk={() => form.submit()}
         confirmLoading={mut.isPending}
+        destroyOnClose
       >
         <Form
           form={form}
