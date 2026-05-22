@@ -291,19 +291,34 @@ def bind_accessories(db: Session, main: Asset, child_ids: list[int]) -> None:
     db.commit()
 
 
-def refresh_owner_snapshots(db: Session) -> int:
-    """Re-pull owner_name / department onto every asset that has a linked
-    owner, so the display snapshot tracks directory changes (renames, newly
-    added aliases). Returns the number of assets whose snapshot changed.
+def reconcile_asset_owners(db: Session) -> dict[str, int]:
+    """Keep asset owner data aligned with the directory on every contact sync:
+
+      * unlinked assets carrying only a free-text owner_name → fuzzy-match it
+        (Chinese / English / pinyin / email, unique hits only) and bind the
+        directory user; a confidently bound owner also clears needs_review;
+      * assets with a linked owner → refresh the owner_name / department
+        display snapshot (tracks directory renames, newly added aliases).
+
+    Returns {"linked": M, "refreshed": N}.
     """
-    changed = 0
+    from app.modules.assets.matching import build_user_index
+
+    index = build_user_index(db)
     dept_names: dict[int, str] = {}
-    assets = db.scalars(
-        select(Asset).where(
-            Asset.owner_user_id.is_not(None), Asset.deleted_at.is_(None)
-        )
-    ).all()
+    linked = refreshed = 0
+    assets = db.scalars(select(Asset).where(Asset.deleted_at.is_(None))).all()
     for asset in assets:
+        newly_linked = False
+        if asset.owner_user_id is None:
+            if not asset.owner_name:
+                continue
+            uid = index.resolve(asset.owner_name)
+            if uid is None:
+                continue  # no match, or ambiguous → leave it for a human
+            asset.owner_user_id = uid
+            asset.needs_review = False
+            newly_linked = True
         user = db.get(User, asset.owner_user_id)
         if user is None:
             continue
@@ -318,8 +333,9 @@ def refresh_owner_snapshots(db: Session) -> int:
                 dept_names[user.department_id] = d.name if d else ""
             asset.department_name = dept_names[user.department_id]
             dirty = True
-        if dirty:
-            changed += 1
-    if changed:
-        db.commit()
-    return changed
+        if newly_linked:
+            linked += 1
+        elif dirty:
+            refreshed += 1
+    db.commit()
+    return {"linked": linked, "refreshed": refreshed}

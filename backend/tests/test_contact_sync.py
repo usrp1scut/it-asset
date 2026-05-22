@@ -50,29 +50,48 @@ def test_display_name_combines_alias():
         db.close()
 
 
-def test_refresh_owner_snapshots_tracks_directory():
-    """A directory rename propagates onto assets owned by that user."""
+def test_reconcile_refreshes_and_auto_links():
+    """Sync reconcile: refresh linked assets + fuzzy-bind unlinked ones."""
     from app.modules.assets.service import (
         assign,
         create_asset,
-        refresh_owner_snapshots,
+        reconcile_asset_owners,
     )
 
     db = SessionLocal()
     try:
+        # unique Chinese alias so the shared test DB stays unambiguous
+        alias = f"谢博{uuid.uuid4().hex[:6]}"
         user = upsert_user_from_lark(
-            db, {"open_id": f"ou-{uuid.uuid4().hex[:10]}", "name": "旧名"}
+            db,
+            {"open_id": f"ou-{uuid.uuid4().hex[:10]}", "name": "Jacob", "nickname": alias},
         )
-        asset = create_asset(db, {"asset_class": "personal"}, "PC", None)
-        assign(db, asset, user.id, operator_id=user.id, note=None)
-        assert asset.owner_name == "旧名"
+        assert user.name == f"Jacob（{alias}）"
 
-        user.name = "新名（Alias）"
+        # already-linked asset whose display drifted → gets refreshed
+        linked = create_asset(db, {"asset_class": "personal"}, "PC", None)
+        assign(db, linked, user.id, operator_id=user.id, note=None)
+        linked.owner_name = "stale"
         db.commit()
-        n = refresh_owner_snapshots(db)
-        db.refresh(asset)
-        assert n >= 1
-        assert asset.owner_name == "新名（Alias）"
+
+        # dirty asset carrying only the Chinese alias as free text → auto-bound
+        dirty = create_asset(
+            db,
+            {"asset_class": "personal", "owner_name": alias, "needs_review": True},
+            "PC",
+            None,
+        )
+        assert dirty.owner_user_id is None
+
+        res = reconcile_asset_owners(db)
+        db.refresh(linked)
+        db.refresh(dirty)
+
+        assert linked.owner_name == f"Jacob（{alias}）"     # snapshot refreshed
+        assert dirty.owner_user_id == user.id             # fuzzy-matched on alias
+        assert dirty.owner_name == f"Jacob（{alias}）"
+        assert dirty.needs_review is False
+        assert res["linked"] >= 1 and res["refreshed"] >= 1
     finally:
         db.close()
 

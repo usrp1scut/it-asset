@@ -23,8 +23,25 @@ except ImportError:  # pragma: no cover - dependency declared in pyproject
     lazy_pinyin = None
 
 _PAREN = re.compile(r"[(（].*?[)）]")
+_PAREN_INNER = re.compile(r"[(（](.+?)[)）]")
 _PHONE_TAIL = re.compile(r"[\s,，;；/|-]*\d[\d\s-]{5,}$")
 _WS = re.compile(r"\s+")
+
+
+def name_variants(name: str | None) -> list[str]:
+    """Split a combined display name like 'Jacob（谢博）' into its matchable
+    parts, so a dirty record holding only the English name *or* only the
+    Chinese alias still resolves."""
+    if not name:
+        return []
+    variants = {name}
+    for inner in _PAREN_INNER.findall(name):
+        if inner.strip():
+            variants.add(inner.strip())
+    outside = _PAREN.sub("", name).strip()
+    if outside:
+        variants.add(outside)
+    return [v for v in variants if v]
 
 
 def name_key(raw: str | None) -> str:
@@ -55,8 +72,10 @@ class UserIndex:
         self._by_pinyin: dict[str, set[int]] = {}
         self._by_email: dict[str, set[int]] = {}
         for u in users:
-            self._add(self._by_name, name_key(u.name), u.id)
-            self._add(self._by_pinyin, _pinyin_key(u.name), u.id)
+            # index each part of a combined name ('Jacob（谢博）' → Jacob, 谢博)
+            for variant in name_variants(u.name):
+                self._add(self._by_name, name_key(variant), u.id)
+                self._add(self._by_pinyin, _pinyin_key(variant), u.id)
             self._add(self._by_email, _email_local(u.email), u.id)
 
     @staticmethod
