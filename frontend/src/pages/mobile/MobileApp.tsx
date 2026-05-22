@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Button, Input, Steps, message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
 
 interface Me {
@@ -33,6 +34,7 @@ const wrap: React.CSSProperties = {
 
 export default function MobileApp() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [view, setView] = useState<'home' | 'request' | 'done'>('home')
   const [step, setStep] = useState(0)
   const [items, setItems] = useState<Record<number, number>>({})
@@ -247,6 +249,21 @@ export default function MobileApp() {
 
   return (
     <div style={wrap}>
+      {me.user.role !== 'employee' && (
+        <div
+          onClick={() => navigate('/')}
+          style={{
+            background: '#fff',
+            padding: '8px 16px',
+            fontSize: 12,
+            color: 'var(--lark-blue)',
+            cursor: 'pointer',
+            borderBottom: '1px solid var(--border)',
+          }}
+        >
+          ← 返回管理端
+        </div>
+      )}
       <div
         style={{
           background: 'linear-gradient(180deg, #3370FF 0%, #5B92FF 100%)',
