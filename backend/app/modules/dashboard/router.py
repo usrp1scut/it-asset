@@ -32,12 +32,19 @@ def audit_logs(
         .offset((page - 1) * size)
         .limit(size)
     ).all()
+    actor_ids = {r.actor_user_id for r in rows if r.actor_user_id is not None}
+    names = (
+        {u.id: u.name for u in db.scalars(select(User).where(User.id.in_(actor_ids)))}
+        if actor_ids
+        else {}
+    )
     return {
         "total": total,
         "items": [
             {
                 "id": r.id,
                 "actor_user_id": r.actor_user_id,
+                "actor_name": names.get(r.actor_user_id),
                 "action": r.action,
                 "resource_type": r.resource_type,
                 "resource_id": r.resource_id,

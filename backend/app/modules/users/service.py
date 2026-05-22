@@ -59,6 +59,17 @@ def upsert_user_from_lark(db: Session, profile: dict) -> User:
     user.email = profile.get("email") or user.email
     user.mobile = profile.get("mobile") or user.mobile
 
+    # Link to the user's primary department. sync_directory upserts departments
+    # before users, so the local Department row already exists by now (when the
+    # department is within the app's authorised scope).
+    dept_ids = profile.get("department_ids") or []
+    if dept_ids:
+        dept = db.scalar(
+            select(Department).where(Department.lark_department_id == dept_ids[0])
+        )
+        if dept is not None:
+            user.department_id = dept.id
+
     db.commit()
     db.refresh(user)
     return user

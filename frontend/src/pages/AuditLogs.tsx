@@ -6,6 +6,7 @@ import { api } from '../api/client'
 interface AuditItem {
   id: number
   actor_user_id: number | null
+  actor_name: string | null
   action: string
   resource_type: string
   resource_id: string | null
@@ -38,7 +39,12 @@ export default function AuditLogs() {
         columns={[
           { title: '时间', dataIndex: 'created_at',
             render: (v: string) => new Date(v).toLocaleString('zh-CN') },
-          { title: '操作人', dataIndex: 'actor_user_id', render: (v) => (v ? `#${v}` : '系统') },
+          {
+            title: '操作人',
+            dataIndex: 'actor_name',
+            render: (v: string | null, r) =>
+              v ?? (r.actor_user_id ? `#${r.actor_user_id}` : '系统'),
+          },
           { title: '动作', dataIndex: 'action', render: (a: string) => <Tag>{a}</Tag> },
           { title: '资源', dataIndex: 'resource_type' },
           { title: '资源 ID', dataIndex: 'resource_id', render: (v) => v ?? '—' },
