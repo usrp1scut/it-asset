@@ -55,6 +55,31 @@ def test_audit_logs_admin_only():
     ).status_code == 403
 
 
+def test_audit_log_shows_actor_name():
+    login = client.post(
+        "/api/auth/dev-login",
+        json={"email": f"auditor-{uuid.uuid4().hex[:6]}@c.com",
+              "role": "it_admin", "name": "张审计"},
+    ).json()
+    h = {"Authorization": f"Bearer {login['token']}"}
+    client.post("/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=h)
+    items = client.get("/api/audit-logs", headers=h).json()["items"]
+    mine = next(i for i in items if i["actor_user_id"] == login["user"]["id"])
+    assert mine["actor_name"] == "张审计"
+
+
+def test_inspection_actions_audited():
+    h = _admin()
+    task = client.post("/api/inspections", json={"name": "审计盘点"}, headers=h).json()
+    client.post(f"/api/inspections/{task['id']}/close", headers=h)
+    logs = client.get("/api/audit-logs", headers=h).json()["items"]
+    actions = {
+        x["action"] for x in logs
+        if x["resource_type"] == "inspection" and x["resource_id"] == str(task["id"])
+    }
+    assert {"inspection.create", "inspection.close"} <= actions
+
+
 def test_inspection_flow():
     h = _admin()
     emp = client.post(

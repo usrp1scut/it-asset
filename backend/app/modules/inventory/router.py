@@ -61,6 +61,15 @@ def _sku_out(db: Session, sku: Sku, cat: ItemCategory | None = None) -> SkuOut:
     return o
 
 
+def _audit_movement(
+    db: Session, actor_id: int | None, action: str, sku_id: int, payload: dict
+) -> None:
+    """Coarse audit-log entry for a stock movement, keyed by the SKU code."""
+    sku = db.get(Sku, sku_id)
+    write_audit(db, actor_user_id=actor_id, action=action, resource_type="sku",
+                resource_id=sku.sku_code if sku else None, payload=payload)
+
+
 # ── Categories ───────────────────────────────────────────────────────────────
 
 
@@ -268,6 +277,8 @@ def receive(body: ReceiveIn, db: Session = Depends(get_db), user: User = Depends
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    _audit_movement(db, user.id, "inventory.receive", body.sku_id,
+                    {"quantity": body.quantity})
     return OrderOut.model_validate(order)
 
 
@@ -282,6 +293,8 @@ def issue(body: IssueIn, db: Session = Depends(get_db), user: User = Depends(it_
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    _audit_movement(db, user.id, "inventory.issue", body.sku_id,
+                    {"quantity": body.quantity, "user_id": body.user_id})
     return OrderOut.model_validate(order)
 
 
@@ -294,6 +307,8 @@ def return_stock(body: ReturnIn, db: Session = Depends(get_db), user: User = Dep
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    _audit_movement(db, user.id, "inventory.return", body.sku_id,
+                    {"quantity": body.quantity})
     return OrderOut.model_validate(order)
 
 
@@ -307,6 +322,8 @@ def adjust(body: AdjustIn, db: Session = Depends(get_db), user: User = Depends(i
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    _audit_movement(db, user.id, "inventory.adjust", body.sku_id,
+                    {"target_quantity": body.target_quantity})
     return OrderOut.model_validate(order)
 
 

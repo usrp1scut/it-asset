@@ -200,6 +200,20 @@ def test_inventory_adjust_up_down_and_clear():
                        json={"sku_id": sid, "target_quantity": -1}, headers=h).status_code == 400
 
 
+def test_stock_movements_are_audited():
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc, safety=0)
+    client.post("/api/inventory/receive",
+                json={"sku_id": sku["id"], "quantity": 5}, headers=h)
+    client.post("/api/inventory/adjust",
+                json={"sku_id": sku["id"], "target_quantity": 2}, headers=h)
+    logs = client.get("/api/audit-logs", headers=h).json()["items"]
+    actions = {r["action"] for r in logs if r["resource_id"] == sku["sku_code"]}
+    assert "inventory.receive" in actions
+    assert "inventory.adjust" in actions
+
+
 def test_delete_category_blocked_when_nonempty():
     h = _admin()
     loc = _loc(h)

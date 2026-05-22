@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.core.audit import write_audit
 from app.deps import get_current_user, get_db, require_roles
 from app.modules.assets.models import Asset, AssetClass, AssetStatus
 from app.modules.inspections.models import (
@@ -81,6 +82,9 @@ def create_task(body: CreateIn, db: Session = Depends(get_db), user: User = Depe
             InspectionItem(task_id=task.id, asset_id=a.id, expected_owner_id=a.owner_user_id)
         )
     db.commit()
+    write_audit(db, actor_user_id=user.id, action="inspection.create",
+                resource_type="inspection", resource_id=str(task.id),
+                payload={"name": task.name, "item_count": len(assets)})
     return {
         "id": task.id, "name": task.name, "scope_type": task.scope_type,
         "item_count": len(assets),
@@ -199,11 +203,13 @@ def confirm_item(
 
 
 @router.post("/{task_id}/close")
-def close_task(task_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)):
+def close_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
     task = db.get(InspectionTask, task_id)
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found")
     task.status = InspectionStatus.closed
     task.ended_at = datetime.now(UTC)
     db.commit()
+    write_audit(db, actor_user_id=user.id, action="inspection.close",
+                resource_type="inspection", resource_id=str(task.id))
     return {"id": task.id, "status": task.status.value}
