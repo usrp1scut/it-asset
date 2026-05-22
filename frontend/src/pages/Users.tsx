@@ -63,7 +63,7 @@ export default function Users() {
         message.success(
           `同步完成:写入 ${users} 人 / ${s.departments ?? 0} 部门` +
             `(${linked} 人关联部门、${s.users_with_nickname ?? 0} 人有别名)` +
-            `;刷新 ${s.assets_refreshed ?? 0} 项资产责任人`,
+            `;资产责任人 自动绑定 ${s.assets_linked ?? 0} 项、刷新 ${s.assets_refreshed ?? 0} 项`,
           6,
         )
         if (users > 0 && linked === 0) {

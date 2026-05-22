@@ -180,11 +180,11 @@ async def sync_directory(db: Session) -> dict:
                 if synced.department_id is not None:
                     users_with_dept += 1
 
-        # keep each asset's owner_name / department display current with the
-        # directory (renames, newly added aliases, …)
-        from app.modules.assets.service import refresh_owner_snapshots
+        # reconcile assets with the directory: auto-link unlinked owners by
+        # fuzzy name match, and refresh owner_name / department snapshots
+        from app.modules.assets.service import reconcile_asset_owners
 
-        assets_refreshed = refresh_owner_snapshots(db)
+        asset_recon = reconcile_asset_owners(db)
     except LarkNotConfigured:
         return {"skipped": "lark_not_configured"}
 
@@ -195,7 +195,8 @@ async def sync_directory(db: Session) -> dict:
         "users": users_synced,
         "users_with_department": users_with_dept,
         "users_with_nickname": users_with_nickname,
-        "assets_refreshed": assets_refreshed,
+        "assets_linked": asset_recon["linked"],
+        "assets_refreshed": asset_recon["refreshed"],
         "diag_user_fields": diag_fields,
         "diag_sample_department_ids": diag_department_ids,
     }
