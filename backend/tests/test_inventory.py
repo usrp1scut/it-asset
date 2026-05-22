@@ -128,32 +128,76 @@ def test_low_stock_scan_task():
     assert res["pushed"] is False  # no chat id configured in tests
 
 
-def test_delete_sku_clean_ok_blocked_when_has_history():
+def test_delete_sku_soft_archives():
     h = _admin()
     loc = _loc(h)
 
-    # clean SKU — no stock, no ledger → deletable
-    clean = _sku(h, loc)
-    assert client.delete(f"/api/skus/{clean['sku_code']}", headers=h).status_code == 200
-    assert client.get(f"/api/skus?q={clean['sku_code']}", headers=h).json()["total"] == 0
-    # already gone → 404
-    assert client.delete(f"/api/skus/{clean['sku_code']}", headers=h).status_code == 404
-
-    # SKU holding stock → refused
-    used = _sku(h, loc)
+    # SKU holding stock — soft-delete still works (archive, no guard)
+    sku = _sku(h, loc)
     client.post("/api/inventory/receive",
-                json={"sku_id": used["id"], "quantity": 4}, headers=h)
-    blocked = client.delete(f"/api/skus/{used['sku_code']}", headers=h)
-    assert blocked.status_code == 409
-    assert "库存" in blocked.json()["detail"]
+                json={"sku_id": sku["id"], "quantity": 6}, headers=h)
+    assert client.delete(f"/api/skus/{sku['sku_code']}", headers=h).status_code == 200
+    # archived out of the listing …
+    assert client.get(f"/api/skus?q={sku['sku_code']}", headers=h).json()["total"] == 0
+    # … but the ledger history is preserved
+    txns = client.get(f"/api/skus/{sku['sku_code']}/transactions", headers=h).json()
+    assert len(txns) == 1
+    # deleting again → 404
+    assert client.delete(f"/api/skus/{sku['sku_code']}", headers=h).status_code == 404
 
-    # drain to zero — ledger history remains → still refused
-    emp = _emp()
-    client.post("/api/inventory/issue",
-                json={"sku_id": used["id"], "quantity": 4, "user_id": emp}, headers=h)
-    blocked2 = client.delete(f"/api/skus/{used['sku_code']}", headers=h)
-    assert blocked2.status_code == 409
-    assert "流水" in blocked2.json()["detail"]
+
+def test_category_deletable_after_sku_soft_deleted():
+    h = _admin()
+    loc = _loc(h)
+    cid = _cat(h)
+    sku = client.post(
+        "/api/skus",
+        json={"category_id": cid, "name": "鼠标", "default_location_id": loc},
+        headers=h,
+    ).json()
+    # category blocked while it has a live SKU
+    assert client.delete(f"/api/item-categories/{cid}", headers=h).status_code == 409
+    # soft-deleting the SKU drops it from the category count → category deletable
+    assert client.delete(f"/api/skus/{sku['sku_code']}", headers=h).status_code == 200
+    assert client.delete(f"/api/item-categories/{cid}", headers=h).status_code == 200
+
+
+def test_inventory_adjust_up_down_and_clear():
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc, safety=0)
+    sid = sku["id"]
+    code = sku["sku_code"]
+    client.post("/api/inventory/receive",
+                json={"sku_id": sid, "quantity": 10}, headers=h)
+
+    def avail():
+        return client.get(f"/api/skus?q={code}", headers=h).json()["items"][0]["available"]
+
+    # 盘亏 down to 3
+    assert client.post("/api/inventory/adjust",
+                       json={"sku_id": sid, "target_quantity": 3, "remark": "盘亏"},
+                       headers=h).status_code == 200
+    assert avail() == 3
+    # 盘盈 up to 8
+    assert client.post("/api/inventory/adjust",
+                       json={"sku_id": sid, "target_quantity": 8}, headers=h).status_code == 200
+    assert avail() == 8
+    # clear to 0
+    assert client.post("/api/inventory/adjust",
+                       json={"sku_id": sid, "target_quantity": 0}, headers=h).status_code == 200
+    assert avail() == 0
+
+    # each adjust wrote an 'adjustment' ledger row
+    txns = client.get(f"/api/skus/{code}/transactions", headers=h).json()
+    assert len([t for t in txns if t["transaction_type"] == "adjustment"]) == 3
+
+    # no-op (target == current) → 400
+    assert client.post("/api/inventory/adjust",
+                       json={"sku_id": sid, "target_quantity": 0}, headers=h).status_code == 400
+    # negative target → 400
+    assert client.post("/api/inventory/adjust",
+                       json={"sku_id": sid, "target_quantity": -1}, headers=h).status_code == 400
 
 
 def test_delete_category_blocked_when_nonempty():

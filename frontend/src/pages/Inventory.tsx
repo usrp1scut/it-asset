@@ -36,11 +36,19 @@ const TABS = [
 
 const UNCATEGORIZED = -1
 
+const MOVE_LABEL: Record<'in' | 'out' | 'adjust', string> = {
+  in: '入库',
+  out: '发放',
+  adjust: '库存调整',
+}
+
 export default function Inventory() {
   const qc = useQueryClient()
   const [tab, setTab] = useState('')
   const [q, setQ] = useState('')
-  const [modal, setModal] = useState<null | 'sku' | 'loc' | { kind: 'in' | 'out'; sku: Sku }>(null)
+  const [modal, setModal] = useState<
+    null | 'sku' | 'loc' | { kind: 'in' | 'out' | 'adjust'; sku: Sku }
+  >(null)
   const [catModal, setCatModal] = useState<null | 'new' | ItemCategory>(null)
   const [form] = Form.useForm()
   const [catForm] = Form.useForm()
@@ -192,39 +200,32 @@ export default function Inventory() {
               />
             )}
           </div>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              fontSize: 12,
-              color: 'var(--text-3)',
-            }}
-          >
-            <span>
-              安全 {s.safety_stock} · <Tag color={lv.color}>{lv.label}</Tag>
-            </span>
-            <Space size={4}>
-              <Button size="small" onClick={() => setModal({ kind: 'in', sku: s })}>
-                入库
-              </Button>
-              <Button size="small" type="primary" onClick={() => setModal({ kind: 'out', sku: s })}>
-                发放
-              </Button>
-              <Popconfirm
-                title={`删除物品「${s.name}」?`}
-                description="仅在无库存、无出入库记录时可删除"
-                onConfirm={() => skuDelMut.mutate(s.sku_code)}
-                okText="删除"
-                cancelText="取消"
-                okButtonProps={{ danger: true }}
-              >
-                <Button size="small" type="text" danger>
-                  删除
-                </Button>
-              </Popconfirm>
-            </Space>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 8 }}>
+            安全 {s.safety_stock} · <Tag color={lv.color}>{lv.label}</Tag>
           </div>
+          <Space size={4} wrap>
+            <Button size="small" onClick={() => setModal({ kind: 'in', sku: s })}>
+              入库
+            </Button>
+            <Button size="small" type="primary" onClick={() => setModal({ kind: 'out', sku: s })}>
+              发放
+            </Button>
+            <Button size="small" onClick={() => setModal({ kind: 'adjust', sku: s })}>
+              调整
+            </Button>
+            <Popconfirm
+              title={`删除物品「${s.name}」?`}
+              description="物品将从列表移除,库存与流水记录保留(可恢复)"
+              onConfirm={() => skuDelMut.mutate(s.sku_code)}
+              okText="删除"
+              cancelText="取消"
+              okButtonProps={{ danger: true }}
+            >
+              <Button size="small" type="text" danger>
+                删除
+              </Button>
+            </Popconfirm>
+          </Space>
         </Card>
       </Col>
     )
@@ -462,7 +463,7 @@ export default function Inventory() {
         open={typeof modal === 'object' && modal !== null}
         title={
           typeof modal === 'object' && modal
-            ? `${modal.kind === 'in' ? '入库' : '发放'} · ${modal.sku.name}`
+            ? `${MOVE_LABEL[modal.kind]} · ${modal.sku.name}`
             : ''
         }
         onCancel={() => {
@@ -478,20 +479,42 @@ export default function Inventory() {
           layout="vertical"
           onFinish={(v) => {
             if (typeof modal !== 'object' || !modal) return
-            if (modal.kind === 'in') {
-              mut.mutate({ url: '/inventory/receive', body: { sku_id: modal.sku.id, ...v } })
-            } else {
-              mut.mutate({ url: '/inventory/issue', body: { sku_id: modal.sku.id, ...v } })
-            }
+            const url =
+              modal.kind === 'in'
+                ? '/inventory/receive'
+                : modal.kind === 'out'
+                  ? '/inventory/issue'
+                  : '/inventory/adjust'
+            mut.mutate({ url, body: { sku_id: modal.sku.id, ...v } })
           }}
         >
-          <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
-            <InputNumber min={1} style={{ width: '100%' }} />
-          </Form.Item>
-          {typeof modal === 'object' && modal?.kind === 'out' && (
-            <Form.Item name="user_id" label="领用人用户 ID" rules={[{ required: true }]}>
-              <InputNumber min={1} style={{ width: '100%' }} />
-            </Form.Item>
+          {typeof modal === 'object' && modal?.kind === 'adjust' ? (
+            <>
+              <div style={{ marginBottom: 12, color: 'var(--text-2)' }}>
+                当前库存:<b>{modal.sku.available}</b> {modal.sku.unit}
+              </div>
+              <Form.Item name="target_quantity" label="调整后数量" rules={[{ required: true }]}>
+                <InputNumber
+                  min={0}
+                  style={{ width: '100%' }}
+                  placeholder="盘点后的实际数量,填 0 即清空"
+                />
+              </Form.Item>
+              <Form.Item name="remark" label="调整原因">
+                <Input placeholder="如 年度盘点 / 损耗 / 报废清零" />
+              </Form.Item>
+            </>
+          ) : (
+            <>
+              <Form.Item name="quantity" label="数量" rules={[{ required: true }]}>
+                <InputNumber min={1} style={{ width: '100%' }} />
+              </Form.Item>
+              {typeof modal === 'object' && modal?.kind === 'out' && (
+                <Form.Item name="user_id" label="领用人用户 ID" rules={[{ required: true }]}>
+                  <InputNumber min={1} style={{ width: '100%' }} />
+                </Form.Item>
+              )}
+            </>
           )}
         </Form>
       </Modal>
