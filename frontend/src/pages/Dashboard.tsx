@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Card, Col, Empty, List, Row, Statistic, Table, Tag } from 'antd'
+import { Card, Col, List, Row, Statistic, Table, Tag } from 'antd'
 import ReactECharts from 'echarts-for-react'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -47,6 +47,15 @@ interface Overview {
   }[]
 }
 
+interface Approval {
+  id: number
+  request_no: string
+  request_type: string
+  status: string
+  payload_json: { reason?: string } | null
+  created_at: string
+}
+
 const STATUS_LABEL: Record<string, string> = {
   in_use: '在用',
   idle: '闲置',
@@ -74,8 +83,14 @@ export default function Dashboard() {
     queryKey: ['overview'],
     queryFn: async () => (await api.get('/dashboard/overview')).data,
   })
+  const { data: myApprovals } = useQuery<Approval[]>({
+    queryKey: ['my-approvals'],
+    queryFn: async () =>
+      (await api.get('/approvals', { params: { scope: 'for_me' } })).data,
+  })
 
   if (!data) return null
+  const pendingApprovals = (myApprovals ?? []).filter((a) => a.status === 'pending')
   const s = data.stats
 
   const donut = {
@@ -158,8 +173,26 @@ export default function Dashboard() {
 
       <Row gutter={16} style={{ marginTop: 16 }}>
         <Col span={8}>
-          <Card title="待我审批" size="small" style={{ height: 280 }}>
-            <Empty description="审批模块待 Sprint 4 上线" />
+          <Card
+            title={`待我审批${pendingApprovals.length ? ` · ${pendingApprovals.length}` : ''}`}
+            size="small"
+            style={{ height: 280, overflow: 'auto' }}
+          >
+            <List
+              size="small"
+              dataSource={pendingApprovals}
+              locale={{ emptyText: '暂无待办' }}
+              renderItem={(a) => (
+                <List.Item>
+                  <span style={{ fontSize: 13 }}>
+                    {a.request_type === 'consumable' ? '耗材/配件' : '固定资产'}
+                    <span style={{ color: 'var(--text-3)', marginLeft: 6 }}>
+                      {a.payload_json?.reason ?? a.request_no}
+                    </span>
+                  </span>
+                </List.Item>
+              )}
+            />
           </Card>
         </Col>
         <Col span={8}>
