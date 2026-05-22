@@ -60,7 +60,8 @@ export default function Users() {
       } else {
         message.success(
           `同步完成:授权范围 ${s.scope_users ?? 0} 人 / ${s.scope_depts ?? 0} 部门` +
-            `,本次写入 ${s.users ?? 0} 人 / ${s.departments ?? 0} 部门`,
+            `,本次写入 ${s.users ?? 0} 人 / ${s.departments ?? 0} 部门` +
+            `,其中 ${s.users_with_department ?? 0} 人已关联部门`,
           6,
         )
       }

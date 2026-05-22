@@ -76,8 +76,13 @@ def upsert_user_from_lark(db: Session, profile: dict) -> User:
 
 
 def upsert_department(db: Session, item: dict) -> Department:
-    """Idempotent upsert keyed by Lark department_id."""
-    lark_id = item.get("department_id") or item.get("open_department_id")
+    """Idempotent upsert keyed by the Lark open_department_id.
+
+    open_department_id is always present and stable; the tenant-custom
+    department_id is optional and often blank. Users reference their
+    departments by the same open id, so both sides must key on it.
+    """
+    lark_id = item.get("open_department_id") or item.get("department_id")
     dept = db.scalar(select(Department).where(Department.lark_department_id == lark_id))
     if dept is None:
         dept = Department(lark_department_id=lark_id, name=item.get("name") or "")
@@ -135,14 +140,23 @@ async def sync_directory(db: Session) -> dict:
                 depts_synced += 1
 
         users_synced = 0
+        users_with_dept = 0
         for batch in _chunks(user_ids, 50):
             data = await client.get_json(
                 "/open-apis/contact/v3/users/batch",
-                {"user_ids": batch, "user_id_type": "open_id"},
+                {
+                    "user_ids": batch,
+                    "user_id_type": "open_id",
+                    # request department membership as open_department_id so it
+                    # matches how departments are keyed (see upsert_department)
+                    "department_id_type": "open_department_id",
+                },
             )
             for u in data.get("items", []):
-                upsert_user_from_lark(db, u)
+                synced = upsert_user_from_lark(db, u)
                 users_synced += 1
+                if synced.department_id is not None:
+                    users_with_dept += 1
     except LarkNotConfigured:
         return {"skipped": "lark_not_configured"}
 
@@ -151,4 +165,5 @@ async def sync_directory(db: Session) -> dict:
         "scope_depts": len(dept_ids),
         "departments": depts_synced,
         "users": users_synced,
+        "users_with_department": users_with_dept,
     }
