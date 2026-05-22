@@ -29,17 +29,20 @@ async def test_sync_is_noop_without_credentials(monkeypatch):
 
 
 def test_user_sync_links_primary_department():
-    """A Lark user profile's department_ids[0] links to the local Department."""
+    """A user's department_ids[0] (open_department_id) links to the local
+    Department, which is keyed by the same open_department_id."""
     db = SessionLocal()
     try:
-        lark_dept_id = f"od-{uuid.uuid4().hex[:10]}"
-        dept = upsert_department(db, {"department_id": lark_dept_id, "name": "测试事业部"})
+        open_dept_id = f"od-{uuid.uuid4().hex[:10]}"
+        dept = upsert_department(
+            db, {"open_department_id": open_dept_id, "name": "测试事业部"}
+        )
         user = upsert_user_from_lark(
             db,
             {
                 "open_id": f"ou-{uuid.uuid4().hex[:10]}",
                 "name": "部门关联测试",
-                "department_ids": [lark_dept_id],
+                "department_ids": [open_dept_id],
             },
         )
         assert user.department_id == dept.id
