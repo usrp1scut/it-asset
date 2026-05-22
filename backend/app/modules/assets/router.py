@@ -13,7 +13,7 @@ from app.core.audit import write_audit
 from app.core.storage import get_object, put_object, remove_object
 from app.deps import get_db, require_roles
 from app.modules.assets import importer, labels, service
-from app.modules.assets.models import Asset
+from app.modules.assets.models import Asset, AssetClass
 from app.modules.assets.schemas import (
     AccessoryOut,
     AssetCreate,
@@ -280,7 +280,15 @@ def update_asset(
     asset = service.get_asset(db, code)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
-    for k, v in body.model_dump(exclude_unset=True).items():
+    fields = body.model_dump(exclude_unset=True)
+    # On a personal asset, owner_name / department_name are derived from the
+    # assigned directory user (set via assign / transfer) — a free-text edit
+    # must not desync them. Infrastructure can't be assigned, so its text
+    # owner / department stay editable here.
+    if asset.asset_class != AssetClass.infrastructure:
+        fields.pop("owner_name", None)
+        fields.pop("department_name", None)
+    for k, v in fields.items():
         setattr(asset, k, v)
     db.commit()
     db.refresh(asset)

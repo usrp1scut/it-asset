@@ -86,6 +86,39 @@ def test_assign_backfills_owner_and_clears_review():
     assert r["owner_name"] is None              # no stale 责任人 after return
 
 
+def test_update_ignores_owner_name_on_personal_asset():
+    admin = _login()
+    # personal: owner_name is directory-derived — a free-text edit is ignored,
+    # while other fields still update
+    pc = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC", "owner_name": "原始名"},
+        headers=_h(admin),
+    ).json()
+    r = client.put(
+        f"/api/assets/{pc['asset_code']}",
+        json={"owner_name": "乱改的", "location": "上海·张江"},
+        headers=_h(admin),
+    )
+    assert r.status_code == 200
+    assert r.json()["owner_name"] == "原始名"          # free-text edit ignored
+    assert r.json()["location"] == "上海·张江"          # other fields still apply
+
+    # infrastructure can't be assigned — its text owner / department stay editable
+    net = client.post(
+        "/api/assets", json={"asset_class": "infrastructure", "prefix": "NET"},
+        headers=_h(admin),
+    ).json()
+    r2 = client.put(
+        f"/api/assets/{net['asset_code']}",
+        json={"owner_name": "机房管理员", "department_name": "IT 部"},
+        headers=_h(admin),
+    )
+    assert r2.status_code == 200
+    assert r2.json()["owner_name"] == "机房管理员"
+    assert r2.json()["department_name"] == "IT 部"
+
+
 def test_attachment_upload_list_fetch_delete():
     import base64
 

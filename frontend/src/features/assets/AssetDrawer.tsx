@@ -168,12 +168,10 @@ export default function AssetDrawer({
 
   const openEdit = () => {
     if (!a) return
-    form.setFieldsValue({
+    const base = {
       brand_model: a.brand_model ?? '',
       spec: a.spec ?? '',
       serial_number: a.serial_number ?? '',
-      owner_name: a.owner_name ?? '',
-      department_name: a.department_name ?? '',
       location: a.location ?? '',
       purchase_date: a.purchase_date ?? '',
       purchase_price: a.purchase_price ? Number(a.purchase_price) : undefined,
@@ -182,7 +180,14 @@ export default function AssetDrawer({
       remark: a.remark ?? '',
       scrap_candidate: a.scrap_candidate,
       needs_review: a.needs_review,
-    })
+    }
+    // owner_name / department_name are free-text editable only for
+    // infrastructure; personal assets manage them via assign / transfer.
+    form.setFieldsValue(
+      a.asset_class === 'infrastructure'
+        ? { ...base, owner_name: a.owner_name ?? '', department_name: a.department_name ?? '' }
+        : base,
+    )
     setEditOpen(true)
   }
 
@@ -609,14 +614,42 @@ export default function AssetDrawer({
               <Form.Item name="spec" label="配置">
                 <Input />
               </Form.Item>
-              <div style={{ display: 'flex', gap: 12 }}>
-                <Form.Item name="owner_name" label="责任人(文本)" style={{ flex: 1 }}>
-                  <Input />
-                </Form.Item>
-                <Form.Item name="department_name" label="部门" style={{ flex: 1 }}>
-                  <Input />
-                </Form.Item>
-              </div>
+              {a.asset_class === 'infrastructure' ? (
+                <div style={{ display: 'flex', gap: 12 }}>
+                  <Form.Item name="owner_name" label="责任人" style={{ flex: 1 }}>
+                    <Input placeholder="基础设施可填文本责任人" />
+                  </Form.Item>
+                  <Form.Item name="department_name" label="部门" style={{ flex: 1 }}>
+                    <Input />
+                  </Form.Item>
+                </div>
+              ) : (
+                <>
+                  <div style={{ display: 'flex', gap: 12 }}>
+                    <Form.Item label="责任人" style={{ flex: 1 }}>
+                      <Input
+                        value={
+                          a.owner_name ?? (a.owner_user_id ? `#${a.owner_user_id}` : '未分配')
+                        }
+                        disabled
+                      />
+                    </Form.Item>
+                    <Form.Item label="部门" style={{ flex: 1 }}>
+                      <Input value={a.department_name ?? '—'} disabled />
+                    </Form.Item>
+                  </div>
+                  <div
+                    style={{
+                      marginTop: -4,
+                      marginBottom: 12,
+                      fontSize: 12,
+                      color: 'var(--text-3)',
+                    }}
+                  >
+                    责任人 / 部门跟随分配的员工自动维护,如需变更请用「分配 / 转移」。
+                  </div>
+                </>
+              )}
               <div style={{ display: 'flex', gap: 12 }}>
                 <Form.Item name="location" label="存放地点" style={{ flex: 1 }}>
                   <Input />
