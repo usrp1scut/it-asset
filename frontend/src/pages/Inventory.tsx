@@ -19,6 +19,7 @@ import {
 } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import EmployeeSelect from '../features/users/EmployeeSelect'
 import type { ItemCategory, Location, Sku, SkuListResponse } from '../features/inventory/types'
 
 const LEVEL: Record<string, { color: string; label: string }> = {
@@ -510,8 +511,8 @@ export default function Inventory() {
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
               {typeof modal === 'object' && modal?.kind === 'out' && (
-                <Form.Item name="user_id" label="领用人用户 ID" rules={[{ required: true }]}>
-                  <InputNumber min={1} style={{ width: '100%' }} />
+                <Form.Item name="user_id" label="领用人" rules={[{ required: true }]}>
+                  <EmployeeSelect placeholder="搜索姓名 / 邮箱选择领用人" />
                 </Form.Item>
               )}
             </>
