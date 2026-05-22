@@ -263,6 +263,54 @@ def return_stock(
     return order
 
 
+def adjust(
+    db: Session,
+    *,
+    sku_id: int,
+    target_quantity: int,
+    location_id: int | None,
+    operator_id: int | None,
+    remark: str | None = None,
+) -> InventoryOrder:
+    """Manual stock correction — set a location's balance to `target_quantity`
+    (盘盈 / 盘亏 / 损耗 / 清零). Writes a signed `adjustment` ledger row for the
+    diff so the change is auditable.
+    """
+    if target_quantity < 0:
+        raise ValueError("调整后数量不能为负")
+    sku = db.get(Sku, sku_id)
+    if sku is None:
+        raise ValueError("SKU 不存在")
+    loc = _resolve_location(db, sku, location_id)
+    stock = _lock_stock(db, sku_id, loc)
+    delta = target_quantity - stock.quantity_available
+    if delta == 0:
+        raise ValueError("调整后数量与当前库存一致,无需调整")
+    order = InventoryOrder(
+        order_no=_order_no(OrderType.adjustment),
+        order_type=OrderType.adjustment,
+        operator_id=operator_id,
+        target_location_id=loc,
+        remark=remark,
+    )
+    db.add(order)
+    db.flush()
+    db.add(InventoryOrderItem(order_id=order.id, sku_id=sku_id, quantity=delta))
+    apply_movement(
+        db,
+        sku_id=sku_id,
+        location_id=loc,
+        delta=delta,
+        txn_type=TransactionType.adjustment,
+        operator_id=operator_id,
+        order_id=order.id,
+        remark=remark,
+    )
+    db.commit()
+    db.refresh(order)
+    return order
+
+
 def total_available(db: Session, sku_id: int) -> int:
     rows = db.scalars(
         select(InventoryStock.quantity_available).where(InventoryStock.sku_id == sku_id)

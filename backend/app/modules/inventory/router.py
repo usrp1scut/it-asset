@@ -13,6 +13,7 @@ from app.modules.inventory.models import (
     Sku,
 )
 from app.modules.inventory.schemas import (
+    AdjustIn,
     IssueIn,
     ItemCategoryCreate,
     ItemCategoryOut,
@@ -70,7 +71,8 @@ def list_categories(db: Session = Depends(get_db), _: User = Depends(staff)):
     for c in cats:
         o = ItemCategoryOut.model_validate(c)
         o.sku_count = db.scalar(
-            select(func.count()).select_from(Sku).where(Sku.category_id == c.id)
+            select(func.count()).select_from(Sku)
+            .where(Sku.category_id == c.id, Sku.status != "deleted")
         ) or 0
         out.append(o)
     return out
@@ -129,13 +131,18 @@ def delete_category(
     if cat is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "分类不存在")
     n = db.scalar(
-        select(func.count()).select_from(Sku).where(Sku.category_id == cat_id)
+        select(func.count()).select_from(Sku)
+        .where(Sku.category_id == cat_id, Sku.status != "deleted")
     ) or 0
     if n:
         raise HTTPException(
             status.HTTP_409_CONFLICT, f"该分类下还有 {n} 个物品,请先转走再删除"
         )
     code = cat.code
+    # only soft-deleted SKUs may still FK-reference this category (the guard
+    # above ruled out live ones) — detach them so the hard-delete can proceed
+    for s in db.scalars(select(Sku).where(Sku.category_id == cat_id)):
+        s.category_id = None
     db.delete(cat)
     db.commit()
     write_audit(db, actor_user_id=user.id, action="category.delete",
@@ -155,7 +162,7 @@ def list_skus(
     category_id: int | None = None,
     q: str | None = None,
 ):
-    stmt = select(Sku)
+    stmt = select(Sku).where(Sku.status != "deleted")
     if mode:
         stmt = stmt.where(Sku.management_mode == mode)
     if category_id:
@@ -202,30 +209,15 @@ def update_sku(
 
 @router.delete("/api/skus/{sku_code}")
 def delete_sku(sku_code: str, db: Session = Depends(get_db), user: User = Depends(it_admin)):
-    """Delete an SKU. Refused while it still holds stock or has any ledger
-    history — the transaction ledger is the source of truth and must never be
-    orphaned. Clean (never-moved) SKUs are removed outright."""
+    """Soft-delete an SKU — archive it (status='deleted') out of every listing.
+
+    Stock balance and transaction-ledger rows stay in the DB: the history is
+    preserved and the item is recoverable (PUT status back to 'active').
+    """
     sku = db.scalar(select(Sku).where(Sku.sku_code == sku_code))
-    if sku is None:
+    if sku is None or sku.status == "deleted":
         raise HTTPException(status.HTTP_404_NOT_FOUND, "SKU 不存在")
-    avail = service.total_available(db, sku.id)
-    if avail > 0:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"该物品仍有库存 {avail},请先发放或退库清零再删除",
-        )
-    txns = db.scalar(
-        select(func.count()).select_from(InventoryTransaction)
-        .where(InventoryTransaction.sku_id == sku.id)
-    ) or 0
-    if txns:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            f"该物品有 {txns} 条出入库流水,不能删除(台账需留痕)",
-        )
-    for st in db.scalars(select(InventoryStock).where(InventoryStock.sku_id == sku.id)):
-        db.delete(st)
-    db.delete(sku)
+    sku.status = "deleted"
     db.commit()
     write_audit(db, actor_user_id=user.id, action="sku.delete",
                 resource_type="sku", resource_id=sku_code)
@@ -299,6 +291,19 @@ def return_stock(body: ReturnIn, db: Session = Depends(get_db), user: User = Dep
         order = service.return_stock(
             db, sku_id=body.sku_id, quantity=body.quantity, location_id=body.location_id,
             operator_id=user.id, remark=body.remark,
+        )
+    except ValueError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    return OrderOut.model_validate(order)
+
+
+@router.post("/api/inventory/adjust", response_model=OrderOut)
+def adjust(body: AdjustIn, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Manual stock correction (盘盈 / 盘亏 / 损耗 / 清零)."""
+    try:
+        order = service.adjust(
+            db, sku_id=body.sku_id, target_quantity=body.target_quantity,
+            location_id=body.location_id, operator_id=user.id, remark=body.remark,
         )
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e

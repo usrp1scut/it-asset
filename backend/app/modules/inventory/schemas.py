@@ -122,6 +122,15 @@ class ReturnIn(BaseModel):
     remark: str | None = None
 
 
+class AdjustIn(BaseModel):
+    """Manual stock correction — set a location's balance to target_quantity."""
+
+    sku_id: int
+    target_quantity: int
+    location_id: int | None = None
+    remark: str | None = None
+
+
 class OrderOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
