@@ -67,6 +67,26 @@ export default function AssetTypes() {
       message.error(e.response?.data?.detail ?? '删除失败'),
   })
 
+  const backfillMut = useMutation({
+    mutationFn: async () =>
+      (await api.post('/asset-types/backfill-assets')).data as {
+        scanned: number
+        updated: number
+        ambiguous: number
+        no_match: number
+      },
+    onSuccess: (s) => {
+      message.success(
+        `扫描 ${s.scanned} 项,绑定 ${s.updated} 项;歧义 ${s.ambiguous},无匹配 ${s.no_match}`,
+        6,
+      )
+      invalidate()
+      qc.invalidateQueries({ queryKey: ['assets'] })
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '回填失败'),
+  })
+
   const openEdit = (t: AssetType) => {
     setModal(t)
     form.setFieldsValue({
@@ -149,9 +169,20 @@ export default function AssetTypes() {
         }}
       >
         <h2 style={{ marginTop: 0 }}>资产类型</h2>
-        <Button type="primary" onClick={() => setModal('new')}>
-          新建类型
-        </Button>
+        <Space>
+          <Popconfirm
+            title="为未关联类型的旧资产按编号前缀回填类型?"
+            description="只处理 asset_type_id 为空的资产;歧义或无匹配会跳过。"
+            onConfirm={() => backfillMut.mutate()}
+            okText="开始回填"
+            cancelText="取消"
+          >
+            <Button loading={backfillMut.isPending}>回填旧资产类型</Button>
+          </Popconfirm>
+          <Button type="primary" onClick={() => setModal('new')}>
+            新建类型
+          </Button>
+        </Space>
       </div>
       <Table<AssetType>
         rowKey="id"
