@@ -10,6 +10,7 @@ from app.modules.approvals.router import router as approvals_router
 from app.modules.assets.repair_router import router as repair_router
 from app.modules.assets.router import router as assets_router
 from app.modules.assets.scrap_router import router as scrap_router
+from app.modules.assets.types_router import router as asset_types_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.inspections.router import router as inspections_router
 from app.modules.inventory.router import router as inventory_router
@@ -49,6 +50,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(assets_router)
+app.include_router(asset_types_router)
 app.include_router(scrap_router)
 app.include_router(repair_router)
 app.include_router(inventory_router)

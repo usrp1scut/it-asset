@@ -6,6 +6,7 @@ import { useAuth } from '../stores/auth'
 const ITEMS = [
   { key: '/', label: '工作台' },
   { key: '/assets', label: '资产台账' },
+  { key: '/asset-types', label: '资产类型', adminOnly: true },
   { key: '/inventory', label: '库存物品' },
   { key: '/approvals', label: '审批中心' },
   { key: '/inspections', label: '资产盘点', adminOnly: true },

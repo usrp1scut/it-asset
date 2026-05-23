@@ -41,6 +41,9 @@ class AssetType(Base):
     name: Mapped[str] = mapped_column(String(128))
     parent_id: Mapped[int | None] = mapped_column(ForeignKey("asset_types.id"))
     code_prefix: Mapped[str] = mapped_column(String(16))  # PC / MON / NET …
+    asset_class: Mapped[AssetClass] = mapped_column(
+        Enum(AssetClass, name="asset_class"), default=AssetClass.personal
+    )
     depreciation_years: Mapped[int | None] = mapped_column(Integer)
 
 

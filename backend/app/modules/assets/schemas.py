@@ -110,10 +110,37 @@ class AttachmentOut(BaseModel):
     uploaded_at: str
 
 
-class AssetCreate(BaseModel):
+class AssetTypeCreate(BaseModel):
+    name: str
+    code_prefix: str
     asset_class: AssetClass
+    depreciation_years: int | None = None
+
+
+class AssetTypeUpdate(BaseModel):
+    name: str | None = None
+    code_prefix: str | None = None
+    asset_class: AssetClass | None = None
+    depreciation_years: int | None = None
+
+
+class AssetTypeOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    code_prefix: str
+    asset_class: AssetClass
+    depreciation_years: int | None = None
+    asset_count: int = 0
+
+
+class AssetCreate(BaseModel):
+    # Either asset_type_id (preferred — drives prefix + asset_class) or the
+    # legacy pair (asset_class + prefix) must be supplied.
     asset_type_id: int | None = None
-    prefix: str  # 编号前缀 PC/MON/NET(asset_code 留空时按此生成)
+    asset_class: AssetClass | None = None
+    prefix: str | None = None  # 编号前缀 PC/MON/NET(asset_code 留空时按此生成)
     asset_code: str | None = None
     brand_model: str | None = None
     spec: str | None = None
