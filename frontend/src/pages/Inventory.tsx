@@ -4,6 +4,7 @@ import {
   Button,
   Card,
   Col,
+  DatePicker,
   Form,
   Input,
   InputNumber,
@@ -17,6 +18,7 @@ import {
   Tag,
   message,
 } from 'antd'
+import dayjs, { type Dayjs } from 'dayjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import EmployeeSelect from '../features/users/EmployeeSelect'
@@ -53,6 +55,11 @@ export default function Inventory() {
   const [catModal, setCatModal] = useState<null | 'new' | ItemCategory>(null)
   const [form] = Form.useForm()
   const [catForm] = Form.useForm()
+  const [txnExportOpen, setTxnExportOpen] = useState(false)
+  const [txnRange, setTxnRange] = useState<[Dayjs, Dayjs]>(() => [
+    dayjs().subtract(30, 'day'),
+    dayjs(),
+  ])
 
   const warningOnly = tab === 'warn'
   const mode = tab === 'inventory' || tab === 'consumable' ? tab : undefined
@@ -251,6 +258,30 @@ export default function Inventory() {
           >
             新建物品
           </Button>
+          <Button
+            onClick={async () => {
+              try {
+                const params: Record<string, string> = {}
+                if (mode) params.mode = mode
+                if (q) params.q = q
+                const res = await api.get('/skus/export', {
+                  responseType: 'blob',
+                  params,
+                })
+                const url = URL.createObjectURL(res.data as Blob)
+                const a = document.createElement('a')
+                a.href = url
+                a.download = 'skus.xlsx'
+                a.click()
+                URL.revokeObjectURL(url)
+              } catch {
+                message.error('导出失败')
+              }
+            }}
+          >
+            导出 SKU
+          </Button>
+          <Button onClick={() => setTxnExportOpen(true)}>导出流水</Button>
         </Space>
       </div>
 
@@ -518,6 +549,47 @@ export default function Inventory() {
             </>
           )}
         </Form>
+      </Modal>
+
+      <Modal
+        open={txnExportOpen}
+        title="导出库存流水"
+        onCancel={() => setTxnExportOpen(false)}
+        onOk={async () => {
+          const [from, to] = txnRange
+          try {
+            const res = await api.get('/inventory/transactions/export', {
+              responseType: 'blob',
+              params: {
+                date_from: from.format('YYYY-MM-DD'),
+                date_to: to.format('YYYY-MM-DD'),
+              },
+            })
+            const url = URL.createObjectURL(res.data as Blob)
+            const a = document.createElement('a')
+            a.href = url
+            a.download = `inventory-transactions-${from.format('YYYYMMDD')}-${to.format('YYYYMMDD')}.xlsx`
+            a.click()
+            URL.revokeObjectURL(url)
+            setTxnExportOpen(false)
+          } catch {
+            message.error('导出失败')
+          }
+        }}
+        okText="导出"
+        cancelText="取消"
+      >
+        <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>
+          选择日期范围(含截止日)
+        </div>
+        <DatePicker.RangePicker
+          value={txnRange}
+          onChange={(v) => {
+            if (v && v[0] && v[1]) setTxnRange([v[0], v[1]])
+          }}
+          style={{ width: '100%' }}
+          allowClear={false}
+        />
       </Modal>
     </div>
   )

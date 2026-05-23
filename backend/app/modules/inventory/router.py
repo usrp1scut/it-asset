@@ -1,10 +1,13 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.deps import get_db, require_roles
-from app.modules.inventory import service
+from app.modules.inventory import reports, service
 from app.modules.inventory.models import (
     InventoryLocation,
     InventoryStock,
@@ -337,3 +340,46 @@ def stocks(
     if sku_id:
         stmt = stmt.where(InventoryStock.sku_id == sku_id)
     return [StockOut.model_validate(s) for s in db.scalars(stmt)]
+
+
+# ── Reports / Exports ────────────────────────────────────────────────────────
+
+
+_XLSX = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+
+@router.get("/api/skus/export")
+def export_skus(
+    db: Session = Depends(get_db),
+    _: User = Depends(staff),
+    mode: str | None = None,
+    q: str | None = None,
+):
+    """Current SKU snapshot + available balance — Excel."""
+    data = reports.export_sku_workbook(db, mode=mode, q=q)
+    return StreamingResponse(
+        iter([data]),
+        media_type=_XLSX,
+        headers={"Content-Disposition": "attachment; filename=skus.xlsx"},
+    )
+
+
+@router.get("/api/inventory/transactions/export")
+def export_transactions(
+    db: Session = Depends(get_db),
+    _: User = Depends(staff),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    sku_id: int | None = None,
+):
+    """Stock movement ledger for a date range (date_to inclusive)."""
+    data = reports.export_txn_workbook(
+        db, date_from=date_from, date_to=date_to, sku_id=sku_id,
+    )
+    return StreamingResponse(
+        iter([data]),
+        media_type=_XLSX,
+        headers={
+            "Content-Disposition": "attachment; filename=inventory-transactions.xlsx",
+        },
+    )
