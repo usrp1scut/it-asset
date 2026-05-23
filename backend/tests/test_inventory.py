@@ -200,6 +200,56 @@ def test_inventory_adjust_up_down_and_clear():
                        json={"sku_id": sid, "target_quantity": -1}, headers=h).status_code == 400
 
 
+def test_export_skus_returns_xlsx():
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc)
+    r = client.get("/api/skus/export", headers=h)
+    assert r.status_code == 200
+    assert r.headers["content-type"].startswith("application/vnd.openxmlformats")
+    wb = load_workbook(BytesIO(r.content))
+    ws = wb.active
+    headers = [c.value for c in ws[1]]
+    assert "SKU 编码" in headers and "当前可用" in headers
+    # the SKU we just created shows up somewhere
+    codes = [row[headers.index("SKU 编码")].value for row in ws.iter_rows(min_row=2)]
+    assert sku["sku_code"] in codes
+
+
+def test_export_transactions_returns_xlsx():
+    from io import BytesIO
+
+    from openpyxl import load_workbook
+
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc)
+    client.post(
+        "/api/inventory/receive",
+        json={"sku_id": sku["id"], "quantity": 5}, headers=h,
+    )
+    r = client.get("/api/inventory/transactions/export", headers=h)
+    assert r.status_code == 200
+    wb = load_workbook(BytesIO(r.content))
+    ws = wb.active
+    headers = [c.value for c in ws[1]]
+    assert "SKU 编码" in headers and "类型" in headers
+
+    # empty date range still produces a valid (header-only) xlsx
+    r2 = client.get(
+        "/api/inventory/transactions/export",
+        params={"date_from": "2099-01-01", "date_to": "2099-12-31"},
+        headers=h,
+    )
+    assert r2.status_code == 200
+    ws2 = load_workbook(BytesIO(r2.content)).active
+    assert ws2.max_row == 1   # header only
+
+
 def test_stock_movements_are_audited():
     h = _admin()
     loc = _loc(h)
