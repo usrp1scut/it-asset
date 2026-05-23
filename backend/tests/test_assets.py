@@ -31,6 +31,64 @@ def test_create_generates_code_and_lists():
     assert any(i["asset_code"] == code for i in lst.json()["items"])
 
 
+def test_asset_type_crud_and_create_via_type():
+    admin = _login()
+
+    # the migration seeds standard prefixes — should be listed
+    types = client.get("/api/asset-types", headers=_h(admin)).json()
+    assert {t["code_prefix"] for t in types} >= {"PC", "MON", "NET"}
+
+    # create a new type (code_prefix is upper-cased server-side)
+    c = client.post(
+        "/api/asset-types",
+        json={"name": "投影仪", "code_prefix": "prj", "asset_class": "infrastructure"},
+        headers=_h(admin),
+    )
+    assert c.status_code == 201
+    new_type = c.json()
+    assert new_type["code_prefix"] == "PRJ"
+    assert new_type["asset_class"] == "infrastructure"
+    assert new_type["asset_count"] == 0
+
+    # create an asset by type — prefix + asset_class come from the type
+    r = client.post(
+        "/api/assets",
+        json={"asset_type_id": new_type["id"]},
+        headers=_h(admin),
+    )
+    assert r.status_code == 201
+    a = r.json()
+    assert a["asset_code"].startswith("PRJ-")
+    assert a["asset_class"] == "infrastructure"
+    assert a["asset_type_id"] == new_type["id"]
+
+    # type now has an asset → delete refused
+    refused = client.delete(f"/api/asset-types/{new_type['id']}", headers=_h(admin))
+    assert refused.status_code == 409
+
+    # legacy (asset_class + prefix) path stays accepted
+    legacy = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC"},
+        headers=_h(admin),
+    )
+    assert legacy.status_code == 201
+    assert legacy.json()["asset_code"].startswith("PC-")
+
+    # neither type_id nor prefix → 400
+    bad = client.post("/api/assets", json={"brand_model": "x"}, headers=_h(admin))
+    assert bad.status_code == 400
+
+    # update the type
+    u = client.put(
+        f"/api/asset-types/{new_type['id']}",
+        json={"name": "投影设备"},
+        headers=_h(admin),
+    )
+    assert u.status_code == 200
+    assert u.json()["name"] == "投影设备"
+
+
 def test_qr_payload_deep_link_when_configured():
     from app.config import get_settings
     from app.modules.assets.service import qr_payload

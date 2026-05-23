@@ -4,6 +4,7 @@ import AppLayout from './components/AppLayout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Assets from './pages/Assets'
+import AssetTypes from './pages/AssetTypes'
 import Inventory from './pages/Inventory'
 import AuditLogs from './pages/AuditLogs'
 import Approvals from './pages/Approvals'
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
         children: [
           { path: '/', element: <Dashboard /> },
           { path: '/assets', element: <Assets /> },
+          { path: '/asset-types', element: <AssetTypes /> },
           { path: '/inventory', element: <Inventory /> },
           { path: '/approvals', element: <Approvals /> },
           { path: '/inspections', element: <Inspections /> },

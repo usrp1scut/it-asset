@@ -79,6 +79,17 @@ export default function Assets() {
       ).data,
   })
 
+  interface AssetTypeOption {
+    id: number
+    name: string
+    code_prefix: string
+    asset_class: 'personal' | 'infrastructure'
+  }
+  const { data: types } = useQuery<AssetTypeOption[]>({
+    queryKey: ['asset-types'],
+    queryFn: async () => (await api.get('/asset-types')).data,
+  })
+
   const columns: ColumnsType<Asset> = [
     {
       title: '资产编号',
@@ -259,7 +270,7 @@ export default function Assets() {
         <Form
           form={form}
           layout="vertical"
-          initialValues={{ asset_class: 'personal', prefix: 'PC' }}
+          initialValues={{}}
           onFinish={(v: Record<string, unknown>) => {
             const body: Record<string, unknown> = {}
             for (const [k, val] of Object.entries(v)) {
@@ -268,34 +279,23 @@ export default function Assets() {
             createMut.mutate(body)
           }}
         >
-          <div style={{ display: 'flex', gap: 12 }}>
-            <Form.Item
-              name="asset_class"
-              label="资产类别"
-              rules={[{ required: true }]}
-              style={{ flex: 1 }}
-            >
-              <Select
-                options={[
-                  { value: 'personal', label: '个人发放' },
-                  { value: 'infrastructure', label: '基础设施' },
-                ]}
-              />
-            </Form.Item>
-            <Form.Item
-              name="prefix"
-              label="编号前缀"
-              rules={[{ required: true }]}
-              style={{ flex: 1 }}
-            >
-              <Select
-                options={['PC', 'MON', 'NET', 'PHN', 'PAD', 'PRT'].map((p) => ({
-                  value: p,
-                  label: p,
-                }))}
-              />
-            </Form.Item>
-          </div>
+          <Form.Item
+            name="asset_type_id"
+            label="资产类型(决定编号前缀与个人/基础设施类别)"
+            rules={[{ required: true }]}
+          >
+            <Select
+              showSearch
+              placeholder="选择资产类型(在「资产类型」页可新建)"
+              optionFilterProp="label"
+              options={(types ?? []).map((t) => ({
+                value: t.id,
+                label: `${t.name} · ${t.code_prefix} · ${
+                  t.asset_class === 'personal' ? '个人发放' : '基础设施'
+                }`,
+              }))}
+            />
+          </Form.Item>
           <Form.Item name="brand_model" label="品牌型号">
             <Input placeholder="如 Apple MacBook Pro 14" />
           </Form.Item>

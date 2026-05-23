@@ -13,7 +13,7 @@ from app.core.audit import write_audit
 from app.core.storage import get_object, put_object, remove_object
 from app.deps import get_db, require_roles
 from app.modules.assets import importer, labels, service
-from app.modules.assets.models import Asset, AssetClass
+from app.modules.assets.models import Asset, AssetClass, AssetType
 from app.modules.assets.schemas import (
     AccessoryOut,
     AssetCreate,
@@ -78,7 +78,23 @@ def list_assets(
 @router.post("", response_model=AssetOut, status_code=status.HTTP_201_CREATED)
 def create_asset(body: AssetCreate, db: Session = Depends(get_db), user: User = Depends(it_admin)):
     data = body.model_dump(exclude={"prefix"})
-    asset = service.create_asset(db, data, body.prefix, user.id)
+    prefix = body.prefix
+    # The asset_type drives both the code prefix and the personal /
+    # infrastructure split; when provided it overrides any body values.
+    # The legacy (asset_class + prefix) pair stays accepted so the
+    # Phase-0 importer keeps working.
+    if body.asset_type_id is not None:
+        t = db.get(AssetType, body.asset_type_id)
+        if t is None:
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, "资产类型不存在")
+        prefix = t.code_prefix
+        data["asset_class"] = t.asset_class
+    if not prefix or data.get("asset_class") is None:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "请选择资产类型,或同时提供 asset_class 与 prefix",
+        )
+    asset = service.create_asset(db, data, prefix, user.id)
     write_audit(db, actor_user_id=user.id, action="asset.create",
                 resource_type="asset", resource_id=asset.asset_code)
     return AssetOut.model_validate(asset)
