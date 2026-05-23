@@ -86,6 +86,48 @@ def update_asset_type(
     return _with_count(db, t)
 
 
+@router.post("/backfill-assets")
+def backfill_assets(db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Link legacy unlinked assets to a type by matching their asset_code
+    prefix to a unique AssetType. Idempotent — only touches assets where
+    asset_type_id is NULL. Ambiguous or unknown prefixes are skipped and
+    reported back so a human can decide.
+    """
+    by_prefix: dict[str, list[int]] = {}
+    for t in db.scalars(select(AssetType)):
+        by_prefix.setdefault(t.code_prefix.upper(), []).append(t.id)
+
+    updated = ambiguous = no_match = 0
+    assets = db.scalars(
+        select(Asset).where(
+            Asset.asset_type_id.is_(None),
+            Asset.deleted_at.is_(None),
+        )
+    ).all()
+    for asset in assets:
+        code = asset.asset_code or ""
+        prefix = code.split("-", 1)[0].upper() if "-" in code else code.upper()
+        matches = by_prefix.get(prefix, [])
+        if len(matches) == 1:
+            asset.asset_type_id = matches[0]
+            updated += 1
+        elif len(matches) > 1:
+            ambiguous += 1
+        else:
+            no_match += 1
+    if updated:
+        db.commit()
+    summary = {
+        "scanned": len(assets),
+        "updated": updated,
+        "ambiguous": ambiguous,
+        "no_match": no_match,
+    }
+    write_audit(db, actor_user_id=user.id, action="asset_type.backfill",
+                resource_type="asset_type", payload=summary)
+    return summary
+
+
 @router.delete("/{type_id}")
 def delete_asset_type(
     type_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)

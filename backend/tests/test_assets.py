@@ -89,6 +89,26 @@ def test_asset_type_crud_and_create_via_type():
     assert u.json()["name"] == "投影设备"
 
 
+def test_backfill_assets_links_by_prefix():
+    admin = _login()
+    # legacy asset created via the prefix path → no asset_type_id
+    legacy = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"},
+        headers=_h(admin),
+    ).json()
+    before = client.get(f"/api/assets/{legacy['asset_code']}", headers=_h(admin)).json()
+    assert before["asset"]["asset_type_id"] is None
+
+    r = client.post("/api/asset-types/backfill-assets", headers=_h(admin))
+    assert r.status_code == 200
+    summary = r.json()
+    assert summary["scanned"] >= 1 and summary["updated"] >= 1
+
+    # the legacy asset now points at the PC type seeded by the migration
+    after = client.get(f"/api/assets/{legacy['asset_code']}", headers=_h(admin)).json()
+    assert after["asset"]["asset_type_id"] is not None
+
+
 def test_qr_payload_deep_link_when_configured():
     from app.config import get_settings
     from app.modules.assets.service import qr_payload
