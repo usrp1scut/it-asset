@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Modal } from 'antd'
+import { api } from '../../api/client'
 
 /** Pull "PC-0099" out of a scanned URL payload, else return the raw value. */
 function extractCode(payload: string): string {
@@ -21,6 +22,55 @@ interface BarcodeDetectorLike {
 declare global {
   interface Window {
     BarcodeDetector?: new (opts: { formats: string[] }) => BarcodeDetectorLike
+    h5sdk?: {
+      ready: (cb: () => void) => void
+      error: (cb: (e: unknown) => void) => void
+    }
+    tt?: {
+      requestAuthCode?: (opts: {
+        appId: string
+        success: (res: { code: string }) => void
+        fail?: (e: unknown) => void
+      }) => void
+      scanCode?: (opts: {
+        scanType?: string[]
+        success: (res: { result?: string }) => void
+        fail?: (e: { errMsg?: string }) => void
+      }) => void
+    }
+  }
+}
+
+const inLark = /Lark|Feishu/i.test(navigator.userAgent)
+const SDK_ID = 'lark-h5-jssdk'
+
+/** Load the Lark H5 JSSDK on demand. No-op if already loaded. */
+async function ensureLarkJssdk(): Promise<boolean> {
+  if (window.h5sdk && window.tt?.scanCode) return true
+  try {
+    const cfg = (await api.get('/auth/lark/config')).data as {
+      jssdk_url?: string
+    }
+    if (!cfg.jssdk_url) return false
+    if (!document.getElementById(SDK_ID)) {
+      await new Promise<void>((resolve, reject) => {
+        const s = document.createElement('script')
+        s.id = SDK_ID
+        s.src = cfg.jssdk_url!
+        s.onload = () => resolve()
+        s.onerror = () => reject(new Error('jssdk load failed'))
+        document.head.appendChild(s)
+      })
+    }
+    // Wait briefly for the SDK to attach itself to window.
+    if (!window.h5sdk) await new Promise((r) => setTimeout(r, 300))
+    if (!window.h5sdk) return false
+    return new Promise<boolean>((resolve) => {
+      window.h5sdk!.ready(() => resolve(true))
+      window.h5sdk!.error(() => resolve(false))
+    })
+  } catch {
+    return false
   }
 }
 
@@ -44,15 +94,57 @@ export default function CameraScanner({
     if (!open) return
     handledRef.current = false
     setErr(null)
+    let cancelled = false
 
+    // Inside the Lark webview, getUserMedia is unreliable / blocked. Hand off
+    // to the native scanner via `tt.scanCode` — same UX as 飞书 'scan'.
+    if (inLark) {
+      ;(async () => {
+        const ok = await ensureLarkJssdk()
+        if (cancelled) return
+        if (!ok || !window.tt?.scanCode) {
+          setErr('Lark 原生扫码不可用,请确认 Lark 客户端已更新到最新版。')
+          return
+        }
+        window.tt.scanCode({
+          scanType: ['qrCode', 'barCode'],
+          success: (res) => {
+            if (cancelled || handledRef.current) return
+            const raw = (res.result ?? '').trim()
+            if (raw) {
+              handledRef.current = true
+              onCode(extractCode(raw))
+            } else {
+              onClose()
+            }
+          },
+          fail: (e) => {
+            if (cancelled) return
+            const msg = e?.errMsg || ''
+            // user-cancelled — silently close without raising an error banner
+            if (/cancel/i.test(msg)) {
+              onClose()
+            } else {
+              setErr('Lark 扫码失败:' + (msg || '未知错误'))
+            }
+          },
+        })
+      })()
+      return () => {
+        cancelled = true
+      }
+    }
+
+    // Browser path — native BarcodeDetector against a getUserMedia stream.
     const Detector = window.BarcodeDetector
     if (!Detector) {
-      setErr('当前浏览器不支持原生条码识别(BarcodeDetector)。请用 Chrome/Edge/Safari 最新版,或继续手动输入编号。')
+      setErr(
+        '当前浏览器不支持原生条码识别(BarcodeDetector)。请用 Chrome/Edge/Safari 最新版,或继续手动输入编号。',
+      )
       return
     }
     detectorRef.current = new Detector({ formats: ['qr_code'] })
 
-    let cancelled = false
     ;(async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -99,7 +191,25 @@ export default function CameraScanner({
         streamRef.current = null
       }
     }
-  }, [open, onCode])
+  }, [open, onCode, onClose])
+
+  // Inside Lark the native scanner takes over the screen — render only an
+  // error fallback if something went wrong (otherwise stay invisible).
+  if (inLark) {
+    if (!open || !err) return null
+    return (
+      <Modal
+        open={open}
+        title="扫码"
+        footer={null}
+        onCancel={onClose}
+        destroyOnClose
+        width={360}
+      >
+        <Alert type="warning" showIcon message={err} />
+      </Modal>
+    )
+  }
 
   return (
     <Modal
