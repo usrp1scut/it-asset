@@ -105,13 +105,23 @@ export default function CameraScanner({
           },
           fail: (e) => {
             if (cancelled) return
+            console.error('[Lark scanCode] fail object:', e)
             const msg = e?.errMsg || ''
             // user-cancelled — silently close without raising an error banner
             if (/cancel/i.test(msg)) {
               onClose()
-            } else {
-              setErr('Lark 扫码失败:' + (msg || '未知错误'))
+              return
             }
+            // surface the full error shape so missing capabilities / unsigned
+            // config issues are easy to diagnose
+            const dump =
+              JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
+            setErr(
+              `Lark 扫码失败:${msg || '(无 errMsg)'}\n\n完整错误对象:\n${dump}\n\n` +
+                '常见原因:\n' +
+                '• Lark 开发者后台「网页应用 / H5 能力」未启用「扫一扫 scanCode」权限\n' +
+                '• 应用未发布新版本或管理员未审批新加的权限',
+            )
           },
         })
       })()
@@ -191,7 +201,22 @@ export default function CameraScanner({
         destroyOnClose
         width={360}
       >
-        <Alert type="warning" showIcon message={err} />
+        <Alert
+          type="warning"
+          showIcon
+          message={
+            <pre
+              style={{
+                whiteSpace: 'pre-wrap',
+                margin: 0,
+                fontFamily: 'inherit',
+                fontSize: 13,
+              }}
+            >
+              {err}
+            </pre>
+          }
+        />
       </Modal>
     )
   }
@@ -206,7 +231,22 @@ export default function CameraScanner({
       width={420}
     >
       {err ? (
-        <Alert type="warning" showIcon message={err} />
+        <Alert
+          type="warning"
+          showIcon
+          message={
+            <pre
+              style={{
+                whiteSpace: 'pre-wrap',
+                margin: 0,
+                fontFamily: 'inherit',
+                fontSize: 13,
+              }}
+            >
+              {err}
+            </pre>
+          }
+        />
       ) : (
         <>
           <video
