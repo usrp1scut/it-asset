@@ -4,23 +4,8 @@ import { Button, Card, Divider, Input, Typography, message } from 'antd'
 import { api } from '../api/client'
 import { useAuth } from '../stores/auth'
 
-// Lark H5 JSSDK globals (the SDK script must be loaded first; it is NOT
-// auto-injected just by opening inside the Lark client).
-declare global {
-  interface Window {
-    h5sdk?: {
-      ready: (cb: () => void) => void
-      error: (cb: (e: unknown) => void) => void
-    }
-    tt?: {
-      requestAuthCode?: (opts: {
-        appId: string
-        success: (res: { code: string }) => void
-        fail?: (e: unknown) => void
-      }) => void
-    }
-  }
-}
+// Lark H5 JSSDK globals are declared in src/lark-jssdk.d.ts so multiple
+// callers (Login + CameraScanner) can share one consistent shape.
 
 interface LarkCfg {
   app_id: string
