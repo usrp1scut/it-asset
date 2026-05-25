@@ -19,25 +19,10 @@ interface BarcodeDetectorLike {
   detect: (source: HTMLVideoElement) => Promise<{ rawValue: string }[]>
 }
 
+// Lark JSSDK (h5sdk + tt) declarations live in src/lark-jssdk.d.ts.
 declare global {
   interface Window {
     BarcodeDetector?: new (opts: { formats: string[] }) => BarcodeDetectorLike
-    h5sdk?: {
-      ready: (cb: () => void) => void
-      error: (cb: (e: unknown) => void) => void
-    }
-    tt?: {
-      requestAuthCode?: (opts: {
-        appId: string
-        success: (res: { code: string }) => void
-        fail?: (e: unknown) => void
-      }) => void
-      scanCode?: (opts: {
-        scanType?: string[]
-        success: (res: { result?: string }) => void
-        fail?: (e: { errMsg?: string }) => void
-      }) => void
-    }
   }
 }
 
