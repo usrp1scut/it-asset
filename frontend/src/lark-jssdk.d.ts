@@ -13,15 +13,19 @@ declare global {
     h5sdk?: {
       ready: (cb: () => void) => void
       error: (cb: (e: unknown) => void) => void
-    }
-    tt?: {
+      // Feishu's config / auth — required before capability-gated APIs like
+      // tt.scanCode. Calls `onSuccess` (or `onFail`) asynchronously.
       config?: (opts: {
         appId: string
         timestamp: number
         nonceStr: string
         signature: string
         jsApiList: string[]
+        onSuccess?: () => void
+        onFail?: (e: unknown) => void
       }) => void
+    }
+    tt?: {
       requestAuthCode?: (opts: {
         appId: string
         success: (res: { code: string }) => void

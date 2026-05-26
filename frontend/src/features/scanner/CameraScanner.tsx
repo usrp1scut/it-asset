@@ -87,70 +87,97 @@ export default function CameraScanner({
       ;(async () => {
         const ok = await ensureLarkJssdk()
         if (cancelled) return
+        // Log what the SDK actually exposes so version mismatches are easy
+        // to diagnose in the field.
+        console.info(
+          '[Lark JSSDK] h5sdk:',
+          Object.keys(window.h5sdk || {}),
+          'tt:',
+          Object.keys(window.tt || {}),
+        )
         if (!ok || !window.tt?.scanCode) {
           setErr('Lark 原生扫码不可用,请确认 Lark 客户端已更新到最新版。')
           return
         }
-        // tt.scanCode is config-gated — sign the current page URL with the
-        // backend's jsapi_ticket and call tt.config first.
+        // Feishu's tt.scanCode is config-gated — call h5sdk.config (the
+        // Feishu equivalent of wx.config) with a signed jsapi_ticket
+        // signature first. Without it, scanCode returns 'fail' with no
+        // further detail.
+        let cfg: {
+          appId: string
+          timestamp: number
+          nonceStr: string
+          signature: string
+        }
         try {
           const url = window.location.href.split('#')[0]
-          const cfg = (await api.get('/auth/lark/jssdk-sign', { params: { url } })).data as {
-            appId: string
-            timestamp: number
-            nonceStr: string
-            signature: string
-          }
-          if (cancelled) return
-          if (!window.tt?.config) {
-            setErr('Lark JSSDK 没有 tt.config 接口,可能客户端版本过旧。')
-            return
-          }
-          window.tt.config({
-            appId: cfg.appId,
-            timestamp: cfg.timestamp,
-            nonceStr: cfg.nonceStr,
-            signature: cfg.signature,
-            jsApiList: ['scanCode'],
-          })
+          cfg = (
+            await api.get('/auth/lark/jssdk-sign', { params: { url } })
+          ).data
         } catch (e) {
-          console.error('[Lark scanCode] config failed:', e)
+          console.error('[Lark JSSDK] sign fetch failed:', e)
           const msg =
             (e as { response?: { data?: { detail?: string } } })?.response?.data
               ?.detail ?? (e instanceof Error ? e.message : String(e))
-          setErr('Lark JSSDK 配置失败:' + msg)
+          setErr('获取 JSSDK 签名失败:' + msg)
           return
         }
-        window.tt.scanCode({
-          scanType: ['qrCode', 'barCode'],
-          success: (res) => {
-            if (cancelled || handledRef.current) return
-            const raw = (res.result ?? '').trim()
-            if (raw) {
-              handledRef.current = true
-              onCode(extractCode(raw))
-            } else {
-              onClose()
-            }
-          },
-          fail: (e) => {
+        if (cancelled) return
+
+        const runScan = () => {
+          if (cancelled || !window.tt?.scanCode) return
+          window.tt.scanCode({
+            scanType: ['qrCode', 'barCode'],
+            success: (res) => {
+              if (cancelled || handledRef.current) return
+              const raw = (res.result ?? '').trim()
+              if (raw) {
+                handledRef.current = true
+                onCode(extractCode(raw))
+              } else {
+                onClose()
+              }
+            },
+            fail: (e) => {
+              if (cancelled) return
+              console.error('[Lark scanCode] fail object:', e)
+              const msg = e?.errMsg || ''
+              if (/cancel/i.test(msg)) {
+                onClose()
+                return
+              }
+              const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
+              setErr(
+                `Lark 扫码失败:${msg || '(无 errMsg)'}\n\n完整错误对象:\n${dump}`,
+              )
+            },
+          })
+        }
+
+        if (!window.h5sdk?.config) {
+          // Some older SDK builds don't expose config — try scanCode directly
+          // and let its fail callback surface the real reason.
+          console.warn('[Lark JSSDK] h5sdk.config not available; calling scanCode directly')
+          runScan()
+          return
+        }
+        window.h5sdk.config({
+          appId: cfg.appId,
+          timestamp: cfg.timestamp,
+          nonceStr: cfg.nonceStr,
+          signature: cfg.signature,
+          jsApiList: ['scanCode'],
+          onSuccess: () => {
             if (cancelled) return
-            console.error('[Lark scanCode] fail object:', e)
-            const msg = e?.errMsg || ''
-            // user-cancelled — silently close without raising an error banner
-            if (/cancel/i.test(msg)) {
-              onClose()
-              return
-            }
-            // surface the full error shape so missing capabilities / unsigned
-            // config issues are easy to diagnose
-            const dump =
-              JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
+            runScan()
+          },
+          onFail: (e) => {
+            if (cancelled) return
+            console.error('[Lark JSSDK] h5sdk.config failed:', e)
+            const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
             setErr(
-              `Lark 扫码失败:${msg || '(无 errMsg)'}\n\n完整错误对象:\n${dump}\n\n` +
-                '常见原因:\n' +
-                '• Lark 开发者后台「网页应用 / H5 能力」未启用「扫一扫 scanCode」权限\n' +
-                '• 应用未发布新版本或管理员未审批新加的权限',
+              'Lark JSSDK config 失败,签名/URL 可能不匹配。\n\n完整错误对象:\n' +
+                dump,
             )
           },
         })
