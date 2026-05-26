@@ -84,7 +84,17 @@ async def lark_jssdk_sign(
     except RuntimeError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     nonce_str = secrets.token_hex(8)
-    timestamp = int(time.time())
+    # Use Lark's own server time (from their HTTP Date header) so that a
+    # skewed host clock can't poison the signature. Feishu/Lark reject
+    # timestamps >~5min off their server with errno 2601002 "signature is
+    # expired" — and a Docker host on a paused VM can easily be tens of
+    # minutes off real UTC while the in-stack browser/backend agree with
+    # each other, masking the drift in any client-vs-server diff. Fall
+    # back to local time only if the probe fails (e.g., offline).
+    local_now = int(time.time())
+    real_now = await get_lark_client().probe_real_unix_time()
+    timestamp = real_now if real_now is not None else local_now
+    clock_drift = (local_now - real_now) if real_now is not None else None
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
     # Truncated preview so the frontend popup can verify a ticket was
@@ -96,16 +106,20 @@ async def lark_jssdk_sign(
     # Log the full signing inputs (with ticket truncated) to server stderr so
     # `docker logs` can show exactly what we signed when Lark rejects with
     # errno 2601002. Mirror everything the frontend popup shows + the raw
-    # pre-hash string so we can manually reproduce in Lark's debug tool.
+    # pre-hash string + the host-clock-vs-real-UTC drift so we can spot a
+    # skewed host without any extra ssh.
     logger.warning(
         "[Lark JSSDK sign] appId=%s apiBase=%s ticket=%s(len=%d) "
-        "noncestr=%s timestamp=%d url=%s force=%s -> signature=%s",
+        "noncestr=%s timestamp=%d (real_utc=%s, host_drift=%s) "
+        "url=%s force=%s -> signature=%s",
         s.lark_app_id,
         get_lark_client().api_base,
         ticket_preview,
         len(ticket or ""),
         nonce_str,
         timestamp,
+        real_now,
+        clock_drift,
         url,
         force,
         signature,
@@ -117,6 +131,9 @@ async def lark_jssdk_sign(
         "signature": signature,
         # Diagnostics — never required by JSSDK, only consumed by error popups.
         "serverTime": timestamp,
+        "hostLocalTime": local_now,
+        "realUtcTime": real_now,
+        "hostClockDrift": clock_drift,
         "signedUrl": url,
         "ticketFresh": force,
         "ticketPreview": ticket_preview,

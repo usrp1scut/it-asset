@@ -82,11 +82,10 @@ class LarkClient:
 
         Matches Lark's official lark-samples/web_app_with_jssdk Python flow
         byte-for-byte (POST with Bearer + Content-Type: application/json,
-        empty body, read data.ticket from JSON). A short ticket (<60 chars)
-        is logged at WARNING — under-spec tickets are the strongest signal
-        that the app has no H5 capability enabled, in which case Lark still
-        returns code=0 and a placeholder string but signature validation
-        later fails as "signature is expired" (errno 2601002).
+        empty body, read data.ticket from JSON). Lark international tickets
+        are ~40-char base32-like strings (confirmed empirically against two
+        different cli_ apps); the Feishu domestic 80+ char shape doesn't
+        apply — don't use length alone to infer capability mis-config.
         """
         if not self.configured:
             raise LarkNotConfigured("LARK_APP_ID / LARK_APP_SECRET not configured")
@@ -120,18 +119,40 @@ class LarkClient:
         # signature later fails and we need to rule out a bad ticket shape.
         ticket_preview = f"{ticket[:4]}…{ticket[-4:]}" if len(ticket) >= 8 else ticket
         logger.warning(
-            "[Lark JSSDK ticket] fetched ticket=%s len=%d expire_in=%d code=%s msg=%s%s",
+            "[Lark JSSDK ticket] fetched ticket=%s len=%d expire_in=%d code=%s msg=%s",
             ticket_preview,
             len(ticket),
             expire,
             code,
             msg,
-            " (SHORT — likely no H5 capability)" if len(ticket) < 60 else "",
         )
         get_redis().set(
             _JSAPI_TICKET_KEY, ticket, ex=max(expire - _REFRESH_SKEW_SECONDS, 60)
         )
         return ticket
+
+    async def probe_real_unix_time(self) -> int | None:
+        """Query Lark's `Date:` response header to learn the *real* current
+        Unix time, independent of this host's clock.
+
+        Why: Feishu/Lark validate the JSSDK signature's `timestamp` against
+        their own server clock (±~5min). When the local host clock is
+        skewed (Docker on a paused VM, an out-of-NTP-sync prod box, etc),
+        signatures get rejected with the misleading "signature is expired"
+        error even though our client/server clocks agree with each other.
+
+        Returns None on any failure — caller falls back to `time.time()`.
+        """
+        from email.utils import parsedate_to_datetime
+        try:
+            async with httpx.AsyncClient(timeout=5) as client:
+                resp = await client.head(self._api_base)
+            date_hdr = resp.headers.get("date") or resp.headers.get("Date")
+            if not date_hdr:
+                return None
+            return int(parsedate_to_datetime(date_hdr).timestamp())
+        except Exception:
+            return None
 
     async def get_app_access_token(self, *, force: bool = False) -> str:
         """app_access_token — required by the authen/v1 login-code exchange."""
