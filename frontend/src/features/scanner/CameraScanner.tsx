@@ -111,6 +111,9 @@ export default function CameraScanner({
           serverTime?: number
           signedUrl?: string
           ticketFresh?: boolean
+          ticketPreview?: string
+          ticketLength?: number
+          apiBase?: string
         }
         const fetchSign = async (force: boolean): Promise<SignCfg | null> => {
           try {
@@ -187,14 +190,33 @@ export default function CameraScanner({
             `签名 URL: ${used.signedUrl ?? '(未回显)'}\n` +
             `当前 URL: ${liveUrl}\n` +
             `URL 一致: ${urlMatch ? '是' : '否(可能就是它)'}`
+          const ticketLines =
+            `appId: ${used.appId}\n` +
+            `API base: ${used.apiBase ?? '(未回显)'}\n` +
+            `ticket: ${used.ticketPreview ?? '(未回显)'} (len=${used.ticketLength ?? 0})`
           const retryLine = retried
             ? '\n已用 force=1 强刷 ticket 重试过仍失败,基本可排除 ticket 缓存陈旧。'
             : ''
+          // When clock/URL/ticket-cache are all ruled out, the remaining root
+          // causes are Lark dev-console configuration — be specific about
+          // which switches need to be on, because "可信域名" alone isn't enough.
           const hint = isSigExpired(e)
-            ? '\n\n→ 时钟、ticket 都排查过了,如果 URL 一致仍报错,大概率是 Lark 开发者后台「应用安全 → 网页应用 → 重定向 URL/可信域名」未配齐当前域名/端口。'
+            ? [
+                '',
+                '',
+                '→ 时钟/URL/ticket 缓存都排查过了。剩下的几乎都是 Lark 开发者后台的配置问题,请逐项核对:',
+                '',
+                '1. 「凭证与基础信息」里的 App ID 是否与上面的 appId 一致(部署用错环境的 app 会全程失败)。',
+                '2. 「能力 → 网页应用」是否启用,且「桌面端主页」「移动端主页」填了当前域名(http://192.168.107.21:8080)。',
+                '3. 「安全设置 → 重定向 URL」要包含 http://192.168.107.21:8080/ 这条根路径(只配 /login 不够,扫码页是 /inspections)。',
+                '4. 「权限管理」里要勾选「获取通讯录基本信息」之外,还要单独勾选「调用扫一扫 接入网页应用」/「JSSDK」相关权限,且发布版本生效。',
+                '5. 应用是否已经「创建版本 → 申请发布 → 管理员审批通过」?未审批的版本只对开发者本人生效,所以 admin@deepjoy.me 自己测可能能过,其它人挂在这一步。',
+                '',
+                '把 Lark 后台「能力 → 网页应用」「安全设置」「权限管理」三页截图发我,我直接看哪个没开。',
+              ].join('\n')
             : ''
           setErr(
-            `Lark JSSDK config 失败。\n${driftLine}\n${urlLines}${retryLine}${hint}\n\n完整错误对象:\n${dump}`,
+            `Lark JSSDK config 失败。\n${driftLine}\n${urlLines}\n${ticketLines}${retryLine}${hint}\n\n完整错误对象:\n${dump}`,
           )
         }
 
