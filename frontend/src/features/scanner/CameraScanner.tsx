@@ -109,6 +109,9 @@ export default function CameraScanner({
           nonceStr: string
           signature: string
           serverTime?: number
+          hostLocalTime?: number
+          realUtcTime?: number | null
+          hostClockDrift?: number | null
           signedUrl?: string
           ticketFresh?: boolean
           ticketPreview?: string
@@ -181,9 +184,17 @@ export default function CameraScanner({
         const reportConfigFailure = (e: unknown, used: SignCfg, retried: boolean) => {
           const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
           const clientNow = Math.floor(Date.now() / 1000)
-          const srv = used.serverTime ?? used.timestamp
-          const drift = clientNow - srv
-          const driftLine = `客户端时间 ${clientNow},服务器时间 ${srv},偏差 ${drift}s`
+          // The relevant drift is host-vs-real-UTC (not client-vs-server),
+          // because client+server can both be wrong by the same amount on a
+          // skewed VM and still agree with each other.
+          const hostLocal = used.hostLocalTime ?? used.timestamp
+          const realUtc = used.realUtcTime ?? null
+          const hostDrift = used.hostClockDrift ?? null
+          const driftLine =
+            realUtc != null && hostDrift != null
+              ? `主机时间 ${hostLocal},Lark Date 头给的真实 UTC ${realUtc},主机时钟偏差 ${hostDrift}s`
+              : `主机时间 ${hostLocal} (未能从 Lark 抓真实 UTC,网络可能不通)`
+          const clientDriftLine = `浏览器时间 ${clientNow},签名 timestamp ${used.timestamp},差 ${clientNow - used.timestamp}s`
           const liveUrl = window.location.href.split('#')[0]
           const urlMatch = used.signedUrl === liveUrl
           const urlLines =
@@ -197,26 +208,18 @@ export default function CameraScanner({
           const retryLine = retried
             ? '\n已用 force=1 强刷 ticket 重试过仍失败,基本可排除 ticket 缓存陈旧。'
             : ''
-          // When clock/URL/ticket-cache are all ruled out, the remaining root
-          // causes are Lark dev-console configuration — be specific about
-          // which switches need to be on, because "可信域名" alone isn't enough.
+          // Now that we sign with real UTC pulled from Lark's Date header,
+          // a leftover sig-expired error means real network latency >5min,
+          // a configuration issue, or that Lark itself rotated something
+          // — hint accordingly without crying wolf about the clock.
+          const driftBad = Math.abs(hostDrift ?? 0) > 60
           const hint = isSigExpired(e)
-            ? [
-                '',
-                '',
-                '→ 时钟/URL/ticket 缓存都排查过了。剩下的几乎都是 Lark 开发者后台的配置问题,请逐项核对:',
-                '',
-                '1. 「凭证与基础信息」里的 App ID 是否与上面的 appId 一致(部署用错环境的 app 会全程失败)。',
-                '2. 「能力 → 网页应用」是否启用,且「桌面端主页」「移动端主页」填了当前域名(http://192.168.107.21:8080)。',
-                '3. 「安全设置 → 重定向 URL」要包含 http://192.168.107.21:8080/ 这条根路径(只配 /login 不够,扫码页是 /inspections)。',
-                '4. 「权限管理」里要勾选「获取通讯录基本信息」之外,还要单独勾选「调用扫一扫 接入网页应用」/「JSSDK」相关权限,且发布版本生效。',
-                '5. 应用是否已经「创建版本 → 申请发布 → 管理员审批通过」?未审批的版本只对开发者本人生效,所以 admin@deepjoy.me 自己测可能能过,其它人挂在这一步。',
-                '',
-                '把 Lark 后台「能力 → 网页应用」「安全设置」「权限管理」三页截图发我,我直接看哪个没开。',
-              ].join('\n')
+            ? driftBad
+              ? `\n\n→ 主机时钟偏差 ${hostDrift}s,虽然我们已经用 Lark 的真实 UTC 重算了签名,但请同步 NTP(\`sudo timedatectl set-ntp true\` 或 \`sudo ntpdate -u pool.ntp.org\`) —— 漂移会触发别的隐性问题。`
+              : '\n\n→ 时钟、URL、ticket 都排查过了。剩下的可能是: Lark 后台「能力 → 网页应用」未启用 / 应用未发布审批 / 安全设置的可信域名缺当前域名。把 Lark 后台「能力配置」「安全设置」「版本管理」三页截图发我。'
             : ''
           setErr(
-            `Lark JSSDK config 失败。\n${driftLine}\n${urlLines}\n${ticketLines}${retryLine}${hint}\n\n完整错误对象:\n${dump}`,
+            `Lark JSSDK config 失败。\n${driftLine}\n${clientDriftLine}\n${urlLines}\n${ticketLines}${retryLine}${hint}\n\n完整错误对象:\n${dump}`,
           )
         }
 
