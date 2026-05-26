@@ -9,14 +9,19 @@ _LARK_ENDPOINTS = {
     "feishu": {
         "api_base": "https://open.feishu.cn",
         "passport_base": "https://passport.feishu.cn",
+        # Domestic Feishu uses the /goofy/lark/op/ build of the SDK.
         "jssdk": "https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.36.js",
     },
     "lark": {
         "api_base": "https://open.larksuite.com",
         "passport_base": "https://passport.larksuite.com",
-        # bytegoofy CDN is global — Lark's own international H5 samples load the
-        # JSSDK from this same host (no larksuite-specific CDN exists).
-        "jssdk": "https://lf1-cdn-tos.bytegoofy.com/goofy/lark/op/h5-js-sdk-1.5.36.js",
+        # International Lark expects a DIFFERENT SDK build under
+        # /goofy/ee/lark/h5jssdk/lark/js_sdk/ — confirmed by Lark's own
+        # lark-samples repo (web_app_with_jssdk/python/templates/index.html).
+        # Using the /goofy/lark/op/ Feishu build inside Lark international's
+        # client causes h5sdk.config to always fail with errno 2601002
+        # "signature is expired" even when timestamp/url/ticket are perfect.
+        "jssdk": "https://lf1-cdn-tos.bytegoofy.com/goofy/ee/lark/h5jssdk/lark/js_sdk/h5-js-sdk-1.5.11.js",
     },
 }
 
