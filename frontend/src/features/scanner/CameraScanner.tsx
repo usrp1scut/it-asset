@@ -108,6 +108,7 @@ export default function CameraScanner({
           timestamp: number
           nonceStr: string
           signature: string
+          serverTime?: number
         }
         try {
           const url = window.location.href.split('#')[0]
@@ -175,9 +176,23 @@ export default function CameraScanner({
             if (cancelled) return
             console.error('[Lark JSSDK] h5sdk.config failed:', e)
             const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
+            // errno 2601002 = "signature is expired" — almost always host
+            // clock drift. Surface the client vs server time delta so the
+            // root cause is obvious from the popup.
+            const clientNow = Math.floor(Date.now() / 1000)
+            const srv = cfg.serverTime ?? cfg.timestamp
+            const drift = clientNow - srv
+            const driftLine = `客户端时间 ${clientNow},服务器时间 ${srv},偏差 ${drift}s`
+            const isExpired =
+              (e as { errno?: number })?.errno === 2601002 ||
+              /signature is expired/i.test(
+                (e as { errString?: string })?.errString ?? '',
+              )
+            const hint = isExpired
+              ? '\n\n→ 这是「signature is expired」,Feishu 要求服务器时间与其相差不超过 ~5 分钟。请在生产机上 `date` 比对真实时间并同步 NTP。'
+              : ''
             setErr(
-              'Lark JSSDK config 失败,签名/URL 可能不匹配。\n\n完整错误对象:\n' +
-                dump,
+              `Lark JSSDK config 失败。\n${driftLine}${hint}\n\n完整错误对象:\n${dump}`,
             )
           },
         })

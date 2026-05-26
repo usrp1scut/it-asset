@@ -54,11 +54,15 @@ async def lark_jssdk_sign(
     url: str, _: User = Depends(get_current_user)
 ) -> dict:
     """Sign a JSSDK config for the current page URL so the frontend can call
-    `tt.config(...)` before capability-gated APIs (e.g. `tt.scanCode`).
+    `h5sdk.config(...)` before capability-gated APIs (e.g. `tt.scanCode`).
 
     The `url` must be the page URL excluding the hash fragment — Lark requires
     a byte-exact match. Caller is responsible for passing
     `window.location.href.split('#')[0]`.
+
+    Feishu rejects signatures whose `timestamp` differs from its server clock
+    by more than ~5 minutes with errno 2601002 "signature is expired", so
+    host clock drift on the prod box will look like a signature/url problem.
     """
     s = get_settings()
     if not s.lark_app_id:
@@ -73,11 +77,15 @@ async def lark_jssdk_sign(
     timestamp = int(time.time())
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    # `serverTime` lets the frontend detect host clock drift — Feishu rejects
+    # signatures whose timestamp is more than ~5min off its own clock with
+    # errno 2601002 "signature is expired".
     return {
         "appId": s.lark_app_id,
         "timestamp": timestamp,
         "nonceStr": nonce_str,
         "signature": signature,
+        "serverTime": timestamp,
     }
 
 
