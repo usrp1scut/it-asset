@@ -15,6 +15,13 @@ declare global {
       error: (cb: (e: unknown) => void) => void
     }
     tt?: {
+      config?: (opts: {
+        appId: string
+        timestamp: number
+        nonceStr: string
+        signature: string
+        jsApiList: string[]
+      }) => void
       requestAuthCode?: (opts: {
         appId: string
         success: (res: { code: string }) => void

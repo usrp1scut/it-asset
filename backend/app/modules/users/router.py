@@ -1,3 +1,7 @@
+import hashlib
+import secrets
+import time
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -42,6 +46,38 @@ def lark_config() -> dict:
         "variant": s.lark_variant,
         "configured": bool(s.lark_app_id),
         "jssdk_url": s.lark_jssdk_url_resolved,
+    }
+
+
+@router.get("/lark/jssdk-sign")
+async def lark_jssdk_sign(
+    url: str, _: User = Depends(get_current_user)
+) -> dict:
+    """Sign a JSSDK config for the current page URL so the frontend can call
+    `tt.config(...)` before capability-gated APIs (e.g. `tt.scanCode`).
+
+    The `url` must be the page URL excluding the hash fragment — Lark requires
+    a byte-exact match. Caller is responsible for passing
+    `window.location.href.split('#')[0]`.
+    """
+    s = get_settings()
+    if not s.lark_app_id:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Lark 未配置")
+    try:
+        ticket = await get_lark_client().get_jsapi_ticket()
+    except LarkNotConfigured as e:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+    nonce_str = secrets.token_hex(8)
+    timestamp = int(time.time())
+    raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
+    signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    return {
+        "appId": s.lark_app_id,
+        "timestamp": timestamp,
+        "nonceStr": nonce_str,
+        "signature": signature,
     }
 
 

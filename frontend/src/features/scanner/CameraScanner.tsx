@@ -91,6 +91,36 @@ export default function CameraScanner({
           setErr('Lark 原生扫码不可用,请确认 Lark 客户端已更新到最新版。')
           return
         }
+        // tt.scanCode is config-gated — sign the current page URL with the
+        // backend's jsapi_ticket and call tt.config first.
+        try {
+          const url = window.location.href.split('#')[0]
+          const cfg = (await api.get('/auth/lark/jssdk-sign', { params: { url } })).data as {
+            appId: string
+            timestamp: number
+            nonceStr: string
+            signature: string
+          }
+          if (cancelled) return
+          if (!window.tt?.config) {
+            setErr('Lark JSSDK 没有 tt.config 接口,可能客户端版本过旧。')
+            return
+          }
+          window.tt.config({
+            appId: cfg.appId,
+            timestamp: cfg.timestamp,
+            nonceStr: cfg.nonceStr,
+            signature: cfg.signature,
+            jsApiList: ['scanCode'],
+          })
+        } catch (e) {
+          console.error('[Lark scanCode] config failed:', e)
+          const msg =
+            (e as { response?: { data?: { detail?: string } } })?.response?.data
+              ?.detail ?? (e instanceof Error ? e.message : String(e))
+          setErr('Lark JSSDK 配置失败:' + msg)
+          return
+        }
         window.tt.scanCode({
           scanType: ['qrCode', 'barCode'],
           success: (res) => {

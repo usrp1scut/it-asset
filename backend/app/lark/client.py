@@ -19,6 +19,7 @@ from app.config import get_settings
 
 _TENANT_TOKEN_KEY = "lark:tenant_access_token"
 _APP_TOKEN_KEY = "lark:app_access_token"
+_JSAPI_TICKET_KEY = "lark:jsapi_ticket"
 _REFRESH_SKEW_SECONDS = 300  # refresh this long before real expiry
 
 
@@ -70,6 +71,40 @@ class LarkClient:
             "tenant_access_token",
             _TENANT_TOKEN_KEY,
         )
+
+    async def get_jsapi_ticket(self, *, force: bool = False) -> str:
+        """jsapi_ticket for H5 JSSDK signature (`tt.config`), Redis-cached.
+
+        Required before calling capability-gated APIs like `tt.scanCode`.
+        """
+        if not self.configured:
+            raise LarkNotConfigured("LARK_APP_ID / LARK_APP_SECRET not configured")
+        if not force and (cached := get_redis().get(_JSAPI_TICKET_KEY)):
+            return cached
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                self._url("/open-apis/jssdk/ticket/get"),
+                headers={"Authorization": f"Bearer {token}"},
+            )
+        try:
+            body = resp.json()
+        except ValueError:
+            body = {}
+        code, msg = body.get("code"), body.get("msg")
+        if resp.is_error or (code not in (0, None)):
+            raise RuntimeError(
+                f"Lark jssdk/ticket/get HTTP {resp.status_code} code={code} msg={msg!r}"
+            )
+        data = body.get("data", {})
+        ticket = data.get("ticket")
+        if not ticket:
+            raise RuntimeError(f"Lark jssdk/ticket/get returned no ticket: {body!r}")
+        expire = int(data.get("expire_in", 7200))
+        get_redis().set(
+            _JSAPI_TICKET_KEY, ticket, ex=max(expire - _REFRESH_SKEW_SECONDS, 60)
+        )
+        return ticket
 
     async def get_app_access_token(self, *, force: bool = False) -> str:
         """app_access_token — required by the authen/v1 login-code exchange."""
