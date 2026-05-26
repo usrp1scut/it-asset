@@ -1,14 +1,17 @@
 import hashlib
+import logging
 import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
+
+logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.core.security import create_access_token, hash_password, verify_password
-from app.deps import get_current_user, get_db
+from app.deps import get_current_user, get_db, require_roles
 from app.lark.client import LarkNotConfigured, get_lark_client
 from app.modules.users.models import Role, User
 from app.modules.users.schemas import LoginResult, MeResult, UserOut
@@ -90,6 +93,23 @@ async def lark_jssdk_sign(
     ticket_preview = (
         f"{ticket[:4]}…{ticket[-4:]}" if ticket and len(ticket) >= 8 else "(空)"
     )
+    # Log the full signing inputs (with ticket truncated) to server stderr so
+    # `docker logs` can show exactly what we signed when Lark rejects with
+    # errno 2601002. Mirror everything the frontend popup shows + the raw
+    # pre-hash string so we can manually reproduce in Lark's debug tool.
+    logger.warning(
+        "[Lark JSSDK sign] appId=%s apiBase=%s ticket=%s(len=%d) "
+        "noncestr=%s timestamp=%d url=%s force=%s -> signature=%s",
+        s.lark_app_id,
+        get_lark_client().api_base,
+        ticket_preview,
+        len(ticket or ""),
+        nonce_str,
+        timestamp,
+        url,
+        force,
+        signature,
+    )
     return {
         "appId": s.lark_app_id,
         "timestamp": timestamp,
@@ -102,6 +122,42 @@ async def lark_jssdk_sign(
         "ticketPreview": ticket_preview,
         "ticketLength": len(ticket or ""),
         "apiBase": get_lark_client().api_base,
+    }
+
+
+@router.get("/lark/jssdk-sign-debug")
+async def lark_jssdk_sign_debug(
+    url: str,
+    user: User = Depends(require_roles(Role.sys_admin)),
+) -> dict:
+    """Admin-only: full signing chain in cleartext (incl. raw pre-hash string
+    and full ticket) so we can paste it into Lark's signature debug sandbox
+    and isolate whether the algorithm itself, the ticket, or the URL is what
+    Lark rejects. Restricted to sys_admin — the ticket is a credential.
+    """
+    s = get_settings()
+    if not s.lark_app_id:
+        raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Lark 未配置")
+    try:
+        ticket = await get_lark_client().get_jsapi_ticket(force=True)
+    except (LarkNotConfigured, RuntimeError) as e:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
+    nonce_str = "DIAG" + secrets.token_hex(4)
+    timestamp = int(time.time())
+    raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
+    signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    logger.warning("[Lark JSSDK debug] requested by user_id=%s url=%s", user.id, url)
+    return {
+        "appId": s.lark_app_id,
+        "apiBase": get_lark_client().api_base,
+        "ticket": ticket,
+        "ticketLength": len(ticket),
+        "nonceStr": nonce_str,
+        "timestamp": timestamp,
+        "url": url,
+        "rawSignedString": raw,
+        "signature": signature,
+        "now": int(time.time()),
     }
 
 
