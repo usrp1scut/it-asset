@@ -143,12 +143,32 @@ export default function CameraScanner({
             scanType: ['qrCode', 'barCode'],
             success: (res) => {
               if (cancelled || handledRef.current) return
-              const raw = (res.result ?? '').trim()
+              // Lark international's scanCode result schema isn't reliably
+              // documented — official docs say `result`, but the SDK
+              // bundle (h5-js-sdk-1.5.11) has logic that mutates `path`
+              // for Lark mini-program links, and community reports cite
+              // `data` / `content` too. Try every plausible field rather
+              // than guess; log the full res so we can pin it down.
+              console.info('[Lark scanCode] success res:', JSON.stringify(res))
+              const candidates = [
+                (res as { result?: string }).result,
+                (res as { path?: string }).path,
+                (res as { data?: string }).data,
+                (res as { content?: string }).content,
+                (res as { scanResult?: string }).scanResult,
+                (res as { code?: string }).code,
+              ]
+              const raw = (candidates.find((v) => typeof v === 'string' && v.trim()) ?? '').trim()
               if (raw) {
                 handledRef.current = true
                 onCode(extractCode(raw))
               } else {
-                onClose()
+                // Surface what we actually got so the user can tell us
+                // which field Lark international used.
+                setErr(
+                  '扫码成功但未能从结果对象中提取内容。完整 res 对象:\n' +
+                    JSON.stringify(res, null, 2),
+                )
               }
             },
             fail: (e) => {

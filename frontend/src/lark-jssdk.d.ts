@@ -33,7 +33,10 @@ declare global {
       }) => void
       scanCode?: (opts: {
         scanType?: string[]
-        success: (res: { result?: string }) => void
+        // Result field is intentionally typed wide — Lark international's
+        // scanCode is documented as `result` but the actual SDK / native
+        // bridge sometimes returns the payload in `path`/`data`/etc.
+        success: (res: Record<string, unknown>) => void
         fail?: (e: { errMsg?: string }) => void
       }) => void
     }
