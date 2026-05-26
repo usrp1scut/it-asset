@@ -84,6 +84,12 @@ async def lark_jssdk_sign(
     timestamp = int(time.time())
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
+    # Truncated preview so the frontend popup can verify a ticket was
+    # actually returned (rules out an empty/garbage ticket masquerading as a
+    # signing failure). Never expose the full ticket — it's a credential.
+    ticket_preview = (
+        f"{ticket[:4]}…{ticket[-4:]}" if ticket and len(ticket) >= 8 else "(空)"
+    )
     return {
         "appId": s.lark_app_id,
         "timestamp": timestamp,
@@ -93,6 +99,9 @@ async def lark_jssdk_sign(
         "serverTime": timestamp,
         "signedUrl": url,
         "ticketFresh": force,
+        "ticketPreview": ticket_preview,
+        "ticketLength": len(ticket or ""),
+        "apiBase": get_lark_client().api_base,
     }
 
 
