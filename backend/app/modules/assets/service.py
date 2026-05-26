@@ -148,8 +148,17 @@ def list_assets(
 
 
 def get_asset(db: Session, code: str) -> Asset | None:
+    # Case-insensitive + whitespace-tolerant — a scanned sticker can come
+    # back as "pc-0099" or " PC-0099 " depending on the QR generator and
+    # whatever wrappers (path segment, query value) we strip on the way in.
+    needle = (code or "").strip()
+    if not needle:
+        return None
     return db.scalar(
-        select(Asset).where(Asset.asset_code == code, Asset.deleted_at.is_(None))
+        select(Asset).where(
+            Asset.asset_code.ilike(needle),
+            Asset.deleted_at.is_(None),
+        )
     )
 
 

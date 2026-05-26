@@ -748,9 +748,13 @@ export default function MobileAdminHome() {
       <CameraScanner
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        onCode={(code) => {
+        onCode={(code, raw) => {
           setScanOpen(false)
-          navigate(`/m/admin/asset/${encodeURIComponent(code)}`)
+          // Pass the raw scan payload via state so the result page can
+          // show both "we scanned X, looked up Y" if the lookup misses.
+          navigate(`/m/admin/asset/${encodeURIComponent(code)}`, {
+            state: { raw },
+          })
         }}
       />
     </div>

@@ -2,16 +2,32 @@ import { useEffect, useRef, useState } from 'react'
 import { Alert, Modal } from 'antd'
 import { api } from '../../api/client'
 
-/** Pull "PC-0099" out of a scanned URL payload, else return the raw value. */
+/** Pull "PC-0099" out of a scanned QR payload — the QR generator emits
+ * `${PUBLIC_BASE_URL}/assets?code=PC-0099` when configured, but the same
+ * sticker might also be a hand-printed plain code or a legacy URL with a
+ * different query name. Try every form we've seen, then fall back to a
+ * pattern match anywhere in the string. */
 function extractCode(payload: string): string {
   const s = payload.trim()
+  // Form 1: a URL with ?code=/?asset=/?asset_code= query param.
   try {
     const u = new URL(s)
-    const c = u.searchParams.get('code')
-    if (c) return c
+    for (const key of ['code', 'asset', 'asset_code', 'assetCode']) {
+      const v = u.searchParams.get(key)
+      if (v && v.trim()) return v.trim()
+    }
+    // Form 2: URL with the code as the last path segment, e.g.
+    // /assets/PC-0099 or /m/admin/asset/PC-0099.
+    const tail = u.pathname.split('/').filter(Boolean).pop()
+    if (tail && /^[A-Z]{2,5}[-_]?\d+$/i.test(tail)) return tail
   } catch {
     // not a URL — fall through
   }
+  // Form 3: pattern match anywhere in the payload (handles wrappers like
+  // "asset:PC-0099" or Lark mini-program scheme prefixes).
+  const m = s.match(/[A-Z]{2,5}[-_]?\d{1,8}/i)
+  if (m) return m[0].toUpperCase().replace('_', '-')
+  // Form 4: bare code (no transform — backend lookup is case-insensitive).
   return s
 }
 
@@ -66,7 +82,10 @@ export default function CameraScanner({
 }: {
   open: boolean
   onClose: () => void
-  onCode: (code: string) => void
+  /** Called with the extracted asset code plus the unmodified scanned
+   * payload — callers that want to display "we scanned X, looked up Y"
+   * can use `raw` for diagnostics. */
+  onCode: (code: string, raw: string) => void
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -161,7 +180,7 @@ export default function CameraScanner({
               const raw = (candidates.find((v) => typeof v === 'string' && v.trim()) ?? '').trim()
               if (raw) {
                 handledRef.current = true
-                onCode(extractCode(raw))
+                onCode(extractCode(raw), raw)
               } else {
                 // Surface what we actually got so the user can tell us
                 // which field Lark international used.
@@ -322,7 +341,8 @@ export default function CameraScanner({
             const hits = await detectorRef.current!.detect(v)
             if (hits.length && !handledRef.current) {
               handledRef.current = true
-              onCode(extractCode(hits[0].rawValue))
+              const raw = hits[0].rawValue
+              onCode(extractCode(raw), raw)
               return
             }
           } catch {

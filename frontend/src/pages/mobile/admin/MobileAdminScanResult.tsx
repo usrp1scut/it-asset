@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
@@ -163,6 +163,12 @@ function InfoRow({
 export default function MobileAdminScanResult() {
   const { code = '' } = useParams<{ code: string }>()
   const navigate = useNavigate()
+  const location = useLocation()
+  // Raw scan payload (pre-extractCode) passed via navigation state from
+  // the scanner — surface it in the "not found" panel so a mismatch
+  // between what was on the sticker and what we tried to lookup is
+  // immediately visible.
+  const raw = (location.state as { raw?: string } | null)?.raw ?? null
   const [scanOpen, setScanOpen] = useState(false)
 
   const { data, isLoading, error } = useQuery<AssetDetail>({
@@ -201,23 +207,53 @@ export default function MobileAdminScanResult() {
               没找到资产
             </div>
             <div
-              style={{ fontSize: 12, color: '#86909C', marginTop: 6, lineHeight: 1.5 }}
+              style={{
+                fontSize: 12,
+                color: '#86909C',
+                marginTop: 10,
+                lineHeight: 1.6,
+                textAlign: 'left',
+              }}
             >
-              扫到的编号:
-              <br />
-              <code
-                style={{
-                  background: '#F2F3F5',
-                  padding: '2px 6px',
-                  borderRadius: 4,
-                  fontSize: 12,
-                  display: 'inline-block',
-                  marginTop: 4,
-                  wordBreak: 'break-all',
-                }}
-              >
-                {code}
-              </code>
+              {raw && raw !== code && (
+                <div style={{ marginBottom: 8 }}>
+                  扫到的原文:
+                  <code
+                    style={{
+                      display: 'block',
+                      marginTop: 4,
+                      background: '#F2F3F5',
+                      padding: '6px 8px',
+                      borderRadius: 4,
+                      fontSize: 11,
+                      wordBreak: 'break-all',
+                      color: '#1F2329',
+                    }}
+                  >
+                    {raw}
+                  </code>
+                </div>
+              )}
+              <div>
+                查询的编号:
+                <code
+                  style={{
+                    display: 'block',
+                    marginTop: 4,
+                    background: '#FFECE8',
+                    padding: '6px 8px',
+                    borderRadius: 4,
+                    fontSize: 12,
+                    color: '#A8261D',
+                    wordBreak: 'break-all',
+                  }}
+                >
+                  {code}
+                </code>
+              </div>
+              <div style={{ marginTop: 10, color: '#86909C', fontSize: 11 }}>
+                数据库里没有这条 asset_code。请检查 QR 是否对应已录入资产,或换码再试。
+              </div>
             </div>
             <button
               onClick={() => setScanOpen(true)}
@@ -465,10 +501,13 @@ export default function MobileAdminScanResult() {
       <CameraScanner
         open={scanOpen}
         onClose={() => setScanOpen(false)}
-        onCode={(c) => {
+        onCode={(c, rawNext) => {
           setScanOpen(false)
           // Replace current entry so back goes to home, not previous code
-          navigate(`/m/admin/asset/${encodeURIComponent(c)}`, { replace: true })
+          navigate(`/m/admin/asset/${encodeURIComponent(c)}`, {
+            replace: true,
+            state: { raw: rawNext },
+          })
         }}
       />
     </div>
