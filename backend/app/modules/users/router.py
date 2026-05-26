@@ -51,7 +51,9 @@ def lark_config() -> dict:
 
 @router.get("/lark/jssdk-sign")
 async def lark_jssdk_sign(
-    url: str, _: User = Depends(get_current_user)
+    url: str,
+    force: bool = False,
+    _: User = Depends(get_current_user),
 ) -> dict:
     """Sign a JSSDK config for the current page URL so the frontend can call
     `h5sdk.config(...)` before capability-gated APIs (e.g. `tt.scanCode`).
@@ -60,15 +62,20 @@ async def lark_jssdk_sign(
     a byte-exact match. Caller is responsible for passing
     `window.location.href.split('#')[0]`.
 
-    Feishu rejects signatures whose `timestamp` differs from its server clock
-    by more than ~5 minutes with errno 2601002 "signature is expired", so
-    host clock drift on the prod box will look like a signature/url problem.
+    `force=true` bypasses the Redis ticket cache and refetches `jsapi_ticket`
+    — used by the frontend to retry once on errno 2601002 ("signature is
+    expired") when the cached ticket may have been rotated server-side before
+    its advertised expiry.
+
+    Echoes the URL the signature was computed against (`signedUrl`) so the
+    frontend can compare it byte-for-byte with `window.location.href` if Lark
+    keeps rejecting — query encoding / trailing slashes are common gotchas.
     """
     s = get_settings()
     if not s.lark_app_id:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, "Lark 未配置")
     try:
-        ticket = await get_lark_client().get_jsapi_ticket()
+        ticket = await get_lark_client().get_jsapi_ticket(force=force)
     except LarkNotConfigured as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
     except RuntimeError as e:
@@ -77,15 +84,15 @@ async def lark_jssdk_sign(
     timestamp = int(time.time())
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
-    # `serverTime` lets the frontend detect host clock drift — Feishu rejects
-    # signatures whose timestamp is more than ~5min off its own clock with
-    # errno 2601002 "signature is expired".
     return {
         "appId": s.lark_app_id,
         "timestamp": timestamp,
         "nonceStr": nonce_str,
         "signature": signature,
+        # Diagnostics — never required by JSSDK, only consumed by error popups.
         "serverTime": timestamp,
+        "signedUrl": url,
+        "ticketFresh": force,
     }
 
 

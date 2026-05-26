@@ -103,27 +103,33 @@ export default function CameraScanner({
         // Feishu equivalent of wx.config) with a signed jsapi_ticket
         // signature first. Without it, scanCode returns 'fail' with no
         // further detail.
-        let cfg: {
+        type SignCfg = {
           appId: string
           timestamp: number
           nonceStr: string
           signature: string
           serverTime?: number
+          signedUrl?: string
+          ticketFresh?: boolean
         }
-        try {
-          const url = window.location.href.split('#')[0]
-          cfg = (
-            await api.get('/auth/lark/jssdk-sign', { params: { url } })
-          ).data
-        } catch (e) {
-          console.error('[Lark JSSDK] sign fetch failed:', e)
-          const msg =
-            (e as { response?: { data?: { detail?: string } } })?.response?.data
-              ?.detail ?? (e instanceof Error ? e.message : String(e))
-          setErr('获取 JSSDK 签名失败:' + msg)
-          return
+        const fetchSign = async (force: boolean): Promise<SignCfg | null> => {
+          try {
+            const url = window.location.href.split('#')[0]
+            const params: Record<string, string> = { url }
+            if (force) params.force = '1'
+            return (await api.get('/auth/lark/jssdk-sign', { params })).data
+          } catch (e) {
+            console.error('[Lark JSSDK] sign fetch failed:', e)
+            const msg =
+              (e as { response?: { data?: { detail?: string } } })?.response
+                ?.data?.detail ??
+              (e instanceof Error ? e.message : String(e))
+            setErr('获取 JSSDK 签名失败:' + msg)
+            return null
+          }
         }
-        if (cancelled) return
+        const cfg = await fetchSign(false)
+        if (cancelled || !cfg) return
 
         const runScan = () => {
           if (cancelled || !window.tt?.scanCode) return
@@ -162,39 +168,70 @@ export default function CameraScanner({
           runScan()
           return
         }
-        window.h5sdk.config({
-          appId: cfg.appId,
-          timestamp: cfg.timestamp,
-          nonceStr: cfg.nonceStr,
-          signature: cfg.signature,
-          jsApiList: ['scanCode'],
-          onSuccess: () => {
+
+        const isSigExpired = (e: unknown): boolean =>
+          (e as { errno?: number })?.errno === 2601002 ||
+          /signature is expired/i.test(
+            (e as { errString?: string })?.errString ?? '',
+          )
+
+        const reportConfigFailure = (e: unknown, used: SignCfg, retried: boolean) => {
+          const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
+          const clientNow = Math.floor(Date.now() / 1000)
+          const srv = used.serverTime ?? used.timestamp
+          const drift = clientNow - srv
+          const driftLine = `客户端时间 ${clientNow},服务器时间 ${srv},偏差 ${drift}s`
+          const liveUrl = window.location.href.split('#')[0]
+          const urlMatch = used.signedUrl === liveUrl
+          const urlLines =
+            `签名 URL: ${used.signedUrl ?? '(未回显)'}\n` +
+            `当前 URL: ${liveUrl}\n` +
+            `URL 一致: ${urlMatch ? '是' : '否(可能就是它)'}`
+          const retryLine = retried
+            ? '\n已用 force=1 强刷 ticket 重试过仍失败,基本可排除 ticket 缓存陈旧。'
+            : ''
+          const hint = isSigExpired(e)
+            ? '\n\n→ 时钟、ticket 都排查过了,如果 URL 一致仍报错,大概率是 Lark 开发者后台「应用安全 → 网页应用 → 重定向 URL/可信域名」未配齐当前域名/端口。'
+            : ''
+          setErr(
+            `Lark JSSDK config 失败。\n${driftLine}\n${urlLines}${retryLine}${hint}\n\n完整错误对象:\n${dump}`,
+          )
+        }
+
+        const callConfig = (used: SignCfg, onFail: (e: unknown) => void) => {
+          window.h5sdk!.config!({
+            appId: used.appId,
+            timestamp: used.timestamp,
+            nonceStr: used.nonceStr,
+            signature: used.signature,
+            jsApiList: ['scanCode'],
+            onSuccess: () => {
+              if (cancelled) return
+              runScan()
+            },
+            onFail,
+          })
+        }
+
+        callConfig(cfg, async (e) => {
+          if (cancelled) return
+          console.error('[Lark JSSDK] h5sdk.config failed:', e)
+          if (!isSigExpired(e)) {
+            reportConfigFailure(e, cfg, false)
+            return
+          }
+          // Ticket cache may be stale — Feishu sometimes rotates server-side
+          // before its advertised expiry. Refetch once with force=1 and retry.
+          console.warn(
+            '[Lark JSSDK] signature is expired — retrying once with force=1',
+          )
+          const fresh = await fetchSign(true)
+          if (cancelled || !fresh) return
+          callConfig(fresh, (e2) => {
             if (cancelled) return
-            runScan()
-          },
-          onFail: (e) => {
-            if (cancelled) return
-            console.error('[Lark JSSDK] h5sdk.config failed:', e)
-            const dump = JSON.stringify(e ?? {}, null, 2) || '(空错误对象)'
-            // errno 2601002 = "signature is expired" — almost always host
-            // clock drift. Surface the client vs server time delta so the
-            // root cause is obvious from the popup.
-            const clientNow = Math.floor(Date.now() / 1000)
-            const srv = cfg.serverTime ?? cfg.timestamp
-            const drift = clientNow - srv
-            const driftLine = `客户端时间 ${clientNow},服务器时间 ${srv},偏差 ${drift}s`
-            const isExpired =
-              (e as { errno?: number })?.errno === 2601002 ||
-              /signature is expired/i.test(
-                (e as { errString?: string })?.errString ?? '',
-              )
-            const hint = isExpired
-              ? '\n\n→ 这是「signature is expired」,Feishu 要求服务器时间与其相差不超过 ~5 分钟。请在生产机上 `date` 比对真实时间并同步 NTP。'
-              : ''
-            setErr(
-              `Lark JSSDK config 失败。\n${driftLine}${hint}\n\n完整错误对象:\n${dump}`,
-            )
-          },
+            console.error('[Lark JSSDK] retry failed:', e2)
+            reportConfigFailure(e2, fresh, true)
+          })
         })
       })()
       return () => {
