@@ -224,12 +224,19 @@ export default function CameraScanner({
         }
 
         const callConfig = (used: SignCfg, onFail: (e: unknown) => void) => {
+          // Lark international's h5sdk.config wants an EMPTY jsApiList —
+          // confirmed by lark-samples/web_app_with_jssdk/public/index.js
+          // which passes `jsApiList: []` and then calls tt.getUserInfo /
+          // tt.scanCode freely after onSuccess. Declaring `['scanCode']`
+          // (WeChat-style) makes the whole config fail with errno
+          // 2601002 "signature is expired" because Lark's server-side
+          // doesn't recognize that identifier in this build.
           window.h5sdk!.config!({
             appId: used.appId,
             timestamp: used.timestamp,
             nonceStr: used.nonceStr,
             signature: used.signature,
-            jsApiList: ['scanCode'],
+            jsApiList: [],
             onSuccess: () => {
               if (cancelled) return
               runScan()
