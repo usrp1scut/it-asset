@@ -11,11 +11,14 @@ rest of the system stays runnable before the customer supplies app_id/secret.
 """
 
 import json
+import logging
 
 import httpx
 
 from app.cache import get_redis
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _TENANT_TOKEN_KEY = "lark:tenant_access_token"
 _APP_TOKEN_KEY = "lark:app_access_token"
@@ -73,9 +76,17 @@ class LarkClient:
         )
 
     async def get_jsapi_ticket(self, *, force: bool = False) -> str:
-        """jsapi_ticket for H5 JSSDK signature (`tt.config`), Redis-cached.
+        """jsapi_ticket for H5 JSSDK signature (`h5sdk.config`), Redis-cached.
 
         Required before calling capability-gated APIs like `tt.scanCode`.
+
+        Matches Lark's official lark-samples/web_app_with_jssdk Python flow
+        byte-for-byte (POST with Bearer + Content-Type: application/json,
+        empty body, read data.ticket from JSON). A short ticket (<60 chars)
+        is logged at WARNING — under-spec tickets are the strongest signal
+        that the app has no H5 capability enabled, in which case Lark still
+        returns code=0 and a placeholder string but signature validation
+        later fails as "signature is expired" (errno 2601002).
         """
         if not self.configured:
             raise LarkNotConfigured("LARK_APP_ID / LARK_APP_SECRET not configured")
@@ -85,7 +96,10 @@ class LarkClient:
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 self._url("/open-apis/jssdk/ticket/get"),
-                headers={"Authorization": f"Bearer {token}"},
+                headers={
+                    "Authorization": f"Bearer {token}",
+                    "Content-Type": "application/json",
+                },
             )
         try:
             body = resp.json()
@@ -101,6 +115,19 @@ class LarkClient:
         if not ticket:
             raise RuntimeError(f"Lark jssdk/ticket/get returned no ticket: {body!r}")
         expire = int(data.get("expire_in", 7200))
+        # Log the full response shape (ticket truncated) once per fetch so
+        # `docker logs` shows what Lark actually returned — useful when the
+        # signature later fails and we need to rule out a bad ticket shape.
+        ticket_preview = f"{ticket[:4]}…{ticket[-4:]}" if len(ticket) >= 8 else ticket
+        logger.warning(
+            "[Lark JSSDK ticket] fetched ticket=%s len=%d expire_in=%d code=%s msg=%s%s",
+            ticket_preview,
+            len(ticket),
+            expire,
+            code,
+            msg,
+            " (SHORT — likely no H5 capability)" if len(ticket) < 60 else "",
+        )
         get_redis().set(
             _JSAPI_TICKET_KEY, ticket, ex=max(expire - _REFRESH_SKEW_SECONDS, 60)
         )
