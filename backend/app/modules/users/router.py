@@ -84,17 +84,21 @@ async def lark_jssdk_sign(
     except RuntimeError as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     nonce_str = secrets.token_hex(8)
-    # Use Lark's own server time (from their HTTP Date header) so that a
-    # skewed host clock can't poison the signature. Feishu/Lark reject
-    # timestamps >~5min off their server with errno 2601002 "signature is
-    # expired" — and a Docker host on a paused VM can easily be tens of
-    # minutes off real UTC while the in-stack browser/backend agree with
-    # each other, masking the drift in any client-vs-server diff. Fall
-    # back to local time only if the probe fails (e.g., offline).
-    local_now = int(time.time())
-    real_now = await get_lark_client().probe_real_unix_time()
-    timestamp = real_now if real_now is not None else local_now
-    clock_drift = (local_now - real_now) if real_now is not None else None
+    # CRITICAL: Lark international (open.larksuite.com) expects `timestamp`
+    # in MILLISECONDS, not seconds — confirmed by Lark's official sample
+    # (lark-samples/web_app_with_jssdk/python/server.py) which signs with
+    # `timestamp = int(time.time()) * 1000`. Sending seconds (a value
+    # ~1.78e9) makes Lark interpret it as 1970-01-21, way past the ±5min
+    # window, returning errno 2601002 "signature is expired" — the most
+    # misleading error label this project has ever debugged.
+    #
+    # Also: use Lark's own server time (HTTP Date header) so a skewed
+    # host clock can't poison the signature on top of the unit mismatch.
+    local_now_s = int(time.time())
+    real_now_s = await get_lark_client().probe_real_unix_time()
+    base_seconds = real_now_s if real_now_s is not None else local_now_s
+    timestamp = base_seconds * 1000  # milliseconds per Lark spec
+    clock_drift = (local_now_s - real_now_s) if real_now_s is not None else None
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
     # Truncated preview so the frontend popup can verify a ticket was
@@ -110,7 +114,7 @@ async def lark_jssdk_sign(
     # skewed host without any extra ssh.
     logger.warning(
         "[Lark JSSDK sign] appId=%s apiBase=%s ticket=%s(len=%d) "
-        "noncestr=%s timestamp=%d (real_utc=%s, host_drift=%s) "
+        "noncestr=%s timestamp=%d_ms (real_utc_s=%s, host_drift_s=%s) "
         "url=%s force=%s -> signature=%s",
         s.lark_app_id,
         get_lark_client().api_base,
@@ -118,7 +122,7 @@ async def lark_jssdk_sign(
         len(ticket or ""),
         nonce_str,
         timestamp,
-        real_now,
+        real_now_s,
         clock_drift,
         url,
         force,
@@ -130,9 +134,11 @@ async def lark_jssdk_sign(
         "nonceStr": nonce_str,
         "signature": signature,
         # Diagnostics — never required by JSSDK, only consumed by error popups.
-        "serverTime": timestamp,
-        "hostLocalTime": local_now,
-        "realUtcTime": real_now,
+        # All "Time" fields below are in SECONDS for human-readable comparison;
+        # only `timestamp` is in milliseconds (per Lark's spec).
+        "serverTime": base_seconds,
+        "hostLocalTime": local_now_s,
+        "realUtcTime": real_now_s,
         "hostClockDrift": clock_drift,
         "signedUrl": url,
         "ticketFresh": force,
@@ -160,7 +166,8 @@ async def lark_jssdk_sign_debug(
     except (LarkNotConfigured, RuntimeError) as e:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, str(e)) from e
     nonce_str = "DIAG" + secrets.token_hex(4)
-    timestamp = int(time.time())
+    # Milliseconds — see jssdk-sign comment for the (painful) reason why.
+    timestamp = int(time.time()) * 1000
     raw = f"jsapi_ticket={ticket}&noncestr={nonce_str}&timestamp={timestamp}&url={url}"
     signature = hashlib.sha1(raw.encode("utf-8")).hexdigest()
     logger.warning("[Lark JSSDK debug] requested by user_id=%s url=%s", user.id, url)
