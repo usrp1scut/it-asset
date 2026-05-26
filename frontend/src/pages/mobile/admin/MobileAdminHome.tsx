@@ -364,12 +364,12 @@ export default function MobileAdminHome() {
 
   const { data: overview } = useQuery<Overview>({
     queryKey: ['m-admin-overview'],
-    queryFn: async () => (await api.get('/api/dashboard/overview')).data,
+    queryFn: async () => (await api.get('/dashboard/overview')).data,
   })
   const { data: myApprovals } = useQuery<Approval[]>({
     queryKey: ['m-admin-my-approvals'],
     queryFn: async () =>
-      (await api.get('/api/approvals', { params: { scope: 'for_me' } })).data,
+      (await api.get('/approvals', { params: { scope: 'for_me' } })).data,
   })
 
   const stats = overview?.stats

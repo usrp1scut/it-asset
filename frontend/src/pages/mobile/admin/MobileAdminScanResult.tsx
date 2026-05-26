@@ -173,7 +173,7 @@ export default function MobileAdminScanResult() {
 
   const { data, isLoading, error } = useQuery<AssetDetail>({
     queryKey: ['m-admin-asset', code],
-    queryFn: async () => (await api.get(`/api/assets/${encodeURIComponent(code)}`)).data,
+    queryFn: async () => (await api.get(`/assets/${encodeURIComponent(code)}`)).data,
     enabled: !!code,
     retry: false,
   })
