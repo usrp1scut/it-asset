@@ -13,6 +13,8 @@ import Inspections from './pages/Inspections'
 import ScrapApprovals from './pages/ScrapApprovals'
 import RepairOrders from './pages/RepairOrders'
 import MobileApp from './pages/mobile/MobileApp'
+import MobileAdminHome from './pages/mobile/admin/MobileAdminHome'
+import MobileAdminScanResult from './pages/mobile/admin/MobileAdminScanResult'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -21,6 +23,9 @@ export const router = createBrowserRouter([
     children: [
       // Employee H5 — no admin chrome (rendered inside the Lark webview).
       { path: '/m', element: <MobileApp /> },
+      // IT admin mobile cockpit — own chrome, no AppLayout sidebar.
+      { path: '/m/admin', element: <MobileAdminHome /> },
+      { path: '/m/admin/asset/:code', element: <MobileAdminScanResult /> },
       {
         element: <AppLayout />,
         children: [

@@ -1,3 +1,4 @@
+import { useEffect } from 'react'
 import { Layout, Menu } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Topbar from './Topbar'
@@ -15,13 +16,27 @@ const ITEMS = [
   { key: '/users', label: '用户管理', adminOnly: true },
   { key: '/logs', label: '操作日志' },
   { key: '/m', label: '员工视图', adminOnly: true },
+  { key: '/m/admin', label: '移动管理台', adminOnly: true },
 ]
+
+const MOBILE_BREAKPOINT = 768
 
 export default function AppLayout() {
   const navigate = useNavigate()
   const { pathname } = useLocation()
   const role = useAuth((s) => s.user?.role)
   const isAdmin = role === 'it_admin' || role === 'sys_admin'
+
+  // Auto-redirect admins on small screens to the mobile admin cockpit —
+  // but only when they hit the dashboard root, so deep links still resolve.
+  useEffect(() => {
+    if (!isAdmin) return
+    if (pathname !== '/') return
+    if (typeof window === 'undefined') return
+    if (window.innerWidth >= MOBILE_BREAKPOINT) return
+    navigate('/m/admin', { replace: true })
+  }, [isAdmin, pathname, navigate])
+
   const items = ITEMS.filter((i) => !i.adminOnly || isAdmin).map(
     ({ key, label }) => ({ key, label }),
   )
