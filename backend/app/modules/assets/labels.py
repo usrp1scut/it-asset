@@ -42,19 +42,16 @@ _CELL_H = (_PAGE_H - 2 * _MARGIN) / _ROWS  # 35.875 mm
 
 # Per-cell layout (mm).
 _PAD = 2
-_QR_MM = 24
+_QR_MM = 26
 # ECC level — L (7% recovery) is appropriate for printed-once labels; it
 # also keeps our 47-char URL payload at QR version 3 (29 data modules)
-# instead of version 4 (33 modules) under ECC M, which jumps printed
-# module size from ~0.65mm to ~0.73mm at 24mm — across the threshold
-# where phone-camera scanners stop locking on reliably.
+# instead of version 4 (33 modules) under ECC M.
 _QR_ECC = "l"
-# segno renders the QR with a quiet-zone border of N modules baked into
-# the PNG. With ECC=L our URL payload encodes as v3 (29 modules); border=2
-# adds 4 modules of whitespace, so the visible 24mm holds 33 modules at
-# ~0.73mm each.
+# segno renders the QR with a quiet-zone border of N modules. We embed as
+# SVG (vector) rather than PNG, so the printed modules stay crisp at any
+# scale and there's no risk of pixel-level cropping/blur when the PDF is
+# rasterized by a printer or viewer.
 _QR_BORDER_MODULES = 2
-_QR_PNG_SCALE = 15  # pixels per QR module — higher = sharper print edges.
 
 # CJK font location (installed by Dockerfile via `apt-get install
 # fonts-wqy-zenhei`). The .ttc file ships two faces; index 0 is regular.
@@ -75,12 +72,33 @@ class LabelRow:
     department_name: str | None = None
 
 
-def _qr_png_bytes(payload: str) -> bytes:
-    buf = io.BytesIO()
-    segno.make(payload, error=_QR_ECC).save(
-        buf, kind="png", scale=_QR_PNG_SCALE, border=_QR_BORDER_MODULES
+def _qr_svg(payload: str) -> io.BytesIO:
+    """Render a square SVG of the QR, sized so its width/height in user
+    units equals total modules — fpdf2 will scale it cleanly to whatever
+    `w` / `h` we pass to .image(). We add an explicit `viewBox` so fpdf2
+    doesn't have to guess and warn.
+    """
+    qr = segno.make(payload, error=_QR_ECC)
+    modules = qr.symbol_size(border=_QR_BORDER_MODULES)[0]
+    # Build the SVG ourselves with an explicit viewBox + white background
+    # for a fully-opaque quiet zone (some PDF renderers ignore SVG
+    # transparency and render unclear).
+    body = qr.svg_inline(
+        scale=1, border=_QR_BORDER_MODULES, dark="black", light="white",
     )
-    return buf.getvalue()
+    # segno's svg_inline output has no <?xml ?> declaration and a viewBox
+    # set to its width/height — but width/height are in px without unit.
+    # Replace those with a unit-less viewBox so fpdf2 maps to mm cleanly.
+    svg = (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {modules} {modules}" '
+        f'width="{modules}" height="{modules}">'
+        f'<rect width="{modules}" height="{modules}" fill="white"/>'
+        f'{body[body.find(">") + 1 : body.rfind("</svg>")]}'
+        f'</svg>'
+    )
+    return io.BytesIO(svg.encode("utf-8"))
 
 
 def _register_cjk_font(pdf: FPDF) -> str:
@@ -127,41 +145,43 @@ def render_labels_pdf(rows: list[LabelRow]) -> bytes:
         x = _MARGIN + col * _CELL_W
         y = _MARGIN + r * _CELL_H
 
-        # QR — top center. The PNG includes its own 2-module quiet zone,
-        # so the printed 24mm IS the QR including the standards-required
-        # whitespace; we don't need extra cell padding around it.
+        # QR — top center, vector SVG so it stays crisp at any rasterizer
+        # DPI. The SVG includes its own 2-module quiet zone (white rect +
+        # path inset by border modules), so the printed 26mm IS the QR
+        # including the standards-required whitespace.
         qr_x = x + (_CELL_W - _QR_MM) / 2
-        qr_y = y + 1
+        qr_y = y + 0.5
         pdf.image(
-            io.BytesIO(_qr_png_bytes(qr_payload(row.asset_code))),
+            _qr_svg(qr_payload(row.asset_code)),
             x=qr_x, y=qr_y, w=_QR_MM, h=_QR_MM,
         )
 
-        # Text — 3 lines, full cell width.
+        # Text — 3 lines, full cell width. The cell is 35.875mm tall and
+        # the QR consumes 26.5mm of that, so we have ~9mm for text — tight,
+        # so spacing is 2.8mm between line tops to fit cleanly.
         text_w = _CELL_W - 2 * _PAD
         text_x = x + _PAD
-        text_y = qr_y + _QR_MM  # touch the QR's bottom quiet zone
+        text_y = qr_y + _QR_MM + 0.2
 
         # Line 1: asset_code (the human-readable backup if the QR fails).
-        pdf.set_font(font, size=9)
+        pdf.set_font(font, size=8.5)
         pdf.set_xy(text_x, text_y)
-        pdf.cell(text_w, 3.3, row.asset_code, align="C")
+        pdf.cell(text_w, 3, row.asset_code, align="C")
 
         # Line 2: brand_model — primary descriptor.
         pdf.set_font(font, size=7)
-        pdf.set_xy(text_x, text_y + 3.5)
+        pdf.set_xy(text_x, text_y + 3)
         brand_line = row.brand_model or "—"
         if row.spec:
-            # Keep brand+spec on one line if it fits; otherwise just brand.
             joined = f"{brand_line} {row.spec}"
             brand_line = joined if len(joined) <= 24 else brand_line
-        pdf.cell(text_w, 3, _truncate(brand_line, 30), align="C")
+        pdf.cell(text_w, 2.8, _truncate(brand_line, 30), align="C")
 
         # Line 3: owner [+ dept] — operations-critical row.
         owner_bits = [b for b in (row.owner_name, row.department_name) if b]
         owner_line = " · ".join(owner_bits) if owner_bits else "未分配"
         pdf.set_font(font, size=6.5)
-        pdf.set_xy(text_x, text_y + 6.5)
-        pdf.cell(text_w, 3, _truncate(owner_line, 32), align="C")
+        pdf.set_xy(text_x, text_y + 5.8)
+        pdf.cell(text_w, 2.8, _truncate(owner_line, 32), align="C")
 
     return bytes(pdf.output())
