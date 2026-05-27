@@ -24,6 +24,7 @@ Latin-only. We register WenQuanYi Zen Hei from the Debian fonts-wqy-zenhei
 package (installed in the Dockerfile) and reuse it for all label text.
 """
 
+import io
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -71,37 +72,33 @@ class LabelRow:
     department_name: str | None = None
 
 
-def _draw_qr(pdf: FPDF, payload: str, x: float, y: float, size_mm: float) -> None:
-    """Draw the QR onto the PDF as native rect primitives — one filled
-    black rectangle per dark module, sitting on a white background rect
-    for the quiet zone. This bypasses image embedding entirely (no PNG
-    rasterizer pixel-rounding, no SVG-parser quirks), so the modules can
-    never be cropped or compressed by the PDF viewer or printer driver.
+def _qr_svg(payload: str) -> io.BytesIO:
+    """Render a square SVG of the QR, sized so its width/height in user
+    units equals total modules — fpdf2 will scale it cleanly to whatever
+    `w` / `h` we pass to .image(). We add an explicit `viewBox` so fpdf2
+    doesn't have to guess and warn.
     """
     qr = segno.make(payload, error=_QR_ECC)
-    matrix = list(qr.matrix)
-    data_modules = len(matrix)
-    total_modules = data_modules + 2 * _QR_BORDER_MODULES
-    module_mm = size_mm / total_modules
-
-    # White quiet-zone background covering the whole QR box.
-    pdf.set_fill_color(255, 255, 255)
-    pdf.rect(x, y, size_mm, size_mm, style="F")
-
-    # Draw each dark module as a black filled square. We over-draw by
-    # 0.5% so adjacent module rects share an edge cleanly (no white
-    # hairline between them after PDF rasterization).
-    pdf.set_fill_color(0, 0, 0)
-    overlap = module_mm * 0.01
-    for r, row in enumerate(matrix):
-        for c, v in enumerate(row):
-            if not v:
-                continue
-            mx = x + (c + _QR_BORDER_MODULES) * module_mm
-            my = y + (r + _QR_BORDER_MODULES) * module_mm
-            pdf.rect(
-                mx, my, module_mm + overlap, module_mm + overlap, style="F"
-            )
+    modules = qr.symbol_size(border=_QR_BORDER_MODULES)[0]
+    # Build the SVG ourselves with an explicit viewBox + white background
+    # for a fully-opaque quiet zone (some PDF renderers ignore SVG
+    # transparency and render unclear).
+    body = qr.svg_inline(
+        scale=1, border=_QR_BORDER_MODULES, dark="black", light="white",
+    )
+    # segno's svg_inline output has no <?xml ?> declaration and a viewBox
+    # set to its width/height — but width/height are in px without unit.
+    # Replace those with a unit-less viewBox so fpdf2 maps to mm cleanly.
+    svg = (
+        f'<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<svg xmlns="http://www.w3.org/2000/svg" '
+        f'viewBox="0 0 {modules} {modules}" '
+        f'width="{modules}" height="{modules}">'
+        f'<rect width="{modules}" height="{modules}" fill="white"/>'
+        f'{body[body.find(">") + 1 : body.rfind("</svg>")]}'
+        f'</svg>'
+    )
+    return io.BytesIO(svg.encode("utf-8"))
 
 
 def _register_cjk_font(pdf: FPDF) -> str:
@@ -148,12 +145,16 @@ def render_labels_pdf(rows: list[LabelRow]) -> bytes:
         x = _MARGIN + col * _CELL_W
         y = _MARGIN + r * _CELL_H
 
-        # QR — top center, drawn as native PDF rect primitives (one rect
-        # per dark module) so the printed output is mathematically exact
-        # at any zoom level and impossible for a rasterizer to crop.
+        # QR — top center, vector SVG so it stays crisp at any rasterizer
+        # DPI. The SVG includes its own 2-module quiet zone (white rect +
+        # path inset by border modules), so the printed 26mm IS the QR
+        # including the standards-required whitespace.
         qr_x = x + (_CELL_W - _QR_MM) / 2
         qr_y = y + 0.5
-        _draw_qr(pdf, qr_payload(row.asset_code), qr_x, qr_y, _QR_MM)
+        pdf.image(
+            _qr_svg(qr_payload(row.asset_code)),
+            x=qr_x, y=qr_y, w=_QR_MM, h=_QR_MM,
+        )
 
         # Text — 3 lines, full cell width. The cell is 35.875mm tall and
         # the QR consumes 26.5mm of that, so we have ~9mm for text — tight,
