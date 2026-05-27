@@ -362,17 +362,10 @@ export default function AssetDrawer({
                       <>
                         <img
                           src={`data:image/svg+xml;utf8,${encodeURIComponent(qrSvg)}`}
-                          width={320}
-                          height={320}
+                          width={200}
+                          height={200}
                           alt={`二维码 ${a.asset_code}`}
-                          style={{
-                            border: '1px solid var(--border)',
-                            borderRadius: 8,
-                            // image-rendering: pixelated keeps the QR
-                            // modules sharp-edged at any zoom level,
-                            // crucial for screen scanning.
-                            imageRendering: 'pixelated',
-                          }}
+                          style={{ border: '1px solid var(--border)', borderRadius: 8 }}
                         />
                         <div
                           style={{ color: 'var(--text-3)', fontSize: 12, margin: '10px 0 16px' }}
