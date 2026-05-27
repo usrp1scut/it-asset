@@ -194,13 +194,21 @@ def get_detail(code: str, db: Session = Depends(get_db), _: User = Depends(staff
 @router.get("/{code}/qrcode")
 def asset_qrcode(code: str, db: Session = Depends(get_db), _: User = Depends(staff)):
     """SVG QR. Payload is a deep-link URL when PUBLIC_BASE_URL is configured,
-    else plain asset_code (scanner shows text but can't tap)."""
+    else plain asset_code (scanner shows text but can't tap).
+
+    Important: passing error='l' explicitly (not the default 'm') — segno
+    upgrades 'm' to ECC Q when the data fits without growing the version,
+    which kicks our 46-char URL from v3 (29 data modules) to v4 (33),
+    crowding the on-screen QR below ~5px per module at the 280px display
+    size. ECC L stays at v3 and keeps modules at ~6px on screen — easier
+    for handheld phone cameras to lock onto.
+    """
     asset = service.get_asset(db, code)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
     buf = io.BytesIO()
-    segno.make(service.qr_payload(asset.asset_code), error="m").save(
-        buf, kind="svg", scale=4, border=2
+    segno.make(service.qr_payload(asset.asset_code), error="l").save(
+        buf, kind="svg", scale=10, border=2
     )
     return Response(content=buf.getvalue(), media_type="image/svg+xml")
 
