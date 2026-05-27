@@ -492,7 +492,7 @@ export default function MobileAdminHome() {
           label="盘点核对"
           color="#7E5EE5"
           bg="#F1ECFF"
-          onClick={() => navigate('/m/admin/inspections')}
+          onClick={() => navigate('/inspections')}
         />
       </div>
 
