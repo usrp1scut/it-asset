@@ -128,18 +128,35 @@ def export_assets(db: Session = Depends(get_db), _: User = Depends(it_admin)):
 
 class LabelsIn(BaseModel):
     codes: list[str]
+    # Layout key from labels.LAYOUTS — `compact` (4×8), `standard` (3×6),
+    # `large` (2×4). Defaults to compact.
+    layout: str = labels.DEFAULT_LAYOUT
+
+
+@router.get("/labels/layouts")
+def label_layouts(_: User = Depends(it_admin)):
+    """List the label-layout presets the frontend offers in its picker."""
+    return labels.list_layouts()
 
 
 @router.post("/labels")
 def print_labels(
     body: LabelsIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
 ):
-    """A4 PDF, 32 labels/page: QR + asset_code + brand_model + spec + owner."""
+    """A4 PDF: QR + asset_code + brand_model + spec + owner.
+
+    `body.layout` selects density — see labels.LAYOUTS.
+    """
     codes = [c.strip() for c in body.codes if c and c.strip()]
     if not codes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "请至少选择一个资产")
     if len(codes) > 500:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "单次最多 500 个")
+    if body.layout not in labels.LAYOUTS:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"未知布局 {body.layout!r}(可选: {', '.join(labels.LAYOUTS)})",
+        )
     # Fetch the full asset records (one query) so the label text uses the
     # latest owner / brand / spec snapshot.
     assets = db.scalars(
@@ -162,9 +179,10 @@ def print_labels(
         )
         for c in codes
     ]
-    pdf = labels.render_labels_pdf(rows)
+    pdf = labels.render_labels_pdf(rows, layout_id=body.layout)
     write_audit(db, actor_user_id=user.id, action="asset.labels.print",
-                resource_type="asset", payload={"count": len(codes)})
+                resource_type="asset",
+                payload={"count": len(codes), "layout": body.layout})
     return Response(
         content=pdf,
         media_type="application/pdf",
