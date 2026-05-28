@@ -39,6 +39,17 @@ export default function AppLayout() {
   const role = useAuth((s) => s.user?.role)
   const isAdmin = role === 'it_admin' || role === 'sys_admin'
 
+  // Employees should never land on the admin desktop chrome — the
+  // tables and admin actions are gated server-side anyway, but showing
+  // them an empty admin layout is bad UX. Send anyone whose role is
+  // 'employee' to /m (the H5 self-service view). Admins / managers /
+  // finance / procurement stay on the desktop AppLayout.
+  useEffect(() => {
+    if (role && role === 'employee') {
+      navigate('/m', { replace: true })
+    }
+  }, [role, navigate])
+
   // Auto-redirect admins on small screens to the mobile admin cockpit —
   // but only when they hit the dashboard root, so deep links still resolve.
   useEffect(() => {
