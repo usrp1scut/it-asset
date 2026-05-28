@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
+import Icon from '../../../components/Icon'
 
 type ConfirmStatus = 'pending' | 'ok' | 'mismatch'
 
@@ -72,14 +73,15 @@ function NavBar({ title, onBack }: { title: string; onBack: () => void }) {
           background: 'transparent',
           border: 'none',
           color: '#fff',
-          fontSize: 22,
           padding: 6,
           cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
           opacity: 0.85,
         }}
         aria-label="返回"
       >
-        ‹
+        <Icon name="chevronLeft" size={20} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
         {title}
@@ -521,7 +523,7 @@ export default function MobileAdminInspectionTask() {
               gap: 8,
             }}
           >
-            <span style={{ fontSize: 20 }}>⎚</span>
+            <Icon name="qr" size={20} color="#fff" />
             扫码核对
           </button>
           <label
@@ -582,9 +584,17 @@ export default function MobileAdminInspectionTask() {
               animation: 'mai-banner-in 200ms ease-out',
             }}
           >
-            <span style={{ fontSize: 18 }}>
-              {banner.kind === 'ok' ? '✓' : banner.kind === 'err' ? '✗' : 'ℹ'}
-            </span>
+            <Icon
+              name={
+                banner.kind === 'ok'
+                  ? 'check'
+                  : banner.kind === 'err'
+                    ? 'close'
+                    : 'bell'
+              }
+              size={18}
+              color="#fff"
+            />
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontWeight: 600 }}>{banner.code}</div>
               <div

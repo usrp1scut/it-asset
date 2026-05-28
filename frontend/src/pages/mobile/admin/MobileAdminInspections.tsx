@@ -1,6 +1,7 @@
 import { useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
+import Icon from '../../../components/Icon'
 
 type ConfirmStatus = 'pending' | 'ok' | 'mismatch'
 interface TaskRow {
@@ -52,14 +53,15 @@ function NavBar({ title, onBack }: { title: string; onBack: () => void }) {
           background: 'transparent',
           border: 'none',
           color: '#fff',
-          fontSize: 22,
           padding: 6,
           cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
           opacity: 0.85,
         }}
         aria-label="返回"
       >
-        ‹
+        <Icon name="chevronLeft" size={20} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
         {title}
@@ -114,7 +116,12 @@ export default function MobileAdminInspections() {
 
       {!isLoading && tasks && tasks.length === 0 && (
         <div style={{ padding: 40, textAlign: 'center', color: '#86909C' }}>
-          <div style={{ fontSize: 32, color: '#C9CDD4', marginBottom: 8 }}>—</div>
+          <Icon
+            name="inspect"
+            size={36}
+            color="#C9CDD4"
+            style={{ marginBottom: 8 }}
+          />
           <div style={{ fontSize: 13 }}>暂无盘点任务</div>
           <div style={{ fontSize: 11, marginTop: 6 }}>请在 PC 端创建新任务</div>
         </div>
@@ -248,7 +255,7 @@ function TaskCard({ t, onClick }: { t: TaskRow; onClick: () => void }) {
           </span>
         )}
         <span style={{ color: '#C9CDD4' }}>待核 {t.progress.pending}</span>
-        <span style={{ marginLeft: 'auto', color: '#C9CDD4' }}>›</span>
+        <Icon name="chevronRight" size={14} color="#C9CDD4" style={{ marginLeft: 'auto' }} />
       </div>
     </div>
   )
