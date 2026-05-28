@@ -183,7 +183,12 @@ def asset_qrcode(code: str, db: Session = Depends(get_db), _: User = Depends(sta
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
     buf = io.BytesIO()
-    segno.make(service.qr_payload(asset.asset_code), error="m").save(
+    # micro=False forces a standard QR (3 finder patterns) — without this,
+    # segno picks a Micro QR (1 finder pattern) when the payload is short
+    # enough to fit (e.g., bare "PC-0002" when PUBLIC_BASE_URL is unset).
+    # Lark scanCode + most generic scanners don't decode Micro QR, so the
+    # user sees just the top-left finder block and can't scan.
+    segno.make(service.qr_payload(asset.asset_code), error="m", micro=False).save(
         buf, kind="svg", scale=4, border=2
     )
     return Response(content=buf.getvalue(), media_type="image/svg+xml")
