@@ -3,6 +3,7 @@ import { useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
+import Icon from '../../../components/Icon'
 
 interface AssetOut {
   id: number
@@ -94,14 +95,15 @@ function NavBar({ onBack, onClose }: { onBack: () => void; onClose: () => void }
           background: 'transparent',
           border: 'none',
           color: '#fff',
-          fontSize: 22,
           padding: 6,
           cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
           opacity: 0.85,
         }}
         aria-label="返回"
       >
-        ‹
+        <Icon name="chevronLeft" size={20} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
         扫码结果
@@ -112,14 +114,15 @@ function NavBar({ onBack, onClose }: { onBack: () => void; onClose: () => void }
           background: 'transparent',
           border: 'none',
           color: '#fff',
-          fontSize: 18,
           padding: 6,
           cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
           opacity: 0.85,
         }}
         aria-label="关闭"
       >
-        ×
+        <Icon name="close" size={18} />
       </button>
     </div>
   )
@@ -202,7 +205,12 @@ export default function MobileAdminScanResult() {
               border: '1px solid #FFD8C8',
             }}
           >
-            <div style={{ fontSize: 32, color: '#F53F3F', marginBottom: 8 }}>⚠</div>
+            <Icon
+              name="warning"
+              size={36}
+              color="#F53F3F"
+              style={{ marginBottom: 8 }}
+            />
             <div style={{ fontSize: 15, fontWeight: 600, color: '#1F2329' }}>
               没找到资产
             </div>
@@ -291,7 +299,7 @@ export default function MobileAdminScanResult() {
               borderBottom: '0.5px solid #BCEAC7',
             }}
           >
-            <span style={{ fontSize: 16 }}>✓</span>
+            <Icon name="check" size={16} color="#00853E" />
             <span>扫描成功</span>
           </div>
 

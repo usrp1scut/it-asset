@@ -4,6 +4,7 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import { useAuth } from '../../../stores/auth'
 import CameraScanner from '../../../features/scanner/CameraScanner'
+import Icon, { type IconName } from '../../../components/Icon'
 
 interface Overview {
   stats: {
@@ -77,14 +78,15 @@ function NavBar({ title, onClose }: { title: string; onClose?: () => void }) {
           background: 'transparent',
           border: 'none',
           color: '#fff',
-          fontSize: 22,
           padding: 6,
           cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'center',
           opacity: 0.85,
         }}
         aria-label="返回管理端"
       >
-        ‹
+        <Icon name="chevronLeft" size={20} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
         {title}
@@ -95,7 +97,7 @@ function NavBar({ title, onClose }: { title: string; onClose?: () => void }) {
 }
 
 interface QuickActionProps {
-  icon: string
+  icon: IconName
   label: string
   color: string
   bg: string
@@ -129,11 +131,10 @@ function QuickAction({ icon, label, color, bg, badge, onClick }: QuickActionProp
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: 22,
             color,
           }}
         >
-          {icon}
+          <Icon name={icon} size={22} color={color} />
         </div>
         {badge !== undefined && badge > 0 && (
           <span
@@ -166,7 +167,7 @@ function QuickAction({ icon, label, color, bg, badge, onClick }: QuickActionProp
 }
 
 interface SnapshotRowProps {
-  icon: string
+  icon: IconName
   iconColor: string
   iconBg: string
   label: string
@@ -208,11 +209,9 @@ function SnapshotRow({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 18,
-          color: iconColor,
         }}
       >
-        {icon}
+        <Icon name={icon} size={18} color={iconColor} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 13, color: '#1F2329', fontWeight: 500 }}>{label}</div>
@@ -227,7 +226,7 @@ function SnapshotRow({
         {suffix && <span style={{ fontSize: 11, color: '#86909C' }}>{suffix}</span>}
       </div>
       {onClick && (
-        <span style={{ fontSize: 14, color: '#C9CDD4', marginLeft: 2 }}>›</span>
+        <Icon name="chevronRight" size={14} color="#C9CDD4" style={{ marginLeft: 2 }} />
       )}
     </div>
   )
@@ -244,27 +243,27 @@ function TabBar({ active, onNav }: TabBarProps) {
   const navigate = useNavigate()
   type Tab = {
     id: string
-    icon: string
+    icon: IconName
     label: string
     special?: boolean
     onClick: () => void
   }
   const tabs: Tab[] = [
-    { id: 'home', icon: '⌂', label: '首页', onClick: () => onNav('home') },
+    { id: 'home', icon: 'home', label: '首页', onClick: () => onNav('home') },
     {
       id: 'approvals',
-      icon: '✓',
+      icon: 'approval',
       label: '审批',
       onClick: () => navigate('/approvals'),
     },
-    { id: 'scan', icon: '⎚', label: '扫码', special: true, onClick: () => onNav('scan') },
+    { id: 'scan', icon: 'qr', label: '扫码', special: true, onClick: () => onNav('scan') },
     {
       id: 'lowstock',
-      icon: '☷',
+      icon: 'inventory',
       label: '库存',
       onClick: () => navigate('/inventory'),
     },
-    { id: 'me', icon: '○', label: '我的', onClick: () => navigate('/') },
+    { id: 'me', icon: 'user', label: '我的', onClick: () => navigate('/') },
   ]
 
   return (
@@ -316,11 +315,9 @@ function TabBar({ active, onNav }: TabBarProps) {
                   alignItems: 'center',
                   justifyContent: 'center',
                   border: '3px solid #fff',
-                  color: '#fff',
-                  fontSize: 22,
                 }}
               >
-                {tab.icon}
+                <Icon name={tab.icon} size={22} color="#fff" />
               </div>
               <span style={{ fontSize: 10, color: '#3370FF', fontWeight: 500, marginTop: 2 }}>
                 {tab.label}
@@ -345,7 +342,11 @@ function TabBar({ active, onNav }: TabBarProps) {
               color: isActive ? '#3370FF' : '#86909C',
             }}
           >
-            <span style={{ fontSize: 18, lineHeight: 1 }}>{tab.icon}</span>
+            <Icon
+              name={tab.icon}
+              size={20}
+              color={isActive ? '#3370FF' : '#86909C'}
+            />
             <span style={{ fontSize: 10, fontWeight: isActive ? 500 : 400 }}>
               {tab.label}
             </span>
@@ -465,14 +466,14 @@ export default function MobileAdminHome() {
         }}
       >
         <QuickAction
-          icon="⎚"
+          icon="qr"
           label="扫码查询"
           color="#3370FF"
           bg="#E8F1FF"
           onClick={() => setScanOpen(true)}
         />
         <QuickAction
-          icon="✓"
+          icon="approval"
           label="审批"
           color="#FF8800"
           bg="#FFF7E8"
@@ -480,7 +481,7 @@ export default function MobileAdminHome() {
           onClick={() => navigate('/approvals')}
         />
         <QuickAction
-          icon="⚠"
+          icon="warning"
           label="库存预警"
           color="#F53F3F"
           bg="#FFECE8"
@@ -488,7 +489,7 @@ export default function MobileAdminHome() {
           onClick={() => navigate('/inventory')}
         />
         <QuickAction
-          icon="✎"
+          icon="inspect"
           label="盘点核对"
           color="#7E5EE5"
           bg="#F1ECFF"
@@ -512,9 +513,17 @@ export default function MobileAdminHome() {
             </span>
             <span
               onClick={() => navigate('/approvals')}
-              style={{ fontSize: 12, color: '#3370FF', cursor: 'pointer' }}
+              style={{
+                fontSize: 12,
+                color: '#3370FF',
+                cursor: 'pointer',
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 2,
+              }}
             >
-              全部 {pendingForMe.length} 项 ›
+              全部 {pendingForMe.length} 项
+              <Icon name="chevronRight" size={12} color="#3370FF" />
             </span>
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -543,11 +552,9 @@ export default function MobileAdminHome() {
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    fontSize: 16,
-                    color: '#FF8800',
                   }}
                 >
-                  ⌛
+                  <Icon name="clock" size={18} color="#FF8800" />
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div
@@ -584,7 +591,7 @@ export default function MobileAdminHome() {
                     })}
                   </div>
                 </div>
-                <span style={{ fontSize: 14, color: '#C9CDD4' }}>›</span>
+                <Icon name="chevronRight" size={14} color="#C9CDD4" />
               </div>
             ))}
           </div>
@@ -600,7 +607,7 @@ export default function MobileAdminHome() {
         </div>
         <div style={{ background: '#fff', borderRadius: 14, overflow: 'hidden' }}>
           <SnapshotRow
-            icon="□"
+            icon="assets"
             iconColor="#3370FF"
             iconBg="#E8F1FF"
             label="资产总数"
@@ -610,7 +617,7 @@ export default function MobileAdminHome() {
             onClick={() => navigate('/assets')}
           />
           <SnapshotRow
-            icon="⚒"
+            icon="repair"
             iconColor="#FF8800"
             iconBg="#FFF7E8"
             label="维修中"
@@ -619,7 +626,7 @@ export default function MobileAdminHome() {
             onClick={() => navigate('/repair')}
           />
           <SnapshotRow
-            icon="⚠"
+            icon="warning"
             iconColor="#F53F3F"
             iconBg="#FFECE8"
             label="库存预警"
@@ -636,7 +643,7 @@ export default function MobileAdminHome() {
             onClick={() => navigate('/inventory')}
           />
           <SnapshotRow
-            icon="!"
+            icon="verify"
             iconColor="#7E5EE5"
             iconBg="#F1ECFF"
             label="需复核 / 待报废"
