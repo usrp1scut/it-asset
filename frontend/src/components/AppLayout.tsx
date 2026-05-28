@@ -13,19 +13,19 @@ interface MenuItemDef {
   section?: string  // group label rendered above this item if set
 }
 
-// Grouped to break the wall of 12 items into 3 visually distinct stacks.
+// Grouped to match the design prototype's three-section sidebar.
 const ITEMS: MenuItemDef[] = [
-  { key: '/', label: '工作台', icon: 'dashboard' },
+  { key: '/', label: '工作台', icon: 'dashboard', section: '主要工作' },
   { key: '/assets', label: '资产台账', icon: 'assets' },
   { key: '/asset-types', label: '资产类型', icon: 'tag', adminOnly: true },
   { key: '/inventory', label: '库存物品', icon: 'inventory' },
   { key: '/approvals', label: '审批中心', icon: 'approval' },
-  // Phase 2 group
-  { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true, section: '运营' },
+  // Phase 2 ops group
+  { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true, section: '流程管理' },
   { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
   { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
-  // System group
-  { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '系统' },
+  // Tools / system group
+  { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '工具与系统' },
   { key: '/logs', label: '操作日志', icon: 'clock' },
   { key: '/m', label: '员工视图', icon: 'phone', adminOnly: true },
   { key: '/m/admin', label: '移动管理台', icon: 'qr', adminOnly: true },

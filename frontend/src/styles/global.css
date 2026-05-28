@@ -11,27 +11,42 @@ body {
 }
 .text-mono { font-family: var(--font-mono); }
 
-/* Sidebar density — defaults are cramped for 12+ items with icons. */
+/* Sidebar density + icon-label spacing — defaults are cramped for 12+
+   items, and the icon sits flush against the label without breathing room. */
 .app-sidebar.ant-menu-inline .ant-menu-item {
   height: 40px;
   line-height: 40px;
   margin: 2px 8px;
   width: calc(100% - 16px);
   border-radius: 6px;
+  /* Override AntD's default left padding (28px) — we manage the inset
+     via flex gap inside the item instead. */
+  padding-inline: 12px !important;
+}
+/* Use flex so the icon and the label sit on a real grid with a fixed gap,
+   like the prototype. AntD's default lays them out inline with a tiny
+   margin-end on the icon, which looks crammed. */
+.app-sidebar.ant-menu-inline .ant-menu-title-content,
+.app-sidebar.ant-menu-inline .ant-menu-item {
+  display: flex;
+  align-items: center;
 }
 .app-sidebar.ant-menu-inline .ant-menu-item-icon {
   display: inline-flex;
   align-items: center;
-  vertical-align: middle;
+  margin-inline-end: 12px;
+  flex-shrink: 0;
+}
+.app-sidebar.ant-menu-inline .ant-menu-title-content {
+  flex: 1;
+  min-width: 0;
 }
 .app-sidebar.ant-menu-inline .ant-menu-item-group-title {
-  padding: 14px 16px 4px;
-  font-size: 11px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  padding: 16px 16px 4px;
+  font-size: 12px;
   color: var(--text-3);
   font-weight: 500;
 }
 .app-sidebar.ant-menu-inline .ant-menu-item-group:first-child .ant-menu-item-group-title {
-  padding-top: 6px;
+  padding-top: 8px;
 }
