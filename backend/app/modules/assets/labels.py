@@ -125,33 +125,38 @@ def render_labels_pdf(rows: list[LabelRow]) -> bytes:
             x=qr_x, y=qr_y, w=_QR_MM, h=_QR_MM,
         )
 
-        # Text on the right, 4 lines stacked. Top inset so line 1
-        # baseline doesn't hug the cell border.
+        # Text on the right, 4 lines on a *fixed* baseline grid. The grid
+        # never collapses when a field is empty — keeps owner-line y the
+        # same across every cell so labels line up horizontally across
+        # the whole sheet, regardless of which assets have spec filled.
         tx = x + _TEXT_X_OFFSET
-        ty = y + 3
+        # Vertically center the 4-line text block against the QR.
+        # QR center y = qr_y + 11; block height ≈ 16mm so top = center − 8.
+        block_top = qr_y + 11 - 8
 
         # Line 1: asset_code — 10pt, the human-readable backup.
         pdf.set_font(font, size=10)
-        pdf.set_xy(tx, ty)
+        pdf.set_xy(tx, block_top)
         pdf.cell(_TEXT_W, 4, row.asset_code, align="L")
 
         # Line 2: brand_model — primary descriptor (7.5pt).
         pdf.set_font(font, size=7.5)
-        pdf.set_xy(tx, ty + 5.5)
+        pdf.set_xy(tx, block_top + 5.5)
         pdf.cell(_TEXT_W, 3.2, _truncate(row.brand_model or "—", 22), align="L")
 
-        # Line 3: spec — secondary descriptor (6.5pt).
+        # Line 3: spec — secondary descriptor (6.5pt). Slot stays even
+        # if spec is empty so line 4 keeps its position.
         pdf.set_font(font, size=6.5)
-        pdf.set_xy(tx, ty + 9.5)
-        spec_text = _truncate(row.spec, 26) if row.spec else ""
-        if spec_text:
-            pdf.cell(_TEXT_W, 3, spec_text, align="L")
+        if row.spec:
+            pdf.set_xy(tx, block_top + 9.5)
+            pdf.cell(_TEXT_W, 3, _truncate(row.spec, 26), align="L")
 
-        # Line 4: owner · department — operations-critical.
+        # Line 4: owner · department — fixed y, regardless of whether
+        # line 3 was rendered.
         owner_bits = [b for b in (row.owner_name, row.department_name) if b]
         owner_line = " · ".join(owner_bits) if owner_bits else "未分配"
         pdf.set_font(font, size=6.5)
-        pdf.set_xy(tx, ty + (13 if spec_text else 9.5))
+        pdf.set_xy(tx, block_top + 13)
         pdf.cell(_TEXT_W, 3, _truncate(owner_line, 26), align="L")
 
     return bytes(pdf.output())
