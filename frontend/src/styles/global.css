@@ -10,3 +10,28 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 .text-mono { font-family: var(--font-mono); }
+
+/* Sidebar density — defaults are cramped for 12+ items with icons. */
+.app-sidebar.ant-menu-inline .ant-menu-item {
+  height: 40px;
+  line-height: 40px;
+  margin: 2px 8px;
+  width: calc(100% - 16px);
+  border-radius: 6px;
+}
+.app-sidebar.ant-menu-inline .ant-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  vertical-align: middle;
+}
+.app-sidebar.ant-menu-inline .ant-menu-item-group-title {
+  padding: 14px 16px 4px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-3);
+  font-weight: 500;
+}
+.app-sidebar.ant-menu-inline .ant-menu-item-group:first-child .ant-menu-item-group-title {
+  padding-top: 6px;
+}
