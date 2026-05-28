@@ -134,19 +134,35 @@ class LabelsIn(BaseModel):
 def print_labels(
     body: LabelsIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
 ):
-    """A4 PDF with QR + asset_code, 32 labels/page (Phase 2 §7.7)."""
+    """A4 PDF, 32 labels/page: QR + asset_code + brand_model + spec + owner."""
     codes = [c.strip() for c in body.codes if c and c.strip()]
     if not codes:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "请至少选择一个资产")
     if len(codes) > 500:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "单次最多 500 个")
-    found = {a.asset_code for a in db.scalars(select(Asset).where(Asset.asset_code.in_(codes)))}
+    # Fetch the full asset records (one query) so the label text uses the
+    # latest owner / brand / spec snapshot.
+    assets = db.scalars(
+        select(Asset).where(Asset.asset_code.in_(codes), Asset.deleted_at.is_(None))
+    ).all()
+    found = {a.asset_code: a for a in assets}
     missing = [c for c in codes if c not in found]
     if missing:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND, f"以下资产编号不存在: {', '.join(missing[:5])}"
         )
-    pdf = labels.render_labels_pdf(codes)
+    # Preserve the caller's order, not the DB's.
+    rows = [
+        labels.LabelRow(
+            asset_code=found[c].asset_code,
+            brand_model=found[c].brand_model,
+            spec=found[c].spec,
+            owner_name=found[c].owner_name,
+            department_name=found[c].department_name,
+        )
+        for c in codes
+    ]
+    pdf = labels.render_labels_pdf(rows)
     write_audit(db, actor_user_id=user.id, action="asset.labels.print",
                 resource_type="asset", payload={"count": len(codes)})
     return Response(
