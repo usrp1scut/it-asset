@@ -12,34 +12,35 @@ body {
 .text-mono { font-family: var(--font-mono); }
 
 /* Sidebar density + icon-label spacing — defaults are cramped for 12+
-   items, and the icon sits flush against the label without breathing room. */
+   items, and AntD's inline Menu lays the icon flush against the label
+   via inline siblings + ~10px margin-end. Replacing that with a flex
+   row + `gap` is the only reliable way to enforce a visible breathing
+   room without an arms race against AntD's selector specificity. */
 .app-sidebar.ant-menu-inline .ant-menu-item {
-  height: 40px;
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  height: 40px !important;
   line-height: 40px;
-  margin: 2px 8px;
-  width: calc(100% - 16px);
+  margin: 2px 8px !important;
+  width: calc(100% - 16px) !important;
   border-radius: 6px;
-  /* Override AntD's default left padding (28px) — we manage the inset
-     via flex gap inside the item instead. */
   padding-inline: 12px !important;
 }
-/* Use flex so the icon and the label sit on a real grid with a fixed gap,
-   like the prototype. AntD's default lays them out inline with a tiny
-   margin-end on the icon, which looks crammed. */
-.app-sidebar.ant-menu-inline .ant-menu-title-content,
-.app-sidebar.ant-menu-inline .ant-menu-item {
-  display: flex;
-  align-items: center;
-}
-.app-sidebar.ant-menu-inline .ant-menu-item-icon {
+.app-sidebar.ant-menu-inline .ant-menu-item .ant-menu-item-icon {
   display: inline-flex;
   align-items: center;
-  margin-inline-end: 12px;
+  margin: 0 !important;   /* AntD adds margin-inline-end: 10px here */
+  font-size: 16px;
   flex-shrink: 0;
 }
-.app-sidebar.ant-menu-inline .ant-menu-title-content {
+.app-sidebar.ant-menu-inline .ant-menu-item .ant-menu-title-content {
   flex: 1;
   min-width: 0;
+  margin-inline-start: 0 !important;  /* AntD adds margin-inline-start: 10px on `.icon + span` */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .app-sidebar.ant-menu-inline .ant-menu-item-group-title {
   padding: 16px 16px 4px;
