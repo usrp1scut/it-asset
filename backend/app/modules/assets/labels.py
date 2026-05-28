@@ -26,7 +26,13 @@ _TEXT_GAP = 1
 
 def _qr_png_bytes(payload: str) -> bytes:
     buf = io.BytesIO()
-    segno.make(payload, error="m").save(buf, kind="png", scale=8, border=0)
+    # micro=False keeps us on a standard QR even when payload is short
+    # (e.g., bare asset_code with no PUBLIC_BASE_URL) — Micro QR has only
+    # one finder pattern and isn't decoded by Lark scanCode / most generic
+    # scanners.
+    segno.make(payload, error="m", micro=False).save(
+        buf, kind="png", scale=8, border=0
+    )
     return buf.getvalue()
 
 
