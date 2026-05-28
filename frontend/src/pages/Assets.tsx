@@ -20,6 +20,7 @@ import { api } from '../api/client'
 import type { Asset, AssetListResponse, AssetStatus } from '../features/assets/types'
 import StatusBadge from '../features/assets/StatusBadge'
 import AssetDrawer from '../features/assets/AssetDrawer'
+import LabelsPrintModal from '../features/assets/LabelsPrintModal'
 
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: '', label: '全部' },
@@ -47,6 +48,7 @@ export default function Assets() {
   const [needsReview, setNeedsReview] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
+  const [labelsOpen, setLabelsOpen] = useState(false)
   const [form] = Form.useForm()
   const size = 20
   const qc = useQueryClient()
@@ -183,24 +185,7 @@ export default function Assets() {
           </Button>
           <Button
             disabled={!selectedCodes.length}
-            onClick={async () => {
-              try {
-                const res = await api.post(
-                  '/assets/labels',
-                  { codes: selectedCodes },
-                  { responseType: 'blob' },
-                )
-                const url = URL.createObjectURL(res.data as Blob)
-                const a = document.createElement('a')
-                a.href = url
-                a.download = 'asset-labels.pdf'
-                a.click()
-                URL.revokeObjectURL(url)
-              } catch (e) {
-                const err = e as { response?: { data?: { detail?: string } } }
-                message.error(err.response?.data?.detail ?? '生成 PDF 失败')
-              }
-            }}
+            onClick={() => setLabelsOpen(true)}
           >
             打印标签{selectedCodes.length ? ` (${selectedCodes.length})` : ''}
           </Button>
@@ -333,6 +318,11 @@ export default function Assets() {
       </Modal>
 
       <AssetDrawer code={openCode} onClose={() => setOpenCode(null)} />
+      <LabelsPrintModal
+        open={labelsOpen}
+        onClose={() => setLabelsOpen(false)}
+        codes={selectedCodes}
+      />
     </div>
   )
 }
