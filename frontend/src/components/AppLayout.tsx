@@ -3,20 +3,28 @@ import { Layout, Menu } from 'antd'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 import Topbar from './Topbar'
 import { useAuth } from '../stores/auth'
+import Icon, { type IconName } from './Icon'
 
-const ITEMS = [
-  { key: '/', label: '工作台' },
-  { key: '/assets', label: '资产台账' },
-  { key: '/asset-types', label: '资产类型', adminOnly: true },
-  { key: '/inventory', label: '库存物品' },
-  { key: '/approvals', label: '审批中心' },
-  { key: '/inspections', label: '资产盘点', adminOnly: true },
-  { key: '/scrap', label: '资产报废', adminOnly: true },
-  { key: '/repair', label: '维修中心', adminOnly: true },
-  { key: '/users', label: '用户管理', adminOnly: true },
-  { key: '/logs', label: '操作日志' },
-  { key: '/m', label: '员工视图', adminOnly: true },
-  { key: '/m/admin', label: '移动管理台', adminOnly: true },
+interface MenuItemDef {
+  key: string
+  label: string
+  icon: IconName
+  adminOnly?: boolean
+}
+
+const ITEMS: MenuItemDef[] = [
+  { key: '/', label: '工作台', icon: 'dashboard' },
+  { key: '/assets', label: '资产台账', icon: 'assets' },
+  { key: '/asset-types', label: '资产类型', icon: 'tag', adminOnly: true },
+  { key: '/inventory', label: '库存物品', icon: 'inventory' },
+  { key: '/approvals', label: '审批中心', icon: 'approval' },
+  { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true },
+  { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
+  { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
+  { key: '/users', label: '用户管理', icon: 'user', adminOnly: true },
+  { key: '/logs', label: '操作日志', icon: 'clock' },
+  { key: '/m', label: '员工视图', icon: 'phone', adminOnly: true },
+  { key: '/m/admin', label: '移动管理台', icon: 'qr', adminOnly: true },
 ]
 
 const MOBILE_BREAKPOINT = 768
@@ -38,7 +46,11 @@ export default function AppLayout() {
   }, [isAdmin, pathname, navigate])
 
   const items = ITEMS.filter((i) => !i.adminOnly || isAdmin).map(
-    ({ key, label }) => ({ key, label }),
+    ({ key, label, icon }) => ({
+      key,
+      label,
+      icon: <Icon name={icon} size={16} />,
+    }),
   )
 
   return (
