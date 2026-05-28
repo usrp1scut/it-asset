@@ -10,18 +10,22 @@ interface MenuItemDef {
   label: string
   icon: IconName
   adminOnly?: boolean
+  section?: string  // group label rendered above this item if set
 }
 
+// Grouped to break the wall of 12 items into 3 visually distinct stacks.
 const ITEMS: MenuItemDef[] = [
   { key: '/', label: '工作台', icon: 'dashboard' },
   { key: '/assets', label: '资产台账', icon: 'assets' },
   { key: '/asset-types', label: '资产类型', icon: 'tag', adminOnly: true },
   { key: '/inventory', label: '库存物品', icon: 'inventory' },
   { key: '/approvals', label: '审批中心', icon: 'approval' },
-  { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true },
+  // Phase 2 group
+  { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true, section: '运营' },
   { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
   { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
-  { key: '/users', label: '用户管理', icon: 'user', adminOnly: true },
+  // System group
+  { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '系统' },
   { key: '/logs', label: '操作日志', icon: 'clock' },
   { key: '/m', label: '员工视图', icon: 'phone', adminOnly: true },
   { key: '/m/admin', label: '移动管理台', icon: 'qr', adminOnly: true },
@@ -45,25 +49,62 @@ export default function AppLayout() {
     navigate('/m/admin', { replace: true })
   }, [isAdmin, pathname, navigate])
 
-  const items = ITEMS.filter((i) => !i.adminOnly || isAdmin).map(
-    ({ key, label, icon }) => ({
-      key,
-      label,
-      icon: <Icon name={icon} size={16} />,
-    }),
-  )
+  // Build the AntD Menu tree: section-less items at the top, then each
+  // labelled section becomes a `type: 'group'` container holding its
+  // members as `children`.
+  type LeafItem = { key: string; label: string; icon: React.ReactNode }
+  type GroupItem = {
+    type: 'group'
+    key: string
+    label: string
+    children: LeafItem[]
+  }
+  const visible = ITEMS.filter((i) => !i.adminOnly || isAdmin)
+  const items: (LeafItem | GroupItem)[] = []
+  let currentGroup: GroupItem | null = null
+  for (const it of visible) {
+    const leaf: LeafItem = {
+      key: it.key,
+      label: it.label,
+      icon: <Icon name={it.icon} size={16} />,
+    }
+    if (it.section) {
+      // Start a new group whose first member is this item.
+      currentGroup = {
+        type: 'group',
+        key: `__grp_${it.section}`,
+        label: it.section,
+        children: [leaf],
+      }
+      items.push(currentGroup)
+    } else if (currentGroup) {
+      currentGroup.children.push(leaf)
+    } else {
+      items.push(leaf)
+    }
+  }
 
   return (
     <Layout style={{ minHeight: '100vh' }}>
       <Topbar />
       <Layout>
-        <Layout.Sider theme="light" width={200}>
+        <Layout.Sider theme="light" width={216}>
           <Menu
             mode="inline"
             selectedKeys={[pathname]}
             items={items}
-            onClick={({ key }) => navigate(key)}
-            style={{ height: '100%', borderRight: 0 }}
+            onClick={({ key }) => {
+              if (key.startsWith('__grp_')) return
+              navigate(key)
+            }}
+            style={{
+              height: '100%',
+              borderRight: 0,
+              paddingTop: 8,
+              paddingBottom: 16,
+              fontSize: 14,
+            }}
+            className="app-sidebar"
           />
         </Layout.Sider>
         <Layout.Content style={{ background: 'var(--bg-canvas)' }}>
