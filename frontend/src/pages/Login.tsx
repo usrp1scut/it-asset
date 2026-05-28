@@ -59,7 +59,13 @@ export default function Login() {
   const finishLogin = useCallback(
     (token: string, user: unknown) => {
       setAuth(token, user as never)
-      navigate('/', { replace: true })
+      // Regular employees go straight to the H5 employee view — they
+      // don't have the role permissions to do anything useful on the
+      // admin desktop pages, and we don't want them to land on a wall
+      // of empty tables.
+      const role = (user as { role?: string } | null)?.role
+      const dest = role === 'employee' ? '/m' : '/'
+      navigate(dest, { replace: true })
     },
     [setAuth, navigate],
   )
