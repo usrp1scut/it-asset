@@ -322,6 +322,35 @@ def scrap(db: Session, asset: Asset, operator_id: int, reason: str | None) -> As
     return asset
 
 
+def set_status(
+    db: Session,
+    asset: Asset,
+    target: AssetStatus,
+    operator_id: int | None,
+    note: str | None = None,
+) -> Asset:
+    """Direct status change for **infrastructure** assets.
+
+    Infra has no owner, so it never goes through assign/return — it moves
+    between idle / in_use / maintenance directly (启用 / 停用 / 修复完成).
+    Personal assets must keep using assign/return/repair/scrap so owner and
+    assignment rows stay consistent; calling this on one is refused.
+    Scrapping always goes through the dedicated scrap flow.
+    """
+    if asset.asset_class != AssetClass.infrastructure:
+        raise IllegalTransition("个人资产请通过 分配 / 归还 / 报修 / 报废 变更状态")
+    if target == AssetStatus.scrapped:
+        raise IllegalTransition("报废请走报废流程")
+    assert_transition(asset.status, target)
+    prev = asset.status
+    asset.status = target
+    _log(db, asset, "status_change", from_status=prev, to_status=target,
+         operator_id=operator_id, reason=note)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
 def delete_asset(db: Session, asset: Asset, operator_id: int | None) -> None:
     """Soft-delete — set deleted_at so the asset drops out of every query.
 
