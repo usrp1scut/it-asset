@@ -324,7 +324,11 @@ export default function Assets() {
         </Form>
       </Modal>
 
-      <AssetDrawer code={openCode} onClose={() => setOpenCode(null)} />
+      <AssetDrawer
+        code={openCode}
+        onClose={() => setOpenCode(null)}
+        onCodeChange={(newCode) => setOpenCode(newCode)}
+      />
       <LabelsPrintModal
         open={labelsOpen}
         onClose={() => setLabelsOpen(false)}

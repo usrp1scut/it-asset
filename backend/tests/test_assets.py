@@ -412,3 +412,59 @@ def test_transfer_requires_in_use():
                       headers=_h(admin)).json()
     assert client.post(f"/api/assets/{net['asset_code']}/transfer",
                        json={"to_user_id": e1["id"]}, headers=_h(admin)).status_code == 409
+
+
+def _type_id(admin: str, prefix: str) -> int:
+    types = client.get("/api/asset-types", headers=_h(admin)).json()
+    return next(t["id"] for t in types if t["code_prefix"] == prefix)
+
+
+def test_change_type_recodes_and_syncs_class():
+    admin = _login()
+    pc_type, mon_type = _type_id(admin, "PC"), _type_id(admin, "MON")
+    # create as PC (personal) via the type path
+    a = client.post("/api/assets", json={"asset_type_id": pc_type},
+                    headers=_h(admin)).json()
+    old_code = a["asset_code"]
+    assert old_code.startswith("PC-")
+
+    # change to MON → re-coded under new prefix, class still personal, icon swapped
+    r = client.post(f"/api/assets/{old_code}/change-type",
+                    json={"asset_type_id": mon_type}, headers=_h(admin))
+    assert r.status_code == 200
+    b = r.json()
+    new_code = b["asset_code"]
+    assert new_code.startswith("MON-")
+    assert new_code != old_code
+    assert b["asset_type_id"] == mon_type
+    assert b["asset_type_icon"] == "monitor"
+
+    # old code is gone, new code resolves and carries a change_type lifecycle entry
+    assert client.get(f"/api/assets/{old_code}", headers=_h(admin)).status_code == 404
+    detail = client.get(f"/api/assets/{new_code}", headers=_h(admin)).json()
+    assert any(e["action"] == "change_type" for e in detail["lifecycle"])
+
+
+def test_change_type_to_infrastructure_blocked_while_assigned():
+    admin = _login()
+    emp = client.post("/api/auth/dev-login",
+                      json={"email": f"ct-{uuid.uuid4().hex[:6]}@c.com"}).json()["user"]
+    pc_type, net_type = _type_id(admin, "PC"), _type_id(admin, "NET")
+    a = client.post("/api/assets", json={"asset_type_id": pc_type},
+                    headers=_h(admin)).json()
+    code = a["asset_code"]
+    client.post(f"/api/assets/{code}/assign", json={"user_id": emp["id"]},
+                headers=_h(admin))
+
+    # NET is infrastructure → refuse while the asset is assigned to a person
+    blocked = client.post(f"/api/assets/{code}/change-type",
+                          json={"asset_type_id": net_type}, headers=_h(admin))
+    assert blocked.status_code == 409
+
+    # after return it's allowed
+    client.post(f"/api/assets/{code}/return", json={}, headers=_h(admin))
+    ok = client.post(f"/api/assets/{code}/change-type",
+                     json={"asset_type_id": net_type}, headers=_h(admin))
+    assert ok.status_code == 200
+    assert ok.json()["asset_class"] == "infrastructure"
+    assert ok.json()["asset_code"].startswith("NET-")

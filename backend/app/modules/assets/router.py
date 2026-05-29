@@ -25,6 +25,7 @@ from app.modules.assets.schemas import (
     AttachmentOut,
     BindAccessoriesIn,
     ChangeLogOut,
+    ChangeTypeIn,
     NoteIn,
     ReasonIn,
     TransferIn,
@@ -387,6 +388,37 @@ def _load(db: Session, code: str):
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
     return asset
+
+
+@router.post("/{code}/change-type", response_model=AssetOut)
+def change_type(
+    code: str, body: ChangeTypeIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
+):
+    """Move an asset to a different type. May re-code it (new prefix → new
+    sequence number); the id and all FK relations are preserved. Returns the
+    asset with its (possibly new) asset_code so the caller can re-key on it.
+    """
+    asset = _load(db, code)
+    new_type = db.get(AssetType, body.asset_type_id)
+    if new_type is None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "资产类型不存在")
+    old_code = asset.asset_code
+    old_type_id = asset.asset_type_id
+    try:
+        asset = service.change_type(db, asset, new_type, user.id)
+    except IllegalTransition as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    write_audit(
+        db, actor_user_id=user.id, action="asset.change_type",
+        resource_type="asset", resource_id=asset.asset_code,
+        payload={
+            "from_type_id": old_type_id,
+            "to_type_id": new_type.id,
+            "old_code": old_code,
+            "new_code": asset.asset_code,
+        },
+    )
+    return _to_out(db, asset)
 
 
 @router.delete("/{code}")

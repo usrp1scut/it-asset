@@ -19,7 +19,7 @@ import {
 import type { Dayjs } from 'dayjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
-import type { AssetDetail } from './types'
+import type { Asset, AssetDetail } from './types'
 import StatusBadge from './StatusBadge'
 import AssetTypeIcon from '../../components/AssetTypeIcon'
 import Lifecycle from './Lifecycle'
@@ -30,9 +30,13 @@ import EmployeeSelect from '../users/EmployeeSelect'
 export default function AssetDrawer({
   code,
   onClose,
+  onCodeChange,
 }: {
   code: string | null
   onClose: () => void
+  // Called when a type change re-codes the asset; lets the parent re-key the
+  // drawer onto the new asset_code so it keeps showing the same asset.
+  onCodeChange?: (newCode: string) => void
 }) {
   const qc = useQueryClient()
   const [assignOpen, setAssignOpen] = useState(false)
@@ -78,6 +82,17 @@ export default function AssetDrawer({
     queryFn: async () =>
       (await api.get(`/assets/${code}/qrcode`, { responseType: 'text' })).data,
     enabled: !!code,
+  })
+
+  interface AssetTypeOption {
+    id: number
+    name: string
+    code_prefix: string
+    asset_class: 'personal' | 'infrastructure'
+  }
+  const { data: types } = useQuery<AssetTypeOption[]>({
+    queryKey: ['asset-types'],
+    queryFn: async () => (await api.get('/asset-types')).data,
   })
 
   const act = useMutation({
@@ -170,6 +185,7 @@ export default function AssetDrawer({
   const openEdit = () => {
     if (!a) return
     const base = {
+      asset_type_id: a.asset_type_id ?? undefined,
       brand_model: a.brand_model ?? '',
       spec: a.spec ?? '',
       serial_number: a.serial_number ?? '',
@@ -193,11 +209,57 @@ export default function AssetDrawer({
   }
 
   const submitEdit = (v: Record<string, unknown>) => {
+    if (!a) return
+    const { asset_type_id, ...rest } = v as {
+      asset_type_id?: number
+    } & Record<string, unknown>
     const body: Record<string, unknown> = {}
-    for (const [k, val] of Object.entries(v)) {
+    for (const [k, val] of Object.entries(rest)) {
       body[k] = val === '' ? null : val
     }
-    editMut.mutate(body)
+
+    const typeChanged = asset_type_id != null && asset_type_id !== a.asset_type_id
+    if (!typeChanged) {
+      editMut.mutate(body)
+      return
+    }
+
+    // Type change can re-code the asset (new prefix → new sequence number),
+    // which invalidates any printed label — gate it behind an explicit confirm.
+    const newType = types?.find((t) => t.id === asset_type_id)
+    const oldPrefix = a.asset_code.split('-')[0].toUpperCase()
+    const willRecode =
+      !!newType && newType.code_prefix.toUpperCase() !== oldPrefix
+
+    Modal.confirm({
+      title: '更改资产类型',
+      content: willRecode
+        ? `编号将按新类型前缀重新生成(${a.asset_code} → ${newType!.code_prefix}-…),原实物标签作废、需重新打印粘贴。确认更改?`
+        : '确认更改资产类型?',
+      okText: '确认更改',
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          if (Object.keys(body).length) await api.put(`/assets/${code}`, body)
+          const updated = (
+            await api.post(`/assets/${code}/change-type`, { asset_type_id })
+          ).data as Asset
+          qc.invalidateQueries({ queryKey: ['assets'] })
+          setEditOpen(false)
+          if (updated.asset_code !== code) {
+            message.success(`已更改类型,编号更新为 ${updated.asset_code}`)
+            onCodeChange?.(updated.asset_code)
+          } else {
+            message.success('已更改类型')
+            qc.invalidateQueries({ queryKey: ['asset', code] })
+          }
+        } catch (e) {
+          const err = e as { response?: { data?: { detail?: string } } }
+          message.error(err.response?.data?.detail ?? '更改失败')
+          throw e // keep the confirm dialog open on failure
+        }
+      },
+    })
   }
 
   const footer = a && (
@@ -613,6 +675,22 @@ export default function AssetDrawer({
             destroyOnClose
           >
             <Form form={form} layout="vertical" onFinish={submitEdit}>
+              <Form.Item
+                name="asset_type_id"
+                label="资产类型(更改会同步个人/基础设施类别;换前缀会重新生成编号)"
+              >
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="选择资产类型"
+                  options={(types ?? []).map((t) => ({
+                    value: t.id,
+                    label: `${t.name} · ${t.code_prefix} · ${
+                      t.asset_class === 'personal' ? '个人发放' : '基础设施'
+                    }`,
+                  }))}
+                />
+              </Form.Item>
               <div style={{ display: 'flex', gap: 12 }}>
                 <Form.Item name="brand_model" label="品牌型号" style={{ flex: 1 }}>
                   <Input />
