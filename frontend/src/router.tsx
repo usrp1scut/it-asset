@@ -20,6 +20,8 @@ import MobileAdminInspectionTask from './pages/mobile/admin/MobileAdminInspectio
 import MobileAdminAssets from './pages/mobile/admin/MobileAdminAssets'
 import MobileAdminInventory from './pages/mobile/admin/MobileAdminInventory'
 import MobileAdminApprovals from './pages/mobile/admin/MobileAdminApprovals'
+import MobileAdminAssetNew from './pages/mobile/admin/MobileAdminAssetNew'
+import MobileAdminAssetEdit from './pages/mobile/admin/MobileAdminAssetEdit'
 
 export const router = createBrowserRouter([
   { path: '/login', element: <Login /> },
@@ -31,9 +33,11 @@ export const router = createBrowserRouter([
       // IT admin mobile cockpit — own chrome, no AppLayout sidebar.
       { path: '/m/admin', element: <MobileAdminHome /> },
       { path: '/m/admin/assets', element: <MobileAdminAssets /> },
+      { path: '/m/admin/assets/new', element: <MobileAdminAssetNew /> },
       { path: '/m/admin/inventory', element: <MobileAdminInventory /> },
       { path: '/m/admin/approvals', element: <MobileAdminApprovals /> },
       { path: '/m/admin/asset/:code', element: <MobileAdminScanResult /> },
+      { path: '/m/admin/asset/:code/edit', element: <MobileAdminAssetEdit /> },
       { path: '/m/admin/inspections', element: <MobileAdminInspections /> },
       { path: '/m/admin/inspections/:id', element: <MobileAdminInspectionTask /> },
       {

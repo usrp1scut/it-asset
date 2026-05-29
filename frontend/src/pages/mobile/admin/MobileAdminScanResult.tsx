@@ -502,7 +502,7 @@ export default function MobileAdminScanResult() {
               }}
             >
               <button
-                onClick={() => navigate('/assets')}
+                onClick={() => navigate(`/m/admin/asset/${encodeURIComponent(data.asset.asset_code)}/edit`)}
                 style={{
                   height: 44,
                   borderRadius: 22,
@@ -514,7 +514,7 @@ export default function MobileAdminScanResult() {
                   cursor: 'pointer',
                 }}
               >
-                查看完整详情
+                编辑资产
               </button>
               <button
                 onClick={() => setScanOpen(true)}
