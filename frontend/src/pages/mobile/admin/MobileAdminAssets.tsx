@@ -111,7 +111,21 @@ export default function MobileAdminAssets() {
         <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
           资产台账
         </div>
-        <div style={{ width: 32 }} />
+        <button
+          onClick={() => navigate('/m/admin/assets/new')}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: '#fff',
+            padding: 6,
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+          }}
+          aria-label="新增资产"
+        >
+          <Icon name="add" size={22} />
+        </button>
       </div>
 
       {/* Search */}
