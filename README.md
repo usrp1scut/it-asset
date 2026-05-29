@@ -49,4 +49,20 @@ it-asset/
 
 ## 开发状态
 
-Phase 1 MVP 开发中。进度见 [`DEVELOPMENT_PLAN.md` §5](design_handoff_it_asset/DEVELOPMENT_PLAN.md)。当前:**Sprint 0 — 项目骨架**。
+> 截至 2026-05。计划见 [`DEVELOPMENT_PLAN.md` §5](design_handoff_it_asset/DEVELOPMENT_PLAN.md);Phase 2/3 设计补充见同目录 `PHASE2_DESIGN.md` / `PHASE3_PREVIEW.md` / `MOBILE_ADMIN.md`。
+
+**Phase 0 数据迁移** ✅ — 云文档/Excel 导入(容脏入库,脏数据进 `needs_review`)、`legacy_code`、报废候选标记、按类型前缀的编号 sequence。
+
+**Phase 1 MVP** ✅ — 已完成:
+- 用户/部门 + Lark 通讯录同步 + 免登(JSSDK)+ 密码登录 + 角色(employee/manager/it_admin/finance/procurement/sys_admin)
+- 资产台账:CRUD、筛选/搜索/分页、详情抽屉(基本信息/生命周期/配件/附件)、分配/归还/转移/报修/报废、状态机、审计、QR、资产类型(含分类图标)
+- 库存:SKU、入库、领用发放、流水、安全库存预警
+- 审批流:员工端提交 + Lark 卡片消息 + webhook 回调
+- 员工端 H5 `/m`、工作台 Dashboard、盘点(扫码确认)、审计日志
+
+**Phase 2 流程化** 🟡 进行中:
+- 后端全部就绪(维修工单状态机、报废财务审批、盘点、二维码标签 PDF);前端为功能性表格版
+- ✅ 二维码标签前端(预览 + 布局选择)、移动管理台(首页 / 扫码资产详情 / 盘点列表 + 任务)
+- ⬜ 视觉打磨版(盘点看板 / 维修漏斗+时间线 / 报废审批链 / 审计时间线);移动管理台审批列表、独立扫码屏、库存预警屏
+
+**Phase 3 高级场景** ⬜ 未开始 — 审批中心重做(Lark 卡片预览 / 批量 / 自动审批)、离职归还(offboarding 模块 + `user.left` 事件)。
