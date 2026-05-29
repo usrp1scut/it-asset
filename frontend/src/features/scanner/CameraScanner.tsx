@@ -75,10 +75,20 @@ async function ensureLarkJssdk(): Promise<boolean> {
   }
 }
 
+// 1D + 2D formats requested in `raw` mode (serial-number stickers are usually
+// Code 128 / Code 39). `asset` mode only needs QR (our printed labels).
+const RAW_FORMATS = [
+  'qr_code', 'code_128', 'code_39', 'ean_13', 'ean_8',
+  'upc_a', 'upc_e', 'itf', 'codabar',
+]
+
 export default function CameraScanner({
   open,
   onClose,
   onCode,
+  mode = 'asset',
+  title,
+  hint,
 }: {
   open: boolean
   onClose: () => void
@@ -86,6 +96,12 @@ export default function CameraScanner({
    * payload — callers that want to display "we scanned X, looked up Y"
    * can use `raw` for diagnostics. */
   onCode: (code: string, raw: string) => void
+  /** 'asset' (default): extract an asset code from the QR payload.
+   *  'raw': pass the scanned string through unchanged + enable 1D barcodes —
+   *  used for serial-number entry. */
+  mode?: 'asset' | 'raw'
+  title?: string
+  hint?: string
 }) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -180,7 +196,7 @@ export default function CameraScanner({
               const raw = (candidates.find((v) => typeof v === 'string' && v.trim()) ?? '').trim()
               if (raw) {
                 handledRef.current = true
-                onCode(extractCode(raw), raw)
+                onCode(mode === 'raw' ? raw : extractCode(raw), raw)
               } else {
                 // Surface what we actually got so the user can tell us
                 // which field Lark international used.
@@ -318,7 +334,9 @@ export default function CameraScanner({
       )
       return
     }
-    detectorRef.current = new Detector({ formats: ['qr_code'] })
+    detectorRef.current = new Detector({
+      formats: mode === 'raw' ? RAW_FORMATS : ['qr_code'],
+    })
 
     ;(async () => {
       try {
@@ -342,7 +360,7 @@ export default function CameraScanner({
             if (hits.length && !handledRef.current) {
               handledRef.current = true
               const raw = hits[0].rawValue
-              onCode(extractCode(raw), raw)
+              onCode(mode === 'raw' ? raw.trim() : extractCode(raw), raw)
               return
             }
           } catch {
@@ -367,7 +385,7 @@ export default function CameraScanner({
         streamRef.current = null
       }
     }
-  }, [open, onCode, onClose])
+  }, [open, onCode, onClose, mode])
 
   // Inside Lark the native scanner takes over the screen — render only an
   // error fallback if something went wrong (otherwise stay invisible).
@@ -405,7 +423,7 @@ export default function CameraScanner({
   return (
     <Modal
       open={open}
-      title="摄像头扫描二维码"
+      title={title ?? '摄像头扫描二维码'}
       footer={null}
       onCancel={onClose}
       destroyOnClose
@@ -442,7 +460,7 @@ export default function CameraScanner({
             }}
           />
           <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 8 }}>
-            将资产二维码对准取景框,识别后自动填入编号并关闭。
+            {hint ?? '将资产二维码对准取景框,识别后自动填入编号并关闭。'}
           </div>
         </>
       )}
