@@ -419,6 +419,67 @@ def _type_id(admin: str, prefix: str) -> int:
     return next(t["id"] for t in types if t["code_prefix"] == prefix)
 
 
+def test_infrastructure_status_toggle():
+    admin = _login()
+    net = client.post("/api/assets",
+                      json={"asset_class": "infrastructure", "prefix": "NET"},
+                      headers=_h(admin)).json()
+    code = net["asset_code"]
+    assert net["status"] == "idle"
+
+    # 启用: idle -> in_use (no owner involved)
+    r = client.post(f"/api/assets/{code}/status", json={"status": "in_use"},
+                    headers=_h(admin))
+    assert r.status_code == 200
+    assert r.json()["status"] == "in_use"
+    assert r.json()["owner_user_id"] is None
+
+    # 停用: in_use -> idle
+    r = client.post(f"/api/assets/{code}/status", json={"status": "idle"},
+                    headers=_h(admin))
+    assert r.status_code == 200 and r.json()["status"] == "idle"
+
+    # scrapped is refused here (must go through the scrap flow)
+    bad = client.post(f"/api/assets/{code}/status", json={"status": "scrapped"},
+                      headers=_h(admin))
+    assert bad.status_code == 409
+
+    # the lifecycle records the direct status change
+    detail = client.get(f"/api/assets/{code}", headers=_h(admin)).json()
+    assert any(e["action"] == "status_change" for e in detail["lifecycle"])
+
+
+def test_personal_asset_status_endpoint_refused():
+    admin = _login()
+    pc = client.post("/api/assets", json={"asset_class": "personal", "prefix": "PC"},
+                     headers=_h(admin)).json()
+    # personal assets must use assign/return — direct status change is refused
+    r = client.post(f"/api/assets/{pc['asset_code']}/status",
+                    json={"status": "in_use"}, headers=_h(admin))
+    assert r.status_code == 409
+
+
+def test_infrastructure_repair_completes_back_to_idle():
+    admin = _login()
+    net = client.post("/api/assets",
+                      json={"asset_class": "infrastructure", "prefix": "NET"},
+                      headers=_h(admin)).json()
+    code = net["asset_code"]
+    # open a repair order → maintenance
+    opened = client.post(f"/api/assets/{code}/repair-order",
+                         json={"repair_type": "in_house", "reason": "端口故障"},
+                         headers=_h(admin))
+    assert opened.status_code in (200, 201), opened.text
+    assert client.get(f"/api/assets/{code}", headers=_h(admin)).json()["asset"]["status"] == "maintenance"
+    order_id = opened.json()["id"]
+
+    # completing must bring an infra asset back to idle (not error on return)
+    done = client.post(f"/api/repair-orders/{order_id}/complete",
+                       json={"resolution": "更换端口"}, headers=_h(admin))
+    assert done.status_code == 200, done.text
+    assert client.get(f"/api/assets/{code}", headers=_h(admin)).json()["asset"]["status"] == "idle"
+
+
 def test_change_type_recodes_and_syncs_class():
     admin = _login()
     pc_type, mon_type = _type_id(admin, "PC"), _type_id(admin, "MON")

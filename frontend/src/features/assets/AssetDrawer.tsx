@@ -280,28 +280,65 @@ export default function AssetDrawer({
         </Popconfirm>
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
-      {a.status === 'idle' && a.asset_class === 'personal' && (
-        <Button type="primary" onClick={() => setAssignOpen(true)}>
-          分配给员工
-        </Button>
-      )}
-      {a.status === 'in_use' && (
+      {a.asset_class === 'infrastructure' ? (
+        // Infra has no owner — it toggles status directly (启用/停用/修复完成)
+        // via the /status endpoint instead of assign/return.
         <>
-          <Button onClick={() => setRepairOpen(true)}>报修</Button>
-          <Button onClick={() => setTransferOpen(true)}>转移</Button>
-          <Button onClick={() => act.mutate({ path: 'return' })}>归还入库</Button>
+          {a.status === 'idle' && (
+            <>
+              <Button onClick={() => setRepairOpen(true)}>报修</Button>
+              <Button
+                type="primary"
+                onClick={() => act.mutate({ path: 'status', body: { status: 'in_use' } })}
+              >
+                启用
+              </Button>
+            </>
+          )}
+          {a.status === 'in_use' && (
+            <>
+              <Button onClick={() => setRepairOpen(true)}>报修</Button>
+              <Button onClick={() => act.mutate({ path: 'status', body: { status: 'idle' } })}>
+                停用
+              </Button>
+            </>
+          )}
+          {a.status === 'maintenance' &&
+            (openRepairOrder ? (
+              <Button type="primary" onClick={() => setCompleteOpen(true)}>
+                完结维修单
+              </Button>
+            ) : (
+              <Button onClick={() => act.mutate({ path: 'status', body: { status: 'idle' } })}>
+                修复完成
+              </Button>
+            ))}
         </>
-      )}
-      {a.status === 'maintenance' && (
-        openRepairOrder ? (
-          <Button type="primary" onClick={() => setCompleteOpen(true)}>
-            完结维修单
-          </Button>
-        ) : (
-          <Button onClick={() => act.mutate({ path: 'return' })}>
-            维修完成 · 归还入库
-          </Button>
-        )
+      ) : (
+        <>
+          {a.status === 'idle' && (
+            <Button type="primary" onClick={() => setAssignOpen(true)}>
+              分配给员工
+            </Button>
+          )}
+          {a.status === 'in_use' && (
+            <>
+              <Button onClick={() => setRepairOpen(true)}>报修</Button>
+              <Button onClick={() => setTransferOpen(true)}>转移</Button>
+              <Button onClick={() => act.mutate({ path: 'return' })}>归还入库</Button>
+            </>
+          )}
+          {a.status === 'maintenance' &&
+            (openRepairOrder ? (
+              <Button type="primary" onClick={() => setCompleteOpen(true)}>
+                完结维修单
+              </Button>
+            ) : (
+              <Button onClick={() => act.mutate({ path: 'return' })}>
+                维修完成 · 归还入库
+              </Button>
+            ))}
+        </>
       )}
       {a.status !== 'scrapped' && (
         <Button danger disabled={a.scrap_candidate} onClick={() => setScrapOpen(true)}>

@@ -26,6 +26,7 @@ from app.modules.assets.schemas import (
     BindAccessoriesIn,
     ChangeLogOut,
     ChangeTypeIn,
+    SetStatusIn,
     NoteIn,
     ReasonIn,
     TransferIn,
@@ -418,6 +419,26 @@ def change_type(
             "new_code": asset.asset_code,
         },
     )
+    return _to_out(db, asset)
+
+
+@router.post("/{code}/status", response_model=AssetOut)
+def set_asset_status(
+    code: str, body: SetStatusIn, db: Session = Depends(get_db), user: User = Depends(it_admin)
+):
+    """Direct status change for infrastructure assets (启用 / 停用 / 修复完成).
+
+    Personal assets are refused here — they change status through
+    assign / return / repair / scrap so owner data stays in sync.
+    """
+    asset = _load(db, code)
+    try:
+        asset = service.set_status(db, asset, body.status, user.id, body.note)
+    except IllegalTransition as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    write_audit(db, actor_user_id=user.id, action="asset.set_status",
+                resource_type="asset", resource_id=code,
+                payload={"to": body.status.value})
     return _to_out(db, asset)
 
 

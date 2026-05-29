@@ -2,7 +2,7 @@
 
 报修 → 工单 open → (送修)in_progress → 完结/取消;同步资产状态:
 - 开单时 service.repair 把资产 → maintenance;
-- 完结/取消时 service.return_asset 把资产回 idle。
+- 完结/取消时把资产回 idle(个人走 return_asset,基础设施走 set_status)。
 一台资产同时只允许一张未关闭工单(open/in_progress)。
 """
 
@@ -15,11 +15,25 @@ from sqlalchemy.orm import Session
 from app.modules.assets import service
 from app.modules.assets.models import (
     Asset,
+    AssetClass,
     AssetStatus,
     RepairOrder,
     RepairOrderStatus,
     RepairType,
 )
+
+
+def _restore_from_maintenance(
+    db: Session, asset: Asset, operator_id: int, note: str
+) -> None:
+    """Bring a repaired asset back to idle. Personal assets go through
+    return_asset (clears owner + closes the assignment); infrastructure has no
+    owner and can't be "returned", so it changes status directly — otherwise
+    return_asset's assignable check would strand it in maintenance."""
+    if asset.asset_class == AssetClass.infrastructure:
+        service.set_status(db, asset, AssetStatus.idle, operator_id, note)
+    else:
+        service.return_asset(db, asset, operator_id, note)
 
 
 class IllegalRepairTransition(Exception):
@@ -134,7 +148,7 @@ def complete_order(
     db.commit()
 
     if asset.status == AssetStatus.maintenance:
-        service.return_asset(db, asset, operator_id, f"维修完结 · {resolution[:80]}")
+        _restore_from_maintenance(db, asset, operator_id, f"维修完结 · {resolution[:80]}")
     db.refresh(order)
     return order
 
@@ -153,6 +167,6 @@ def cancel_order(
     order.closed_at = datetime.now(UTC)
     db.commit()
     if asset is not None and asset.status == AssetStatus.maintenance:
-        service.return_asset(db, asset, operator_id, f"维修取消 · {reason[:80]}")
+        _restore_from_maintenance(db, asset, operator_id, f"维修取消 · {reason[:80]}")
     db.refresh(order)
     return order
