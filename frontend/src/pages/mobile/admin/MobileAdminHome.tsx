@@ -237,8 +237,8 @@ interface TabBarProps {
   onNav: (id: 'home' | 'scan') => void
 }
 /** Bottom tab bar with center "floating" scan FAB.
- * 首页 / 扫码 / 库存 stay inside the mobile cockpit; 审批 / 我的 still hop to
- * the desktop routes (no mobile screen for those yet). */
+ * 首页 / 扫码 / 审批 / 库存 stay inside the mobile cockpit; only 我的 hops to
+ * the desktop (no mobile profile screen yet). */
 function TabBar({ active, onNav }: TabBarProps) {
   const navigate = useNavigate()
   type Tab = {
@@ -254,7 +254,7 @@ function TabBar({ active, onNav }: TabBarProps) {
       id: 'approvals',
       icon: 'approval',
       label: '审批',
-      onClick: () => navigate('/approvals'),
+      onClick: () => navigate('/m/admin/approvals'),
     },
     { id: 'scan', icon: 'qr', label: '扫码', special: true, onClick: () => onNav('scan') },
     {
@@ -478,7 +478,7 @@ export default function MobileAdminHome() {
           color="#FF8800"
           bg="#FFF7E8"
           badge={pendingForMe.length}
-          onClick={() => navigate('/approvals')}
+          onClick={() => navigate('/m/admin/approvals')}
         />
         <QuickAction
           icon="warning"
@@ -512,7 +512,7 @@ export default function MobileAdminHome() {
               🔥 待我审批
             </span>
             <span
-              onClick={() => navigate('/approvals')}
+              onClick={() => navigate('/m/admin/approvals')}
               style={{
                 fontSize: 12,
                 color: '#3370FF',
@@ -530,7 +530,7 @@ export default function MobileAdminHome() {
             {urgent.map((a) => (
               <div
                 key={a.id}
-                onClick={() => navigate('/approvals')}
+                onClick={() => navigate('/m/admin/approvals')}
                 style={{
                   padding: 12,
                   borderRadius: 12,
@@ -671,7 +671,7 @@ export default function MobileAdminHome() {
             {overview.recent_approvals.slice(0, 5).map((r, i, arr) => (
               <div
                 key={r.request_no}
-                onClick={() => navigate('/approvals')}
+                onClick={() => navigate('/m/admin/approvals')}
                 style={{
                   display: 'flex',
                   alignItems: 'center',
