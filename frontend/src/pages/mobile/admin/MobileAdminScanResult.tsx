@@ -4,11 +4,15 @@ import { useQuery } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
 import Icon from '../../../components/Icon'
+import AssetTypeIcon from '../../../components/AssetTypeIcon'
 
 interface AssetOut {
   id: number
   asset_code: string
   asset_class: string
+  asset_type_name: string | null
+  asset_type_icon: string | null
+  asset_type_color: string | null
   brand_model: string | null
   spec: string | null
   serial_number: string | null
@@ -352,21 +356,34 @@ export default function MobileAdminScanResult() {
                   )
                 })()}
               </div>
-              <div
-                style={{
-                  fontSize: 17,
-                  fontWeight: 600,
-                  color: '#1F2329',
-                  lineHeight: 1.3,
-                }}
-              >
-                {data.asset.brand_model || '(未填型号)'}
-              </div>
-              {data.asset.spec && (
-                <div style={{ fontSize: 12, color: '#86909C', marginTop: 4 }}>
-                  {data.asset.spec}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <AssetTypeIcon
+                  icon={data.asset.asset_type_icon}
+                  color={data.asset.asset_type_color}
+                  size={44}
+                  radius={10}
+                />
+                <div style={{ minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: 17,
+                      fontWeight: 600,
+                      color: '#1F2329',
+                      lineHeight: 1.3,
+                    }}
+                  >
+                    {data.asset.brand_model || '(未填型号)'}
+                  </div>
+                  {(data.asset.asset_type_name || data.asset.spec) && (
+                    <div style={{ fontSize: 12, color: '#86909C', marginTop: 4 }}>
+                      {data.asset.asset_type_name
+                        ? `${data.asset.asset_type_name}${data.asset.spec ? ' · ' : ''}`
+                        : ''}
+                      {data.asset.spec ?? ''}
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Details */}

@@ -42,12 +42,42 @@ staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procuremen
 it_admin = require_roles(Role.it_admin)
 
 
+def _to_out(db: Session, asset: Asset) -> AssetOut:
+    out = AssetOut.model_validate(asset)
+    if asset.asset_type_id is not None:
+        t = db.get(AssetType, asset.asset_type_id)
+        if t is not None:
+            out.asset_type_name = t.name
+            out.asset_type_icon = t.icon
+            out.asset_type_color = t.color
+    return out
+
+
+def _to_outs(db: Session, assets: list[Asset]) -> list[AssetOut]:
+    # Single SELECT for all referenced types — avoids N+1 on the list endpoint.
+    type_ids = {a.asset_type_id for a in assets if a.asset_type_id is not None}
+    types: dict[int, AssetType] = {}
+    if type_ids:
+        for t in db.scalars(select(AssetType).where(AssetType.id.in_(type_ids))):
+            types[t.id] = t
+    outs: list[AssetOut] = []
+    for a in assets:
+        o = AssetOut.model_validate(a)
+        t = types.get(a.asset_type_id) if a.asset_type_id is not None else None
+        if t is not None:
+            o.asset_type_name = t.name
+            o.asset_type_icon = t.icon
+            o.asset_type_color = t.color
+        outs.append(o)
+    return outs
+
+
 def _detail(db: Session, code: str) -> AssetDetailOut:
     asset = service.get_asset(db, code)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
     return AssetDetailOut(
-        asset=AssetOut.model_validate(asset),
+        asset=_to_out(db, asset),
         lifecycle=[ChangeLogOut.model_validate(x) for x in service.lifecycle(db, asset.id)],
         accessories=[AccessoryOut.model_validate(x) for x in service.accessories(db, asset.id)],
     )
@@ -72,7 +102,7 @@ def list_assets(
         department_id=department_id, q=q, needs_review=needs_review,
         scrap_candidate=scrap_candidate, page=page, size=size,
     )
-    return AssetListResponse(total=total, items=[AssetOut.model_validate(r) for r in rows])
+    return AssetListResponse(total=total, items=_to_outs(db, rows))
 
 
 @router.post("", response_model=AssetOut, status_code=status.HTTP_201_CREATED)
@@ -97,7 +127,7 @@ def create_asset(body: AssetCreate, db: Session = Depends(get_db), user: User = 
     asset = service.create_asset(db, data, prefix, user.id)
     write_audit(db, actor_user_id=user.id, action="asset.create",
                 resource_type="asset", resource_id=asset.asset_code)
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/import")
@@ -349,7 +379,7 @@ def update_asset(
     db.refresh(asset)
     write_audit(db, actor_user_id=user.id, action="asset.update",
                 resource_type="asset", resource_id=code)
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 def _load(db: Session, code: str):
@@ -378,7 +408,7 @@ def assign(
         asset = service.assign(db, asset, body.user_id, user.id, body.note)
     except (IllegalTransition, InfrastructureNotAssignable) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/{code}/return", response_model=AssetOut)
@@ -390,7 +420,7 @@ def return_asset(
         asset = service.return_asset(db, asset, user.id, body.note)
     except (IllegalTransition, InfrastructureNotAssignable) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/{code}/transfer", response_model=AssetOut)
@@ -402,7 +432,7 @@ def transfer(
         asset = service.transfer(db, asset, body.to_user_id, user.id, body.reason)
     except (IllegalTransition, InfrastructureNotAssignable) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/{code}/repair", response_model=AssetOut)
@@ -414,7 +444,7 @@ def repair(
         asset = service.repair(db, asset, user.id, body.reason)
     except IllegalTransition as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/{code}/scrap", response_model=AssetOut)
@@ -426,7 +456,7 @@ def scrap(code: str, body: ReasonIn, db: Session = Depends(get_db), user: User =
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     write_audit(db, actor_user_id=user.id, action="asset.scrap",
                 resource_type="asset", resource_id=code)
-    return AssetOut.model_validate(asset)
+    return _to_out(db, asset)
 
 
 @router.post("/{code}/accessories", response_model=AssetDetailOut)

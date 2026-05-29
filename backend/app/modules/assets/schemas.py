@@ -115,6 +115,8 @@ class AssetTypeCreate(BaseModel):
     code_prefix: str
     asset_class: AssetClass
     depreciation_years: int | None = None
+    icon: str | None = None
+    color: str | None = None
 
 
 class AssetTypeUpdate(BaseModel):
@@ -122,6 +124,8 @@ class AssetTypeUpdate(BaseModel):
     code_prefix: str | None = None
     asset_class: AssetClass | None = None
     depreciation_years: int | None = None
+    icon: str | None = None
+    color: str | None = None
 
 
 class AssetTypeOut(BaseModel):
@@ -132,6 +136,8 @@ class AssetTypeOut(BaseModel):
     code_prefix: str
     asset_class: AssetClass
     depreciation_years: int | None = None
+    icon: str | None = None
+    color: str | None = None
     asset_count: int = 0
 
 
@@ -184,6 +190,9 @@ class AssetOut(BaseModel):
     asset_code: str
     asset_class: AssetClass
     asset_type_id: int | None
+    asset_type_name: str | None = None
+    asset_type_icon: str | None = None
+    asset_type_color: str | None = None
     brand_model: str | None
     spec: str | None
     serial_number: str | None

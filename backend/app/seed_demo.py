@@ -12,7 +12,7 @@ from app.db import SessionLocal, engine
 from app.modules.approvals import service as appr
 from app.modules.approvals.models import RequestType
 from app.modules.assets import service as assets
-from app.modules.assets.models import Asset, AssetClass, AssetStatus
+from app.modules.assets.models import Asset, AssetClass, AssetStatus, AssetType
 from app.modules.inventory import service as inv
 from app.modules.inventory.models import (
     InventoryLocation,
@@ -61,6 +61,27 @@ def seed() -> dict:
         db.flush()
         zhang.manager_user_id = mgr.id
         li.manager_user_id = mgr.id
+        db.commit()
+
+        # ── asset types ──────────────────────────────────────────────
+        # reset() truncates asset_types, and the migration seed only fires on
+        # an empty fresh DB — so re-create the standard types here (with the
+        # same icon/color defaults the icon migration backfills) so the demo
+        # data shows category icons.
+        types: dict[str, int] = {}
+        for tname, prefix, cls, icon, color in [
+            ("电脑",     "PC",  AssetClass.personal,       "laptop",  "#3370FF"),
+            ("显示器",   "MON", AssetClass.personal,       "monitor", "#7E5EE5"),
+            ("手机",     "PHN", AssetClass.personal,       "phone",   "#D17A00"),
+            ("平板电脑", "PAD", AssetClass.personal,       "tablet",  "#00863C"),
+            ("网络设备", "NET", AssetClass.infrastructure, "network", "#0086A8"),
+            ("打印机",   "PRT", AssetClass.infrastructure, "printer", "#D4380D"),
+        ]:
+            t = AssetType(name=tname, code_prefix=prefix, asset_class=cls,
+                          icon=icon, color=color)
+            db.add(t)
+            db.flush()
+            types[prefix] = t.id
         db.commit()
 
         # ── inventory ────────────────────────────────────────────────
@@ -112,7 +133,7 @@ def seed() -> dict:
         def mk(prefix, cls, brand_model, spec, sn, **kw):
             kw.setdefault("status", AssetStatus.idle)
             data = dict(asset_class=cls, brand_model=brand_model, spec=spec,
-                        serial_number=sn, **kw)
+                        serial_number=sn, asset_type_id=types.get(prefix), **kw)
             return assets.create_asset(db, data, prefix, admin.id)
 
         mac = mk("PC", AssetClass.personal, "Apple MacBook Pro 14",
