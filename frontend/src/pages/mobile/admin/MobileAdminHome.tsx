@@ -459,7 +459,7 @@ export default function MobileAdminHome() {
           borderRadius: 14,
           background: '#fff',
           display: 'grid',
-          gridTemplateColumns: 'repeat(4, 1fr)',
+          gridTemplateColumns: 'repeat(5, 1fr)',
           gap: 0,
           position: 'relative',
           boxShadow: '0 2px 12px rgba(31,35,41,0.08)',
@@ -467,10 +467,17 @@ export default function MobileAdminHome() {
       >
         <QuickAction
           icon="qr"
-          label="扫码查询"
+          label="扫码"
           color="#3370FF"
           bg="#E8F1FF"
           onClick={() => setScanOpen(true)}
+        />
+        <QuickAction
+          icon="assets"
+          label="资产"
+          color="#1A5BD0"
+          bg="#E8F1FF"
+          onClick={() => navigate('/m/admin/assets')}
         />
         <QuickAction
           icon="approval"
@@ -482,7 +489,7 @@ export default function MobileAdminHome() {
         />
         <QuickAction
           icon="warning"
-          label="库存预警"
+          label="库存"
           color="#F53F3F"
           bg="#FFECE8"
           badge={stats?.low_stock_count}
@@ -490,7 +497,7 @@ export default function MobileAdminHome() {
         />
         <QuickAction
           icon="inspect"
-          label="盘点核对"
+          label="盘点"
           color="#7E5EE5"
           bg="#F1ECFF"
           onClick={() => navigate('/m/admin/inspections')}
