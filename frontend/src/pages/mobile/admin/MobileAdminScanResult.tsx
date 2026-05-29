@@ -404,8 +404,22 @@ export default function MobileAdminScanResult() {
               />
               <InfoRow label="部门" value={data.asset.department_name} />
               <InfoRow label="位置" value={data.asset.location} />
+              <InfoRow
+                label="类别"
+                value={
+                  data.asset.asset_class === 'infrastructure' ? '基础设施' : '个人发放'
+                }
+              />
               <InfoRow label="序列号" value={data.asset.serial_number} />
               <InfoRow label="采购日期" value={fmtDate(data.asset.purchase_date)} />
+              <InfoRow
+                label="采购价"
+                value={
+                  data.asset.purchase_price
+                    ? `¥ ${Number(data.asset.purchase_price).toLocaleString()}`
+                    : ''
+                }
+              />
               <InfoRow
                 label="保修到期"
                 value={fmtDate(data.asset.warranty_expire_date)}

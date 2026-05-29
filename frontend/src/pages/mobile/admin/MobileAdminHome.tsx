@@ -237,8 +237,8 @@ interface TabBarProps {
   onNav: (id: 'home' | 'scan') => void
 }
 /** Bottom tab bar with center "floating" scan FAB.
- * For this first cut only home + scan are wired; the other 3 tabs are
- * visually present but route back to home (will activate in next pass). */
+ * 首页 / 扫码 / 库存 stay inside the mobile cockpit; 审批 / 我的 still hop to
+ * the desktop routes (no mobile screen for those yet). */
 function TabBar({ active, onNav }: TabBarProps) {
   const navigate = useNavigate()
   type Tab = {
@@ -261,7 +261,7 @@ function TabBar({ active, onNav }: TabBarProps) {
       id: 'lowstock',
       icon: 'inventory',
       label: '库存',
-      onClick: () => navigate('/inventory'),
+      onClick: () => navigate('/m/admin/inventory'),
     },
     { id: 'me', icon: 'user', label: '我的', onClick: () => navigate('/') },
   ]
@@ -486,7 +486,7 @@ export default function MobileAdminHome() {
           color="#F53F3F"
           bg="#FFECE8"
           badge={stats?.low_stock_count}
-          onClick={() => navigate('/inventory')}
+          onClick={() => navigate('/m/admin/inventory')}
         />
         <QuickAction
           icon="inspect"
@@ -614,7 +614,7 @@ export default function MobileAdminHome() {
             value={fmtValue(stats?.total_assets)}
             suffix="件"
             hint={`在用 ${fmtValue(stats?.in_use_count)} · 闲置 ${fmtValue(stats?.idle_count)}`}
-            onClick={() => navigate('/assets')}
+            onClick={() => navigate('/m/admin/assets')}
           />
           <SnapshotRow
             icon="repair"
@@ -640,7 +640,7 @@ export default function MobileAdminHome() {
                     .join('、')
                 : undefined
             }
-            onClick={() => navigate('/inventory')}
+            onClick={() => navigate('/m/admin/inventory')}
           />
           <SnapshotRow
             icon="verify"
@@ -648,7 +648,7 @@ export default function MobileAdminHome() {
             iconBg="#F1ECFF"
             label="需复核 / 待报废"
             value={`${stats?.needs_review_count ?? '—'}/${stats?.scrap_candidate_count ?? '—'}`}
-            onClick={() => navigate('/assets')}
+            onClick={() => navigate('/m/admin/assets')}
             last
           />
         </div>
