@@ -22,10 +22,12 @@ import { api } from '../../api/client'
 import type { Asset, AssetDetail } from './types'
 import StatusBadge from './StatusBadge'
 import AssetTypeIcon from '../../components/AssetTypeIcon'
+import Icon from '../../components/Icon'
 import Lifecycle from './Lifecycle'
 import AccessoryTree from './AccessoryTree'
 import AssetAttachments from './AssetAttachments'
 import EmployeeSelect from '../users/EmployeeSelect'
+import CameraScanner from '../scanner/CameraScanner'
 
 export default function AssetDrawer({
   code,
@@ -48,6 +50,7 @@ export default function AssetDrawer({
   const [repairForm] = Form.useForm()
   const [completeForm] = Form.useForm()
   const [editOpen, setEditOpen] = useState(false)
+  const [snScanOpen, setSnScanOpen] = useState(false)
   const [transferOpen, setTransferOpen] = useState(false)
   const [transferUser, setTransferUser] = useState<number | null>(null)
   const [form] = Form.useForm()
@@ -733,7 +736,18 @@ export default function AssetDrawer({
                   <Input />
                 </Form.Item>
                 <Form.Item name="serial_number" label="序列号" style={{ flex: 1 }}>
-                  <Input />
+                  <Input
+                    addonAfter={
+                      <span
+                        role="button"
+                        title="扫描条形码录入"
+                        onClick={() => setSnScanOpen(true)}
+                        style={{ cursor: 'pointer', display: 'inline-flex' }}
+                      >
+                        <Icon name="qr" size={16} />
+                      </span>
+                    }
+                  />
                 </Form.Item>
               </div>
               <Form.Item name="spec" label="配置">
@@ -807,6 +821,19 @@ export default function AssetDrawer({
               </div>
             </Form>
           </Modal>
+
+          <CameraScanner
+            open={snScanOpen}
+            mode="raw"
+            title="扫描序列号条形码"
+            hint="将设备序列号条形码对准取景框,识别后自动填入。"
+            onClose={() => setSnScanOpen(false)}
+            onCode={(_code, raw) => {
+              form.setFieldValue('serial_number', raw)
+              setSnScanOpen(false)
+              message.success('序列号已填入')
+            }}
+          />
         </>
       )}
     </Drawer>

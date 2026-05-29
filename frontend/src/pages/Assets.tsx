@@ -22,6 +22,8 @@ import StatusBadge from '../features/assets/StatusBadge'
 import AssetDrawer from '../features/assets/AssetDrawer'
 import LabelsPrintModal from '../features/assets/LabelsPrintModal'
 import AssetTypeIcon from '../components/AssetTypeIcon'
+import Icon from '../components/Icon'
+import CameraScanner from '../features/scanner/CameraScanner'
 
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: '', label: '全部' },
@@ -50,6 +52,7 @@ export default function Assets() {
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [labelsOpen, setLabelsOpen] = useState(false)
+  const [snScanOpen, setSnScanOpen] = useState(false)
   const [form] = Form.useForm()
   const size = 20
   const qc = useQueryClient()
@@ -296,7 +299,18 @@ export default function Assets() {
           </Form.Item>
           <div style={{ display: 'flex', gap: 12 }}>
             <Form.Item name="serial_number" label="序列号" style={{ flex: 1 }}>
-              <Input />
+              <Input
+                addonAfter={
+                  <span
+                    role="button"
+                    title="扫描条形码录入"
+                    onClick={() => setSnScanOpen(true)}
+                    style={{ cursor: 'pointer', display: 'inline-flex' }}
+                  >
+                    <Icon name="qr" size={16} />
+                  </span>
+                }
+              />
             </Form.Item>
             <Form.Item name="owner_name" label="责任人(文本)" style={{ flex: 1 }}>
               <Input />
@@ -324,6 +338,18 @@ export default function Assets() {
         </Form>
       </Modal>
 
+      <CameraScanner
+        open={snScanOpen}
+        mode="raw"
+        title="扫描序列号条形码"
+        hint="将设备序列号条形码对准取景框,识别后自动填入。"
+        onClose={() => setSnScanOpen(false)}
+        onCode={(_code, raw) => {
+          form.setFieldValue('serial_number', raw)
+          setSnScanOpen(false)
+          message.success('序列号已填入')
+        }}
+      />
       <AssetDrawer
         code={openCode}
         onClose={() => setOpenCode(null)}
