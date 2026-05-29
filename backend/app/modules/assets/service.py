@@ -7,8 +7,10 @@ from app.modules.assets.models import (
     AssetAccessory,
     AssetAssignment,
     AssetChangeLog,
+    AssetClass,
     AssetCodeCounter,
     AssetStatus,
+    AssetType,
 )
 from app.modules.assets.state_machine import (
     IllegalTransition,
@@ -101,6 +103,45 @@ def create_asset(db: Session, data: dict, prefix: str, operator_id: int | None) 
     db.add(asset)
     db.flush()
     _log(db, asset, "create", to_status=asset.status, operator_id=operator_id)
+    db.commit()
+    db.refresh(asset)
+    return asset
+
+
+def change_type(
+    db: Session, asset: Asset, new_type: AssetType, operator_id: int | None
+) -> Asset:
+    """Move an asset to a different AssetType.
+
+    Side effects (intentional — see edit-flow decision):
+    - asset_class follows the new type (the type is the source of truth);
+    - if the new type's prefix differs from the current code's prefix, the
+      asset is **re-coded** with a fresh sequence number under the new prefix
+      (PC-0001 → MON-0007). The id is unchanged, so every FK relation
+      (assignments, change-logs, accessories, repair/scrap/inspection rows)
+      stays intact — only the human-facing code (and thus its QR) changes.
+
+    Guard: an infrastructure type can't hold an assigned owner (infra assets
+    aren't assignable), so refuse until the asset is returned/transferred.
+    """
+    if new_type.asset_class == AssetClass.infrastructure and asset.owner_user_id is not None:
+        raise IllegalTransition(
+            "该资产已分配给员工,请先归还 / 转移后再改为基础设施类型"
+        )
+
+    old_code = asset.asset_code
+    old_prefix = (old_code.split("-", 1)[0] if "-" in old_code else old_code).upper()
+    new_prefix = new_type.code_prefix.upper()
+
+    asset.asset_type_id = new_type.id
+    asset.asset_class = new_type.asset_class
+    if new_prefix != old_prefix:
+        asset.asset_code = generate_asset_code(db, new_prefix)
+
+    _log(
+        db, asset, "change_type", operator_id=operator_id,
+        reason=f"{old_code} → {asset.asset_code}",
+    )
     db.commit()
     db.refresh(asset)
     return asset

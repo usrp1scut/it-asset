@@ -141,6 +141,10 @@ class AssetTypeOut(BaseModel):
     asset_count: int = 0
 
 
+class ChangeTypeIn(BaseModel):
+    asset_type_id: int
+
+
 class AssetCreate(BaseModel):
     # Either asset_type_id (preferred — drives prefix + asset_class) or the
     # legacy pair (asset_class + prefix) must be supplied.
