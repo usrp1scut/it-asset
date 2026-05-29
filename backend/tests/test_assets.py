@@ -34,14 +34,24 @@ def test_create_generates_code_and_lists():
 def test_asset_type_crud_and_create_via_type():
     admin = _login()
 
-    # the migration seeds standard prefixes — should be listed
+    # the migration seeds standard prefixes — should be listed, with the
+    # PC type carrying its default icon/color from the icon migration.
     types = client.get("/api/asset-types", headers=_h(admin)).json()
     assert {t["code_prefix"] for t in types} >= {"PC", "MON", "NET"}
+    pc = next(t for t in types if t["code_prefix"] == "PC")
+    assert pc["icon"] == "laptop"
+    assert pc["color"] == "#3370FF"
 
-    # create a new type (code_prefix is upper-cased server-side)
+    # create a new type (code_prefix is upper-cased server-side) with icon/color
     c = client.post(
         "/api/asset-types",
-        json={"name": "投影仪", "code_prefix": "prj", "asset_class": "infrastructure"},
+        json={
+            "name": "投影仪",
+            "code_prefix": "prj",
+            "asset_class": "infrastructure",
+            "icon": "device",
+            "color": "#0086A8",
+        },
         headers=_h(admin),
     )
     assert c.status_code == 201
@@ -49,8 +59,11 @@ def test_asset_type_crud_and_create_via_type():
     assert new_type["code_prefix"] == "PRJ"
     assert new_type["asset_class"] == "infrastructure"
     assert new_type["asset_count"] == 0
+    assert new_type["icon"] == "device"
+    assert new_type["color"] == "#0086A8"
 
-    # create an asset by type — prefix + asset_class come from the type
+    # create an asset by type — prefix + asset_class come from the type,
+    # and the type's name/icon/color are surfaced on the asset payload
     r = client.post(
         "/api/assets",
         json={"asset_type_id": new_type["id"]},
@@ -61,6 +74,9 @@ def test_asset_type_crud_and_create_via_type():
     assert a["asset_code"].startswith("PRJ-")
     assert a["asset_class"] == "infrastructure"
     assert a["asset_type_id"] == new_type["id"]
+    assert a["asset_type_name"] == "投影仪"
+    assert a["asset_type_icon"] == "device"
+    assert a["asset_type_color"] == "#0086A8"
 
     # type now has an asset → delete refused
     refused = client.delete(f"/api/asset-types/{new_type['id']}", headers=_h(admin))
@@ -79,14 +95,25 @@ def test_asset_type_crud_and_create_via_type():
     bad = client.post("/api/assets", json={"brand_model": "x"}, headers=_h(admin))
     assert bad.status_code == 400
 
-    # update the type
+    # update the type — name + icon/color
     u = client.put(
         f"/api/asset-types/{new_type['id']}",
-        json={"name": "投影设备"},
+        json={"name": "投影设备", "icon": "monitor", "color": "#7E5EE5"},
         headers=_h(admin),
     )
     assert u.status_code == 200
     assert u.json()["name"] == "投影设备"
+    assert u.json()["icon"] == "monitor"
+    assert u.json()["color"] == "#7E5EE5"
+
+    # icon can be cleared back to null by sending an empty string
+    cleared = client.put(
+        f"/api/asset-types/{new_type['id']}",
+        json={"icon": ""},
+        headers=_h(admin),
+    )
+    assert cleared.status_code == 200
+    assert cleared.json()["icon"] is None
 
 
 def test_backfill_assets_links_by_prefix():

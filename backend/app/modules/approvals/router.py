@@ -6,7 +6,7 @@ from app.deps import get_current_user, get_db, require_roles
 from app.lark.security import WebhookAuthError, process_webhook
 from app.modules.approvals import service
 from app.modules.approvals.schemas import ApprovalOut, CreateRequestIn
-from app.modules.assets.models import Asset
+from app.modules.assets.models import Asset, AssetType
 from app.modules.inventory.models import EmployeeItemIssue, Sku
 from app.modules.inventory.service import InsufficientStock
 from app.modules.users.models import Role, User
@@ -24,6 +24,13 @@ def my_overview(db: Session = Depends(get_db), user: User = Depends(get_current_
     assets = db.scalars(
         select(Asset).where(Asset.owner_user_id == user.id, Asset.deleted_at.is_(None))
     ).all()
+    type_ids = {a.asset_type_id for a in assets if a.asset_type_id is not None}
+    types: dict[int, AssetType] = {}
+    if type_ids:
+        types = {
+            t.id: t
+            for t in db.scalars(select(AssetType).where(AssetType.id.in_(type_ids)))
+        }
     issues = db.scalars(
         select(EmployeeItemIssue)
         .where(EmployeeItemIssue.user_id == user.id)
@@ -34,7 +41,14 @@ def my_overview(db: Session = Depends(get_db), user: User = Depends(get_current_
     return {
         "user": {"id": user.id, "name": user.name, "role": user.role.value},
         "assets": [
-            {"asset_code": a.asset_code, "brand_model": a.brand_model, "status": a.status.value}
+            {
+                "asset_code": a.asset_code,
+                "brand_model": a.brand_model,
+                "status": a.status.value,
+                "asset_type_name": (t.name if (t := types.get(a.asset_type_id)) else None),
+                "asset_type_icon": (t.icon if t else None),
+                "asset_type_color": (t.color if t else None),
+            }
             for a in assets
         ],
         "issues": [

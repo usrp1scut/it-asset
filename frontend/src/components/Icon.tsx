@@ -216,6 +216,84 @@ const PATHS: Record<string, ReactNode> = {
       <path d="M11 18h2" />
     </>
   ),
+  tablet: (
+    <>
+      <rect x="4" y="2" width="16" height="20" rx="2" />
+      <circle cx="12" cy="18" r="1" />
+    </>
+  ),
+  dock: (
+    <>
+      <rect x="2" y="9" width="20" height="6" rx="1.5" />
+      <circle cx="6" cy="12" r="1" />
+      <circle cx="10" cy="12" r="1" />
+    </>
+  ),
+  headphones: (
+    <>
+      <path d="M3 18v-6a9 9 0 0 1 18 0v6" />
+      <path d="M21 19a2 2 0 0 1-2 2h-1v-7h3v5zM3 19a2 2 0 0 0 2 2h1v-7H3v5z" />
+    </>
+  ),
+  camera: (
+    <>
+      <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2v11z" />
+      <circle cx="12" cy="13" r="4" />
+    </>
+  ),
+  network: (
+    <>
+      <rect x="3" y="14" width="18" height="7" rx="1.5" />
+      <rect x="3" y="3" width="18" height="7" rx="1.5" />
+      <path d="M7 7h.01M11 7h.01M7 18h.01M11 18h.01" />
+    </>
+  ),
+  printer: (
+    <>
+      <path d="M6 9V2h12v7" />
+      <rect x="3" y="9" width="18" height="9" rx="2" />
+      <rect x="6" y="14" width="12" height="7" rx="1" />
+      <circle cx="18" cy="12.5" r="0.5" />
+    </>
+  ),
+  keyboard: (
+    <>
+      <rect x="2" y="6" width="20" height="12" rx="2" />
+      <path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10" />
+    </>
+  ),
+  mouse: (
+    <>
+      <rect x="6" y="3" width="12" height="18" rx="6" />
+      <path d="M12 7v4" />
+    </>
+  ),
+  speaker: (
+    <>
+      <rect x="6" y="3" width="12" height="18" rx="2" />
+      <circle cx="12" cy="14" r="3" />
+      <circle cx="12" cy="7" r="1" />
+    </>
+  ),
+  server: (
+    <>
+      <rect x="3" y="3" width="18" height="7" rx="1.5" />
+      <rect x="3" y="14" width="18" height="7" rx="1.5" />
+      <path d="M7 6.5h.01M7 17.5h.01" />
+    </>
+  ),
+  cable: (
+    <>
+      <path d="M4 9V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v14a2 2 0 0 0 2 2h2a2 2 0 0 0 2-2v-4" />
+      <path d="M3 9h6M15 15h6" />
+    </>
+  ),
+  device: (
+    <>
+      <rect x="3" y="4" width="18" height="16" rx="2" />
+      <path d="M3 10h18" />
+    </>
+  ),
 }
 
 export type IconName = keyof typeof PATHS

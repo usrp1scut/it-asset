@@ -3,10 +3,18 @@ import { Button, Input, Steps, message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../../api/client'
+import AssetTypeIcon from '../../components/AssetTypeIcon'
 
 interface Me {
   user: { id: number; name: string; role: string }
-  assets: { asset_code: string; brand_model: string | null; status: string }[]
+  assets: {
+    asset_code: string
+    brand_model: string | null
+    status: string
+    asset_type_name: string | null
+    asset_type_icon: string | null
+    asset_type_color: string | null
+  }[]
   issues: { sku_id: number; quantity: number; status: string; created_at: string }[]
   pending_todos: number
 }
@@ -293,10 +301,23 @@ export default function MobileApp() {
         <div style={{ fontSize: 15, fontWeight: 600, margin: '20px 0 10px' }}>我的资产</div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {me.assets.map((a) => (
-            <div key={a.asset_code} style={{ background: '#fff', borderRadius: 10, padding: 12 }}>
-              <div style={{ fontSize: 14, fontWeight: 500 }}>{a.brand_model ?? a.asset_code}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-                {a.asset_code} · {STATUS_CN[a.status] ?? a.status}
+            <div
+              key={a.asset_code}
+              style={{
+                background: '#fff',
+                borderRadius: 10,
+                padding: 12,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+              }}
+            >
+              <AssetTypeIcon icon={a.asset_type_icon} color={a.asset_type_color} size={38} />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500 }}>{a.brand_model ?? a.asset_code}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+                  {a.asset_code} · {STATUS_CN[a.status] ?? a.status}
+                </div>
               </div>
             </div>
           ))}

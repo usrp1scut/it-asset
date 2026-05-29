@@ -15,6 +15,8 @@ import {
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
+import AssetTypeIcon from '../components/AssetTypeIcon'
+import { COLOR_CHOICES, ICON_CHOICES } from '../components/assetTypeChoices'
 
 interface AssetType {
   id: number
@@ -22,6 +24,8 @@ interface AssetType {
   code_prefix: string
   asset_class: 'personal' | 'infrastructure'
   depreciation_years: number | null
+  icon: string | null
+  color: string | null
   asset_count: number
 }
 
@@ -94,10 +98,18 @@ export default function AssetTypes() {
       code_prefix: t.code_prefix,
       asset_class: t.asset_class,
       depreciation_years: t.depreciation_years ?? undefined,
+      icon: t.icon ?? undefined,
+      color: t.color ?? undefined,
     })
   }
 
   const columns: ColumnsType<AssetType> = [
+    {
+      title: '图标',
+      dataIndex: 'icon',
+      width: 64,
+      render: (_, r) => <AssetTypeIcon icon={r.icon} color={r.color} size={32} />,
+    },
     {
       title: '编号前缀',
       dataIndex: 'code_prefix',
@@ -232,6 +244,72 @@ export default function AssetTypes() {
           </Form.Item>
           <Form.Item name="depreciation_years" label="折旧年限(可空)">
             <InputNumber min={1} max={50} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item
+            shouldUpdate={(p, c) => p.icon !== c.icon || p.color !== c.color}
+            noStyle
+          >
+            {({ getFieldValue, setFieldValue }) => {
+              const icon: string | undefined = getFieldValue('icon')
+              const color: string | undefined = getFieldValue('color')
+              return (
+                <>
+                  <Form.Item name="icon" noStyle />
+                  <Form.Item name="color" noStyle />
+                  <Form.Item label="图标">
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                      {ICON_CHOICES.map((c) => {
+                        const selected = c.name === icon
+                        return (
+                          <button
+                            key={c.name}
+                            type="button"
+                            onClick={() => setFieldValue('icon', c.name)}
+                            title={c.label}
+                            style={{
+                              padding: 4,
+                              borderRadius: 8,
+                              border: `1.5px solid ${selected ? 'var(--lark-blue, #3370FF)' : 'var(--border, #E5E6EB)'}`,
+                              background: selected ? 'var(--lark-blue-bg, #E8F1FF)' : '#fff',
+                              cursor: 'pointer',
+                              lineHeight: 0,
+                            }}
+                          >
+                            <AssetTypeIcon icon={c.name} color={color ?? '#3370FF'} size={36} />
+                          </button>
+                        )
+                      })}
+                    </div>
+                  </Form.Item>
+                  <Form.Item label="颜色">
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      {COLOR_CHOICES.map((hex) => {
+                        const selected = hex.toLowerCase() === (color ?? '').toLowerCase()
+                        return (
+                          <button
+                            key={hex}
+                            type="button"
+                            onClick={() => setFieldValue('color', hex)}
+                            title={hex}
+                            style={{
+                              width: 28,
+                              height: 28,
+                              borderRadius: '50%',
+                              background: hex,
+                              border: selected
+                                ? '2px solid #1F2329'
+                                : '2px solid transparent',
+                              boxShadow: '0 0 0 1px rgba(0,0,0,0.08) inset',
+                              cursor: 'pointer',
+                            }}
+                          />
+                        )
+                      })}
+                    </div>
+                  </Form.Item>
+                </>
+              )
+            }}
           </Form.Item>
         </Form>
       </Modal>

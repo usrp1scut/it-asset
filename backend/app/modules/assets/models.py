@@ -45,6 +45,8 @@ class AssetType(Base):
         Enum(AssetClass, name="asset_class"), default=AssetClass.personal
     )
     depreciation_years: Mapped[int | None] = mapped_column(Integer)
+    icon: Mapped[str | None] = mapped_column(String(32))   # named SVG (laptop / monitor / …)
+    color: Mapped[str | None] = mapped_column(String(16))  # hex incl. # (e.g. #3370FF)
 
 
 class Asset(Base):

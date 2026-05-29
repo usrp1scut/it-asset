@@ -49,6 +49,8 @@ def create_asset_type(
         code_prefix=code,
         asset_class=body.asset_class,
         depreciation_years=body.depreciation_years,
+        icon=body.icon,
+        color=body.color,
     )
     db.add(t)
     db.commit()
@@ -79,6 +81,14 @@ def update_asset_type(
         t.asset_class = body.asset_class
     if body.depreciation_years is not None:
         t.depreciation_years = body.depreciation_years
+    # `icon` / `color` are nullable: callers can clear them by sending "".
+    # Distinguish "field omitted from request" from "explicitly cleared" by
+    # checking model_fields_set rather than the value.
+    fields_set = body.model_fields_set
+    if "icon" in fields_set:
+        t.icon = body.icon or None
+    if "color" in fields_set:
+        t.color = body.color or None
     db.commit()
     db.refresh(t)
     write_audit(db, actor_user_id=user.id, action="asset_type.update",

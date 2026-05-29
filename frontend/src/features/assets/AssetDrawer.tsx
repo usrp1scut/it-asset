@@ -21,6 +21,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { AssetDetail } from './types'
 import StatusBadge from './StatusBadge'
+import AssetTypeIcon from '../../components/AssetTypeIcon'
 import Lifecycle from './Lifecycle'
 import AccessoryTree from './AccessoryTree'
 import AssetAttachments from './AssetAttachments'
@@ -272,38 +273,47 @@ export default function AssetDrawer({
               marginBottom: 16,
             }}
           >
-            <div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                <span
-                  className="text-mono"
-                  style={{
-                    fontSize: 12,
-                    color: 'var(--lark-blue)',
-                    fontWeight: 500,
-                    padding: '2px 6px',
-                    background: 'var(--lark-blue-bg)',
-                    borderRadius: 3,
-                  }}
-                >
-                  {a.asset_code}
-                </span>
-                <StatusBadge status={a.status} />
-                {a.scrap_candidate && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+              <AssetTypeIcon
+                icon={a.asset_type_icon}
+                color={a.asset_type_color}
+                size={48}
+                radius={10}
+              />
+              <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
                   <span
-                    style={{ fontSize: 11, color: '#A8261D', background: '#FFECE8', padding: '1px 6px', borderRadius: 3 }}
+                    className="text-mono"
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--lark-blue)',
+                      fontWeight: 500,
+                      padding: '2px 6px',
+                      background: 'var(--lark-blue-bg)',
+                      borderRadius: 3,
+                    }}
                   >
-                    报废候选
+                    {a.asset_code}
                   </span>
-                )}
-                {a.needs_review && (
-                  <span style={{ fontSize: 11, color: '#A66200', background: '#FFF7E8', padding: '1px 6px', borderRadius: 3 }}>
-                    待核
-                  </span>
-                )}
-              </div>
-              <div style={{ fontSize: 18, fontWeight: 600 }}>{a.brand_model ?? a.asset_code}</div>
-              <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
-                {a.spec ?? '—'} · SN <span className="text-mono">{a.serial_number ?? '无'}</span>
+                  <StatusBadge status={a.status} />
+                  {a.scrap_candidate && (
+                    <span
+                      style={{ fontSize: 11, color: '#A8261D', background: '#FFECE8', padding: '1px 6px', borderRadius: 3 }}
+                    >
+                      报废候选
+                    </span>
+                  )}
+                  {a.needs_review && (
+                    <span style={{ fontSize: 11, color: '#A66200', background: '#FFF7E8', padding: '1px 6px', borderRadius: 3 }}>
+                      待核
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 600 }}>{a.brand_model ?? a.asset_code}</div>
+                <div style={{ fontSize: 13, color: 'var(--text-2)', marginTop: 2 }}>
+                  {a.asset_type_name ? `${a.asset_type_name} · ` : ''}
+                  {a.spec ?? '—'} · SN <span className="text-mono">{a.serial_number ?? '无'}</span>
+                </div>
               </div>
             </div>
             <div style={{ textAlign: 'right' }}>

@@ -21,6 +21,7 @@ import type { Asset, AssetListResponse, AssetStatus } from '../features/assets/t
 import StatusBadge from '../features/assets/StatusBadge'
 import AssetDrawer from '../features/assets/AssetDrawer'
 import LabelsPrintModal from '../features/assets/LabelsPrintModal'
+import AssetTypeIcon from '../components/AssetTypeIcon'
 
 const STATUS_TABS: { key: string; label: string }[] = [
   { key: '', label: '全部' },
@@ -112,9 +113,15 @@ export default function Assets() {
     {
       title: '名称 / 配置',
       render: (_, r) => (
-        <div>
-          <div>{r.brand_model ?? '—'}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>{r.spec ?? ''}</div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <AssetTypeIcon icon={r.asset_type_icon} color={r.asset_type_color} size={34} />
+          <div style={{ minWidth: 0 }}>
+            <div>{r.brand_model ?? '—'}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
+              {r.asset_type_name ? `${r.asset_type_name}${r.spec ? ' · ' : ''}` : ''}
+              {r.spec ?? ''}
+            </div>
+          </div>
         </div>
       ),
     },

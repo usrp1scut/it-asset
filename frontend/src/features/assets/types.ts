@@ -6,6 +6,9 @@ export interface Asset {
   asset_code: string
   asset_class: AssetClass
   asset_type_id: number | null
+  asset_type_name: string | null
+  asset_type_icon: string | null
+  asset_type_color: string | null
   brand_model: string | null
   spec: string | null
   serial_number: string | null
