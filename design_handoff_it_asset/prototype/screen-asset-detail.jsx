@@ -30,13 +30,13 @@ const AssetDetail = ({ asset, open, onClose }) => {
             <Button variant="default" size="md" icon="edit">编辑</Button>
           </div>
           <div style={{ display: 'flex', gap: 6 }}>
-            {asset.status === 'stocked' && <Button variant="primary" size="md" icon="user">分配给员工</Button>}
-            {asset.status === 'assigned' && <>
+            {asset.status === 'idle' && !asset.owner && <Button variant="primary" size="md" icon="user">分配给员工</Button>}
+            {asset.status === 'in_use' && <>
               <Button variant="default" size="md" icon="repair">报修</Button>
               <Button variant="default" size="md" icon="refresh">归还入库</Button>
               <Button variant="default" size="md" icon="link">转移</Button>
             </>}
-            {(asset.status === 'idle' || asset.status === 'pending_scrap') && <Button danger size="md">申请报废</Button>}
+            {(asset.status === 'idle') && <Button danger size="md">申请报废</Button>}
           </div>
         </div>
       }>
@@ -372,4 +372,4 @@ const SummaryItem = ({ label, value }) => (
   </div>
 );
 
-Object.assign(window, { AssetDetail });
+Object.assign(window, { AssetDetail, Section, InfoGrid, InfoItem });

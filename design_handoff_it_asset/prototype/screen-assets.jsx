@@ -7,16 +7,17 @@ const AssetList = ({ onOpenAsset }) => {
 
   const statusTabs = [
     { id: 'all', label: '全部', count: window.ASSETS.length },
-    { id: 'assigned', label: '已领用', count: window.STATS.assigned },
-    { id: 'stocked', label: '库存中', count: window.STATS.stocked },
-    { id: 'repairing', label: '维修中', count: window.STATS.repairing },
+    { id: 'in_use', label: '在用', count: window.STATS.inUse },
     { id: 'idle', label: '闲置', count: window.STATS.idle },
-    { id: 'pending_scrap', label: '待报废', count: window.ASSETS.filter(a => a.status === 'pending_scrap').length },
-    { id: 'scrapped', label: '已报废', count: window.ASSETS.filter(a => a.status === 'scrapped').length },
+    { id: 'maintenance', label: '维修中', count: window.STATS.maintenance },
+    { id: 'scrapped', label: '已报废', count: window.STATS.scrapped },
+    { id: 'needs_review', label: '⚠ 待复核', count: window.STATS.needsReview, special: true },
   ];
 
   const filtered = window.ASSETS.filter(a => {
-    if (statusFilter !== 'all' && a.status !== statusFilter) return false;
+    if (statusFilter === 'needs_review') {
+      if (!a.needsReview) return false;
+    } else if (statusFilter !== 'all' && a.status !== statusFilter) return false;
     if (typeFilter !== 'all' && a.type !== typeFilter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -264,4 +265,4 @@ const Pagination = () => (
   </div>
 );
 
-Object.assign(window, { AssetList, Checkbox, DropdownFilter });
+Object.assign(window, { AssetList, Checkbox, DropdownFilter, Pagination });

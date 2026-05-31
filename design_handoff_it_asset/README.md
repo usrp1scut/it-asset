@@ -1,5 +1,9 @@
 # Handoff: 基于 Lark 的 IT 资产与低值耗材管理系统
 
+> ⚠️ **已完成 Phase 1 开发后回看**:本文档(README.md)是**原始设计规格**。
+> 实施过程中 PRD 和落地决策有 11 处调整,**最新约定见 [`DESIGN_REVISIONS.md`](DESIGN_REVISIONS.md)**(优先级最高)。
+> 阅读顺序建议:`DESIGN_REVISIONS.md` → 本文档 → `PRD.md` → `PHASE2_DESIGN.md`。
+
 > 给负责开发的工程师 / Claude Code:这份文档 + `prototype/` 里的 HTML 原型 + `PRD.md` 业务文档,是你的完整输入。仔细读 README 和 DEVELOPMENT_PLAN,看一遍跑起来的原型,然后按 Phase 1 的范围开始实现。
 
 ---
@@ -10,13 +14,17 @@
 
 ```
 design_handoff_it_asset/
-├── README.md                  ← 你正在看的文件,设计规格说明
-├── DEVELOPMENT_PLAN.md        ← 推荐技术栈、目录结构、Phase 1 任务拆解
-├── PRD.md                     ← 业务方提供的产品需求文档(原 README)
+├── README.md                  ← 原始设计规格(本文件)
+├── DESIGN_REVISIONS.md        ← ⚠️ 实施后修订(最高优先级)
+├── PHASE2_DESIGN.md           ← Phase 2 设计补充
+├── DEVELOPMENT_PLAN.md        ← 推荐技术栈、目录结构、Sprint 拆解
+├── PRD.md                     ← 业务方提供的产品需求文档
 └── prototype/                 ← 用 HTML/React 做的高保真原型
-    ├── IT 资产管理系统.html      ← 入口,双击或本地起服打开
+    ├── IT 资产管理系统.html      ← Phase 1 入口
+    ├── Phase 2 设计补充.html     ← Phase 2 入口
     ├── styles.css             ← Design tokens(颜色/字体/圆角/阴影)
-    ├── data.js                ← 全部模拟数据(资产/员工/SKU 等)
+    ├── data.js                ← Phase 1 模拟数据(已对齐 4 态状态机)
+    ├── data-phase2.js         ← Phase 2 模拟数据
     ├── ui.jsx                 ← 共享 UI 组件(按钮/状态徽章/图标等)
     ├── shell.jsx              ← 侧边栏 + 顶栏
     ├── screen-dashboard.jsx   ← 工作台首页
@@ -103,7 +111,7 @@ design_handoff_it_asset/
 
 **字段**(从后端拿):
 - `stats.totalAssets`, `stats.totalValue`, `stats.pendingApprovals`, `stats.lowStockCount`
-- `stats.inUseCount`, `stats.idleCount`, `stats.maintenanceCount`, `stats.scrappedCount` —— v0.2 四态(PRD §5.1);另可选 `stats.scrapCandidateCount` / `stats.needsReviewCount` 用于运营提醒
+- `stats.assignedCount`, `stats.stockedCount`, `stats.repairingCount`, `stats.idleCount`, `stats.scrappedCount`
 - `trends.assignment[]`, `trends.return[]`, `trends.repair[]` —— 12 周数据,每周 1 个数
 - `recentApprovals[]`, `recentAssignments[]`, `lowStockSkus[]`
 - `deptDistribution[]` —— { deptId, name, count }
@@ -114,21 +122,19 @@ design_handoff_it_asset/
 
 **布局**:
 1. 标题区 + 工具按钮(高级筛选 / 导出 / 批量导入 / 新增资产)
-2. **状态 Tab**(v0.2 四态,PRD §5.1):全部 / 在用 in_use / 闲置 idle / 维修中 maintenance / 已报废 scrapped —— 每个 Tab 带计数 badge。「库存中/待入库」并入 `idle`,「已丢失/待报废」不再是状态
-3. 二级筛选行:搜索框 + 资产类型 + 资产类别(个人/基础设施)+ 责任部门 + 存放地点 + 排序;另提供 **报废候选(`scrap_candidate`)** 与 **待核(`needs_review`)** 两个筛选 chip,不占状态 Tab
+2. **状态 Tab**:全部 / 已领用 / 库存中 / 维修中 / 闲置 / 待报废 / 已报废 —— 每个 Tab 带计数 badge
+3. 二级筛选行:搜索框 + 资产类型 + 责任部门 + 存放地点 + 排序
 4. **批量选择浮条**(选中 >0 时出现):批量分配 / 批量盘点 / 导出选中 / 标签打印
-5. 表格(8 列):勾选 / `asset_code` / `brand_model`+`spec` / `status`(4 态徽章)/ 责任人(`owner_user_id`,空时回退 `owner_name`)/ `location` / `purchase_price`(可空显示 —)/ `warranty_expire_date`(可空)/ 操作
+5. 表格(8 列):勾选 / 资产编号 / 名称+型号 / 状态 / 责任人 / 地点 / 采购价 / 保修至 / 操作
 6. 分页器
 
 **关键交互**:
 - 行点击 → 打开「资产详情抽屉」
 - 资产编号、名称列 = 主点击区域(链接色 `#3370FF`)
-- 保修剩余 <90 天显示橙色提示「剩 X 天」;过期显示红色「已过保」;`warranty_expire_date` 为空则不显示提示
-- 配件资产(`asset_accessories` 绑定关系)在编号下方显示 `🔗 绑定 PC-0001`
-- `legacy_code` 非空时在 `asset_code` 旁灰色小标显示旧临时编号(贴标过渡期)
-- `needs_review` 为真的行尾显示橙色「待核」点
+- 保修剩余 <90 天显示橙色提示「剩 X 天」;过期显示红色「已过保」
+- 配件资产(有 `boundTo` 字段)在编号下方显示 `🔗 绑定 IT-2025-0001`
 
-**字段**:见 PRD §10.1 `assets` 表(v0.2:`asset_code` / `asset_class` / `brand_model` / `spec` / `serial_number` / `legacy_code` / `owner_user_id`+`owner_name` / `status` 四态 / `scrap_candidate` / `needs_review`)
+**字段**:见 PRD §10.1 `assets` 表
 
 **API**:
 ```
@@ -146,11 +152,10 @@ POST /api/assets/batch  { action, codes[] }
 1. **Hero 头部**:资产图标(64×64) + 资产编号徽章 + 状态徽章 + 名称(18px/600) + 品牌型号 SN + 右侧采购价
 2. **4 个 Tab**:基本信息 / 生命周期(带计数) / 配件绑定(带计数) / 附件照片
 3. Tab 切换内容区
-4. 固定页脚:左侧「二维码 / 编辑」+ 右侧根据状态显示动作(v0.2 四态):
-   - `idle`(在库可分配)→ 「分配给员工」(primary);`infrastructure` 类资产此处改为「指派位置/责任人」
-   - `in_use`(已发放)→ 「报修 / 归还入库 / 转移」;`infrastructure` 仅「报修 / 变更位置」
-   - `maintenance` → 「维修完成(转 idle)/ 申请报废」
-   - 任意状态 + `scrap_candidate` → 「申请报废」(danger)突出显示
+4. 固定页脚:左侧「二维码 / 编辑」+ 右侧根据状态显示动作:
+   - 状态 `stocked` → 「分配给员工」(primary)
+   - 状态 `assigned` → 「报修 / 归还入库 / 转移」
+   - 状态 `idle`/`pending_scrap` → 「申请报废」(danger)
 
 #### 签名时刻 ⭐:生命周期时间线
 
@@ -381,16 +386,14 @@ camera:      bg #FFF1F5 / icon #C72060
 
 ### 5.6 状态徽章配色
 
-v0.2 四态(PRD §5.1)。`idle` 含旧「库存中/待入库」,语义为"在库可分配",故用绿色;旧「已丢失/待报废」不再是状态(走 `remark` + `scrap_candidate`)。
-
-| 状态 | 枚举 | 背景 | 文字 | 圆点 |
-|---|---|---|---|---|
-| 在用 In Use | `in_use` | `#E8F1FF` | `#1A5BD0` | `#3370FF` |
-| 闲置 Idle | `idle` | `#E8FFEA` | `#00863C` | `#00B42A` |
-| 维修中 Maintenance | `maintenance` | `#FFF7E8` | `#A66200` | `#FF8800` |
-| 已报废 Scrapped | `scrapped` | `#E5E6EB` | `#4E5969` | `#4E5969` |
-
-辅助标记(非状态,叠加显示):报废候选 `scrap_candidate` 用 `#FFECE8`/`#A8261D` 红色小标;待核 `needs_review` 用橙点。
+| 状态 | 背景 | 文字 | 圆点 |
+|---|---|---|---|
+| 库存中 In Stock | `#E8FFEA` | `#00863C` | `#00B42A` |
+| 已领用 Assigned | `#E8F1FF` | `#1A5BD0` | `#3370FF` |
+| 维修中 Repairing | `#FFF7E8` | `#A66200` | `#FF8800` |
+| 闲置 Idle | `#F2F3F5` | `#4E5969` | `#86909C` |
+| 已丢失 Lost | `#FFECE8` | `#A8261D` | `#F53F3F` |
+| 已报废 Scrapped | `#E5E6EB` | `#4E5969` | `#4E5969` |
 
 ---
 
@@ -398,22 +401,26 @@ v0.2 四态(PRD §5.1)。`idle` 含旧「库存中/待入库」,语义为"在库
 
 ### 6.1 资产状态
 
-v0.2 四态(PRD §5.1)。入库即 `idle`(不再有 pending_in/stocked);丢失/超龄/损坏走 `remark` + `scrap_candidate` 标记,不进状态机。
-
 ```
-                录入/入库
-                    ↓
-   ┌──────────→  idle 闲置(在库可分配)──────────┐
-   │                ↓ 分配/领用                    │
-   │            in_use 在用  ←──────────────┐      │ 申请报废
-   │                ↓ 报修        转移/换人 ─┘      │ (+财务/负责人审批)
-   │            maintenance 维修中                  │
-   │                ↓ 维修完成                      ↓
-   └──── 归还入库 ──┘                          scrapped 已报废
+待入库 pending_in
+     ↓
+   入库
+     ↓
+库存中 stocked ──→ 分配 ──→ 已领用 assigned
+     ↑                          ↓
+   归还入库                    报修
+     │                          ↓
+     └────────────────────── 维修中 repairing
+                                ↓
+                              维修完
+                                ↓
+                              闲置 idle
+                                ↓
+                              报废申请 + 财务审批
+                                ↓
+                              已报废 scrapped
 
-个人发放资产(asset_class=personal):走 idle⇄in_use⇄maintenance→scrapped 全流程
-基础设施资产(asset_class=infrastructure):无领用/归还,简化为
-    录入 → in_use(在线)⇄ maintenance → scrapped,只维护位置
+特殊:已丢失 lost(从任何状态跳转)
 ```
 
 ### 6.2 库存交易类型
