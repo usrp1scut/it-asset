@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user, get_db, require_roles
 from app.lark.security import WebhookAuthError, process_webhook
 from app.modules.approvals import service
-from app.modules.approvals.schemas import ApprovalOut, CreateRequestIn
+from app.modules.approvals.schemas import (
+    ApprovalItemOut,
+    ApprovalOut,
+    BatchDecisionIn,
+    CreateRequestIn,
+    DecisionIn,
+)
+from app.modules.approvals.models import ApprovalRequest
 from app.modules.assets.models import Asset, AssetType
 from app.modules.inventory.models import EmployeeItemIssue, Sku
 from app.modules.inventory.service import InsufficientStock
@@ -14,6 +21,49 @@ from app.modules.users.models import Role, User
 router = APIRouter(tags=["approvals"])
 approver = require_roles(Role.manager, Role.it_admin)
 it_admin = require_roles(Role.it_admin, Role.procurement)
+
+
+def _item_out(it: dict, skus: dict) -> ApprovalItemOut:
+    s = skus.get(it.get("sku_id"))
+    return ApprovalItemOut(
+        sku_id=it.get("sku_id"),
+        qty=it.get("qty", 0),
+        sku_code=s.sku_code if s else None,
+        name=s.name if s else None,
+        spec=s.spec if s else None,
+        unit=s.unit if s else None,
+    )
+
+
+def _outs(db: Session, reqs: list[ApprovalRequest]) -> list[ApprovalOut]:
+    """Enrich requests with requester/approver names + SKU names in one pass."""
+    user_ids = {r.requester_id for r in reqs} | {r.decided_by for r in reqs if r.decided_by}
+    sku_ids = {
+        it["sku_id"]
+        for r in reqs
+        for it in (r.payload_json or {}).get("items", [])
+        if it.get("sku_id")
+    }
+    names = (
+        {u.id: u.name for u in db.scalars(select(User).where(User.id.in_(user_ids)))}
+        if user_ids else {}
+    )
+    skus = (
+        {s.id: s for s in db.scalars(select(Sku).where(Sku.id.in_(sku_ids)))}
+        if sku_ids else {}
+    )
+    out: list[ApprovalOut] = []
+    for r in reqs:
+        o = ApprovalOut.model_validate(r)
+        o.requester_name = names.get(r.requester_id)
+        o.approver_name = names.get(r.decided_by) if r.decided_by else None
+        o.items = [_item_out(it, skus) for it in (r.payload_json or {}).get("items", [])]
+        out.append(o)
+    return out
+
+
+def _out(db: Session, req: ApprovalRequest) -> ApprovalOut:
+    return _outs(db, [req])[0]
 
 
 # ── Employee mobile (H5) ─────────────────────────────────────────────────────
@@ -86,7 +136,7 @@ def submit_request(
     req = service.create_request(
         db, requester=user, request_type=body.request_type, payload=payload
     )
-    return ApprovalOut.model_validate(req)
+    return _out(db, req)
 
 
 # ── Approval centre (admin) ──────────────────────────────────────────────────
@@ -98,38 +148,53 @@ def list_approvals(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    rows = (
-        service.list_mine(db, user)
-        if scope == "mine"
-        else service.list_for_approver(db, user)
-    )
-    return [ApprovalOut.model_validate(r) for r in rows]
+    if scope == "mine":
+        rows = service.list_mine(db, user)
+    elif scope == "all":
+        rows = service.list_all(db)  # approval centre — every status
+    else:
+        rows = service.list_for_approver(db, user)
+    return _outs(db, rows)
 
 
 @router.post("/api/approvals/{req_id}/approve", response_model=ApprovalOut)
-def approve(req_id: int, db: Session = Depends(get_db), user: User = Depends(approver)):
+def approve(
+    req_id: int, body: DecisionIn | None = None,
+    db: Session = Depends(get_db), user: User = Depends(approver),
+):
     try:
-        return ApprovalOut.model_validate(service.approve(db, req_id, user))
+        req = service.approve(db, req_id, user, note=body.note if body else None)
     except service.ApprovalError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return _out(db, req)
 
 
 @router.post("/api/approvals/{req_id}/reject", response_model=ApprovalOut)
-def reject(req_id: int, db: Session = Depends(get_db), user: User = Depends(approver)):
+def reject(
+    req_id: int, body: DecisionIn | None = None,
+    db: Session = Depends(get_db), user: User = Depends(approver),
+):
     try:
-        return ApprovalOut.model_validate(service.reject(db, req_id, user))
+        req = service.reject(db, req_id, user, note=body.note if body else None)
     except service.ApprovalError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return _out(db, req)
+
+
+@router.post("/api/approvals/batch")
+def batch(body: BatchDecisionIn, db: Session = Depends(get_db), user: User = Depends(approver)):
+    return service.batch_decide(db, body.ids, body.action, user, body.note)
 
 
 @router.post("/api/approvals/{req_id}/fulfill", response_model=ApprovalOut)
 def fulfill(req_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
     try:
-        return ApprovalOut.model_validate(service.fulfill(db, req_id, user))
+        req = service.fulfill(db, req_id, user)
     except InsufficientStock as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     except service.ApprovalError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
+    return _out(db, req)
 
 
 # ── Lark webhook (event verify + interactive card callback) ──────────────────
