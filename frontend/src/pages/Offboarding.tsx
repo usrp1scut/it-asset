@@ -38,6 +38,7 @@ interface CaseBase {
   reason: string | null
   hr_channel: string
   status: CaseStatus
+  notified_at: string | null
   completed_at: string | null
   created_at: string
   total_items: number
@@ -156,6 +157,16 @@ export default function Offboarding() {
       message.error(e.response?.data?.detail ?? '关闭失败'),
   })
 
+  const notifyMut = useMutation({
+    mutationFn: async (id: number) => (await api.post(`/offboarding/${id}/notify`)).data,
+    onSuccess: () => {
+      message.success('已通知离职员工与其上级归还资产')
+      invalidate()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '通知失败'),
+  })
+
   const returnedValue = (detail?.items ?? [])
     .filter((i) => i.status === 'returned')
     .reduce((s, i) => s + Number(i.snapshot_value ?? 0), 0)
@@ -168,7 +179,7 @@ export default function Offboarding() {
     ? [
         { label: 'HR 离职触发', done: true, hint: detail.hr_channel === 'manual' ? '手工建单' : 'Lark 事件' },
         { label: '资产清单核对', done: true, hint: `${detail.total_items} 件 · ${yuan(detail.total_value)}` },
-        { label: '通知员工归还', done: true },
+        { label: '通知员工归还', done: detail.notified_at !== null, hint: detail.notified_at ? '已通知' : '待 IT 确认' },
         { label: '资产全部归还/登记', done: handled },
         { label: 'IT 验收入库', done: handled },
         { label: '工单关闭', done: detail.status === 'completed' },
@@ -353,18 +364,33 @@ export default function Offboarding() {
 
               {/* Action bar */}
               {detail.status !== 'completed' && (
-                <Popconfirm
-                  title="关闭离职工单?"
-                  description={detail.pending_items > 0 ? `还有 ${detail.pending_items} 件待归还,需先处理` : '所有资产已处理,确认关闭并通知 HR。'}
-                  onConfirm={() => closeMut.mutate(detail.id)}
-                  okText="关闭工单"
-                  cancelText="取消"
-                  disabled={detail.pending_items > 0}
-                >
-                  <Button type="primary" disabled={detail.pending_items > 0} loading={closeMut.isPending}>
-                    确认完成 · 关闭工单
-                  </Button>
-                </Popconfirm>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {detail.notified_at === null && (
+                    <Popconfirm
+                      title="确认并通知离职员工?"
+                      description="将给该员工与其直属上级发送 Lark 归还提醒。建单时未自动通知,以避免误触发打扰。"
+                      onConfirm={() => notifyMut.mutate(detail.id)}
+                      okText="确认并通知"
+                      cancelText="取消"
+                    >
+                      <Button type="primary" loading={notifyMut.isPending}>
+                        确认并通知员工
+                      </Button>
+                    </Popconfirm>
+                  )}
+                  <Popconfirm
+                    title="关闭离职工单?"
+                    description={detail.pending_items > 0 ? `还有 ${detail.pending_items} 件待归还,需先处理` : '所有资产已处理,确认关闭并通知 HR。'}
+                    onConfirm={() => closeMut.mutate(detail.id)}
+                    okText="关闭工单"
+                    cancelText="取消"
+                    disabled={detail.pending_items > 0}
+                  >
+                    <Button disabled={detail.pending_items > 0} loading={closeMut.isPending}>
+                      确认完成 · 关闭工单
+                    </Button>
+                  </Popconfirm>
+                </div>
               )}
             </div>
           )}

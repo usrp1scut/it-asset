@@ -74,6 +74,62 @@ def test_offboarding_full_flow():
     assert closed.status_code == 200 and closed.json()["status"] == "completed"
 
 
+def test_offboarding_notify_gate():
+    """Creation must NOT notify the leaver (notified_at stays null); the
+    IT-triggered /notify is what stamps it."""
+    admin = _login()
+    h = _h(admin)
+    emp = _login("employee")
+    emp_id = emp["user"]["id"]
+    pc = _type_id(h, "PC")
+    _make_in_use_asset(h, pc, emp_id, 5000)
+
+    case = client.post("/api/offboarding", json={"user_id": emp_id}, headers=h).json()
+    assert case["notified_at"] is None  # auto-create alerts IT only, not the employee
+
+    notified = client.post(f"/api/offboarding/{case['id']}/notify", headers=h)
+    assert notified.status_code == 200
+    assert notified.json()["notified_at"] is not None
+
+    # idempotent — re-notify keeps the original stamp, still 200
+    again = client.post(f"/api/offboarding/{case['id']}/notify", headers=h)
+    assert again.status_code == 200 and again.json()["notified_at"] is not None
+
+
+def test_offboarding_create_from_lark(monkeypatch):
+    """A Lark user.left event resolves the user by lark_open_id and builds a
+    case without messaging the employee."""
+    from app.db import SessionLocal
+    from app.modules.offboarding import service
+    from app.modules.users.models import User
+
+    admin = _login()
+    h = _h(admin)
+    emp = _login("employee")
+    emp_id = emp["user"]["id"]
+    pc = _type_id(h, "PC")
+    _make_in_use_asset(h, pc, emp_id, 6000)
+
+    # tag the employee with a lark open_id (the directory sync would set this)
+    db = SessionLocal()
+    try:
+        u = db.get(User, emp_id)
+        u.lark_open_id = f"ou_{uuid.uuid4().hex[:10]}"
+        db.commit()
+        open_id = u.lark_open_id
+    finally:
+        db.close()
+
+    db = SessionLocal()
+    try:
+        case = service.create_from_lark(db, lark_open_id=open_id)
+        assert case is not None
+        assert case.hr_channel == "lark_event:user.left"
+        assert case.notified_at is None
+    finally:
+        db.close()
+
+
 def test_offboarding_rejects_duplicate_open_case():
     admin = _login()
     h = _h(admin)
