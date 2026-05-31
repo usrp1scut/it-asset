@@ -78,7 +78,7 @@ function fmtDate(s: string | null | undefined): string {
   }
 }
 
-function NavBar({ onBack, onClose }: { onBack: () => void; onClose: () => void }) {
+function NavBar({ title, onBack, onClose }: { title: string; onBack: () => void; onClose: () => void }) {
   return (
     <div
       style={{
@@ -110,7 +110,7 @@ function NavBar({ onBack, onClose }: { onBack: () => void; onClose: () => void }
         <Icon name="chevronLeft" size={20} />
       </button>
       <div style={{ flex: 1, textAlign: 'center', fontSize: 16, fontWeight: 600 }}>
-        扫码结果
+        {title}
       </div>
       <button
         onClick={onClose}
@@ -176,6 +176,10 @@ export default function MobileAdminScanResult() {
   // between what was on the sticker and what we tried to lookup is
   // immediately visible.
   const raw = (location.state as { raw?: string } | null)?.raw ?? null
+  // The scanner navigates here with `state.raw`; the asset-ledger list does
+  // not. Use that to tell "扫码结果" from a plain "资产详情" and hide the
+  // scan-only chrome (success banner / 继续扫码) when opened from the list.
+  const fromScan = raw !== null
   const [scanOpen, setScanOpen] = useState(false)
 
   const { data, isLoading, error } = useQuery<AssetDetail>({
@@ -190,7 +194,11 @@ export default function MobileAdminScanResult() {
 
   return (
     <div style={wrap}>
-      <NavBar onBack={() => navigate('/m/admin')} onClose={() => navigate('/m/admin')} />
+      <NavBar
+        title={fromScan ? '扫码结果' : '资产详情'}
+        onBack={() => navigate(fromScan ? '/m/admin' : '/m/admin/assets')}
+        onClose={() => navigate('/m/admin')}
+      />
 
       {isLoading && (
         <div style={{ padding: 40, textAlign: 'center', color: '#86909C', fontSize: 13 }}>
@@ -290,22 +298,24 @@ export default function MobileAdminScanResult() {
 
       {data && (
         <>
-          {/* Success banner */}
-          <div
-            style={{
-              background: '#E8FFEA',
-              color: '#00853E',
-              padding: '10px 16px',
-              fontSize: 13,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              borderBottom: '0.5px solid #BCEAC7',
-            }}
-          >
-            <Icon name="check" size={16} color="#00853E" />
-            <span>扫描成功</span>
-          </div>
+          {/* Success banner — only meaningful right after a scan */}
+          {fromScan && (
+            <div
+              style={{
+                background: '#E8FFEA',
+                color: '#00853E',
+                padding: '10px 16px',
+                fontSize: 13,
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                borderBottom: '0.5px solid #BCEAC7',
+              }}
+            >
+              <Icon name="check" size={16} color="#00853E" />
+              <span>扫描成功</span>
+            </div>
+          )}
 
           {/* Asset header card */}
           <div style={{ padding: 16 }}>
@@ -496,7 +506,7 @@ export default function MobileAdminScanResult() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: '1fr 1fr',
+                gridTemplateColumns: fromScan ? '1fr 1fr' : '1fr',
                 gap: 10,
                 marginTop: 16,
               }}
@@ -516,22 +526,24 @@ export default function MobileAdminScanResult() {
               >
                 编辑资产
               </button>
-              <button
-                onClick={() => setScanOpen(true)}
-                style={{
-                  height: 44,
-                  borderRadius: 22,
-                  background: 'linear-gradient(135deg, #3370FF, #5B92FF)',
-                  color: '#fff',
-                  border: 'none',
-                  fontSize: 14,
-                  fontWeight: 500,
-                  cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(51,112,255,0.3)',
-                }}
-              >
-                继续扫码
-              </button>
+              {fromScan && (
+                <button
+                  onClick={() => setScanOpen(true)}
+                  style={{
+                    height: 44,
+                    borderRadius: 22,
+                    background: 'linear-gradient(135deg, #3370FF, #5B92FF)',
+                    color: '#fff',
+                    border: 'none',
+                    fontSize: 14,
+                    fontWeight: 500,
+                    cursor: 'pointer',
+                    boxShadow: '0 4px 14px rgba(51,112,255,0.3)',
+                  }}
+                >
+                  继续扫码
+                </button>
+              )}
             </div>
           </div>
         </>
