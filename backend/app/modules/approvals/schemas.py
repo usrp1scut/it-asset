@@ -1,9 +1,28 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
 from app.modules.approvals.models import ApprovalStatus, RequestType
+
+
+class AutoRuleOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    enabled: bool = False
+    consumable_only: bool = True
+    respect_sku_flag: bool = True
+    max_total_qty: int | None = None
+    max_total_amount: Decimal | None = None
+
+
+class AutoRuleIn(BaseModel):
+    enabled: bool
+    consumable_only: bool = True
+    respect_sku_flag: bool = True
+    max_total_qty: int | None = None
+    max_total_amount: Decimal | None = None
 
 
 class RequestItem(BaseModel):
@@ -53,4 +72,5 @@ class ApprovalOut(BaseModel):
     items: list[ApprovalItemOut] = []  # enriched from payload + SKU directory
     decision_note: str | None = None
     decided_at: datetime | None = None
+    auto_approved: bool = False
     created_at: datetime

@@ -6,13 +6,61 @@ from sqlalchemy.orm import Session
 
 from app.config import get_settings
 from app.lark.client import get_lark_client
-from app.modules.approvals.models import ApprovalRequest, ApprovalStatus, RequestType
+from app.modules.approvals.models import (
+    ApprovalRequest,
+    ApprovalStatus,
+    AutoApprovalRule,
+    RequestType,
+)
+from app.modules.inventory.models import Sku
 from app.modules.inventory.service import InsufficientStock, issue
 from app.modules.users.models import User
 
 
 class ApprovalError(ValueError):
     pass
+
+
+def get_auto_rule(db: Session) -> AutoApprovalRule:
+    rule = db.get(AutoApprovalRule, 1)
+    if rule is None:
+        rule = AutoApprovalRule(id=1)
+        db.add(rule)
+        db.commit()
+        db.refresh(rule)
+    return rule
+
+
+def _auto_decide(db: Session, req: ApprovalRequest) -> bool:
+    """If the auto-approval rule is on and this request matches, approve it in
+    place (status → approved, awaiting IT 发放). Returns whether it fired."""
+    rule = get_auto_rule(db)
+    if not rule.enabled:
+        return False
+    if rule.consumable_only and req.request_type != RequestType.consumable:
+        return False
+    items = (req.payload_json or {}).get("items", [])
+    sku_ids = [it["sku_id"] for it in items if it.get("sku_id")]
+    skus = {s.id: s for s in db.scalars(select(Sku).where(Sku.id.in_(sku_ids)))} if sku_ids else {}
+    if rule.respect_sku_flag and any(
+        (s := skus.get(it.get("sku_id"))) is not None and s.need_approval for it in items
+    ):
+        return False
+    total_qty = sum(int(it.get("qty", 0)) for it in items)
+    if rule.max_total_qty is not None and total_qty > rule.max_total_qty:
+        return False
+    total_amount = sum(
+        (skus[it["sku_id"]].price or 0) * int(it.get("qty", 0))
+        for it in items
+        if it.get("sku_id") in skus
+    )
+    if rule.max_total_amount is not None and total_amount > rule.max_total_amount:
+        return False
+    req.status = ApprovalStatus.approved
+    req.decided_at = func.now()
+    req.auto_approved = True
+    req.decision_note = "系统自动审批(命中自动审批规则)"
+    return True
 
 
 def _notify(text: str) -> None:
@@ -39,9 +87,14 @@ def create_request(
         payload_json=payload,
     )
     db.add(req)
+    db.flush()
+    auto = _auto_decide(db, req)
     db.commit()
     db.refresh(req)
-    _notify(f"新申请待审批 {req.request_no}:{requester.name} · {request_type.value}")
+    if auto:
+        _notify(f"申请 {req.request_no} 已自动审批通过(规则),待 IT 发放")
+    else:
+        _notify(f"新申请待审批 {req.request_no}:{requester.name} · {request_type.value}")
     return req
 
 

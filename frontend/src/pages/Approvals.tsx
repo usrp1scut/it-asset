@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react'
-import { Button, Checkbox, Drawer, Input, message } from 'antd'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Checkbox, Drawer, Form, Input, InputNumber, Modal, Switch, message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuth } from '../stores/auth'
@@ -29,7 +29,16 @@ interface Approval {
   items: Item[]
   decision_note: string | null
   decided_at: string | null
+  auto_approved: boolean
   created_at: string
+}
+
+interface AutoRule {
+  enabled: boolean
+  consumable_only: boolean
+  respect_sku_flag: boolean
+  max_total_qty: number | null
+  max_total_amount: string | null
 }
 
 const TYPE_META: Record<ReqType, { label: string; icon: IconName; color: string; bg: string }> = {
@@ -124,6 +133,26 @@ export default function Approvals() {
   const [openId, setOpenId] = useState<number | null>(null)
   const [selected, setSelected] = useState<number[]>([])
   const [note, setNote] = useState('')
+  const [ruleOpen, setRuleOpen] = useState(false)
+  const [ruleForm] = Form.useForm()
+
+  const { data: rule } = useQuery<AutoRule>({
+    queryKey: ['auto-rule'],
+    queryFn: async () => (await api.get('/approvals/auto-rule')).data,
+  })
+  useEffect(() => {
+    if (ruleOpen && rule) ruleForm.setFieldsValue(rule)
+  }, [ruleOpen, rule, ruleForm])
+
+  const ruleMut = useMutation({
+    mutationFn: async (v: object) => (await api.put('/approvals/auto-rule', v)).data,
+    onSuccess: () => {
+      message.success('自动审批规则已保存')
+      qc.invalidateQueries({ queryKey: ['auto-rule'] })
+      setRuleOpen(false)
+    },
+    onError: () => message.error('保存失败'),
+  })
 
   const { data } = useQuery<Approval[]>({
     queryKey: ['approvals-all'],
@@ -181,7 +210,12 @@ export default function Approvals() {
 
   return (
     <div style={{ padding: 24 }}>
-      <h2 style={{ marginTop: 0 }}>审批中心</h2>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h2 style={{ marginTop: 0 }}>审批中心</h2>
+        <Button onClick={() => setRuleOpen(true)}>
+          自动审批规则{rule?.enabled ? ' · 已开启' : ''}
+        </Button>
+      </div>
 
       {/* KPI */}
       <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
@@ -248,6 +282,11 @@ export default function Approvals() {
                     {r.requester_name ?? `#${r.requester_id}`} · {itemsText(r) || r.payload_json?.reason || '—'}
                   </div>
                 </div>
+                {r.auto_approved && (
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#F1ECFF', color: '#7E5EE5', flexShrink: 0 }}>
+                    系统自动
+                  </span>
+                )}
                 <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: STATUS_META[r.status].bg, color: STATUS_META[r.status].color, flexShrink: 0 }}>
                   {STATUS_META[r.status].label}
                 </span>
@@ -328,7 +367,11 @@ export default function Approvals() {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                   <Avatar name={detail.approver_name ?? (detail.status === 'pending' ? '待' : '?')} />
                   <div style={{ fontSize: 13 }}>
-                    {detail.status === 'pending' ? '等待审批' : `${detail.approver_name ?? ''} ${STATUS_META[detail.status].label}`}
+                    {detail.status === 'pending'
+                      ? '等待审批'
+                      : detail.auto_approved
+                        ? `系统自动审批 · ${STATUS_META[detail.status].label}`
+                        : `${detail.approver_name ?? ''} ${STATUS_META[detail.status].label}`}
                     {detail.decision_note && <span style={{ color: 'var(--text-3)' }}> · {detail.decision_note}</span>}
                   </div>
                   <span style={{ marginLeft: 'auto', fontSize: 12, color: 'var(--text-3)' }}>{fmt(detail.decided_at)}</span>
@@ -358,6 +401,43 @@ export default function Approvals() {
           </div>
         )}
       </Drawer>
+
+      {/* Auto-approval rule */}
+      <Modal
+        open={ruleOpen}
+        title="自动审批规则"
+        onCancel={() => setRuleOpen(false)}
+        onOk={() => ruleForm.submit()}
+        confirmLoading={ruleMut.isPending}
+        destroyOnClose
+      >
+        <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 16 }}>
+          开启后,提交的领用申请若命中规则会**自动通过**(进「待发放」,仍由 IT 发放扣库存);未命中走正常审批。
+        </div>
+        <Form
+          form={ruleForm}
+          layout="horizontal"
+          labelCol={{ span: 14 }}
+          wrapperCol={{ span: 10 }}
+          onFinish={(v: Record<string, unknown>) => ruleMut.mutate(v)}
+        >
+          <Form.Item name="enabled" label="启用自动审批" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="consumable_only" label="仅耗材/配件" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="respect_sku_flag" label="尊重 SKU「需审批」标记" valuePropName="checked">
+            <Switch />
+          </Form.Item>
+          <Form.Item name="max_total_qty" label="单次总数量上限(空=不限)">
+            <InputNumber min={1} style={{ width: '100%' }} placeholder="如 5" />
+          </Form.Item>
+          <Form.Item name="max_total_amount" label="单次总金额上限 ¥(空=不限)">
+            <InputNumber min={0} style={{ width: '100%' }} placeholder="如 500" />
+          </Form.Item>
+        </Form>
+      </Modal>
     </div>
   )
 }

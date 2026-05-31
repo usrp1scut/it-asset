@@ -201,3 +201,78 @@ def test_approval_batch_and_scope_all():
     all_rows = client.get("/api/approvals?scope=all", headers=admin).json()
     got = {r["id"]: r for r in all_rows}
     assert all(got[i]["status"] == "approved" for i in ids)
+
+
+def _set_rule(h, **kw):
+    body = {"enabled": True, "consumable_only": True, "respect_sku_flag": True,
+            "max_total_qty": None, "max_total_amount": None}
+    body.update(kw)
+    return client.put("/api/approvals/auto-rule", json=body, headers=h)
+
+
+def _submit(emp_h, sid, qty=1):
+    return client.post(
+        "/api/m/requests",
+        json={"request_type": "consumable", "items": [{"sku_id": sid, "qty": qty}], "reason": "x"},
+        headers=emp_h,
+    ).json()
+
+
+def test_auto_approval_rule_qty_and_off():
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    sid = _stocked_sku(admin, 50)
+    try:
+        # off (default) → pending
+        client.put("/api/approvals/auto-rule", json={"enabled": False}, headers=admin)
+        r = _submit(emp_h, sid, 1)
+        assert r["status"] == "pending" and r["auto_approved"] is False
+
+        # on, qty threshold 5 → within auto-approves, over stays pending
+        _set_rule(admin, max_total_qty=5)
+        r = _submit(emp_h, sid, 3)
+        assert r["status"] == "approved" and r["auto_approved"] is True
+        assert "自动审批" in (r["decision_note"] or "")
+        r = _submit(emp_h, sid, 9)
+        assert r["status"] == "pending" and r["auto_approved"] is False
+    finally:
+        client.put("/api/approvals/auto-rule", json={"enabled": False}, headers=admin)
+
+
+def test_auto_approval_respects_sku_flag_and_amount():
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    try:
+        _set_rule(admin, max_total_qty=100)
+
+        # a SKU flagged need_approval blocks auto-approval
+        loc = client.post("/api/inventory/locations",
+                          json={"name": f"L-{uuid.uuid4().hex[:5]}"}, headers=admin).json()["id"]
+        cat = client.post("/api/item-categories",
+                          json={"name": "键盘", "code": uuid.uuid4().hex[:8].upper()},
+                          headers=admin).json()
+        sku = client.post("/api/skus",
+                          json={"category_id": cat["id"], "name": "需审批键盘",
+                                "default_location_id": loc, "safety_stock": 0,
+                                "need_approval": True},
+                          headers=admin).json()
+        client.post("/api/inventory/receive",
+                    json={"sku_id": sku["id"], "quantity": 10}, headers=admin)
+        assert _submit(emp_h, sku["id"], 1)["status"] == "pending"
+
+        # amount threshold: give a normal SKU a price, set a low cap → pending
+        sid = _stocked_sku(admin, 50)
+        from app.db import SessionLocal
+        from app.modules.inventory.models import Sku
+        db = SessionLocal()
+        try:
+            db.get(Sku, sid).price = 200
+            db.commit()
+        finally:
+            db.close()
+        _set_rule(admin, max_total_qty=100, max_total_amount=100)  # 200×1 > 100
+        assert _submit(emp_h, sid, 1)["status"] == "pending"
+        _set_rule(admin, max_total_qty=100, max_total_amount=1000)  # 200×1 ≤ 1000
+        assert _submit(emp_h, sid, 1)["status"] == "approved"
+    finally:
+        client.put("/api/approvals/auto-rule", json={"enabled": False}, headers=admin)

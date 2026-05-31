@@ -8,6 +8,8 @@ from app.modules.approvals import service
 from app.modules.approvals.schemas import (
     ApprovalItemOut,
     ApprovalOut,
+    AutoRuleIn,
+    AutoRuleOut,
     BatchDecisionIn,
     CreateRequestIn,
     DecisionIn,
@@ -184,6 +186,25 @@ def reject(
 @router.post("/api/approvals/batch")
 def batch(body: BatchDecisionIn, db: Session = Depends(get_db), user: User = Depends(approver)):
     return service.batch_decide(db, body.ids, body.action, user, body.note)
+
+
+@router.get("/api/approvals/auto-rule", response_model=AutoRuleOut)
+def get_auto_rule(db: Session = Depends(get_db), _: User = Depends(approver)):
+    return AutoRuleOut.model_validate(service.get_auto_rule(db))
+
+
+@router.put("/api/approvals/auto-rule", response_model=AutoRuleOut)
+def set_auto_rule(body: AutoRuleIn, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    rule = service.get_auto_rule(db)
+    rule.enabled = body.enabled
+    rule.consumable_only = body.consumable_only
+    rule.respect_sku_flag = body.respect_sku_flag
+    rule.max_total_qty = body.max_total_qty
+    rule.max_total_amount = body.max_total_amount
+    rule.updated_by = user.id
+    db.commit()
+    db.refresh(rule)
+    return AutoRuleOut.model_validate(rule)
 
 
 @router.post("/api/approvals/{req_id}/fulfill", response_model=ApprovalOut)
