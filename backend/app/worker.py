@@ -22,9 +22,14 @@ celery_app.conf.update(
             "task": "inventory.scan_low_stock",
             "schedule": 24 * 60 * 60,
         },
+        "scan-offboarding-overdue-daily": {
+            "task": "offboarding.scan_overdue",
+            "schedule": 24 * 60 * 60,
+        },
     },
 )
 
 # Import task modules so Celery registers them.
 import app.modules.inventory.tasks  # noqa: E402,F401
+import app.modules.offboarding.tasks  # noqa: E402,F401
 import app.modules.users.tasks  # noqa: E402,F401

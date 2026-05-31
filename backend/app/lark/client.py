@@ -216,14 +216,21 @@ class LarkClient:
 
     async def send_text(self, chat_id: str, text: str) -> None:
         """Send a plain-text bot message to a chat. No-op-safe callers only."""
+        await self._send("chat_id", chat_id, text)
+
+    async def send_user(self, open_id: str, text: str) -> None:
+        """Send a plain-text bot DM to a user by open_id. No-op-safe callers only."""
+        await self._send("open_id", open_id, text)
+
+    async def _send(self, receive_id_type: str, receive_id: str, text: str) -> None:
         token = await self.get_tenant_access_token()
         async with httpx.AsyncClient(timeout=10) as client:
             resp = await client.post(
                 self._url("/open-apis/im/v1/messages"),
-                params={"receive_id_type": "chat_id"},
+                params={"receive_id_type": receive_id_type},
                 headers={"Authorization": f"Bearer {token}"},
                 json={
-                    "receive_id": chat_id,
+                    "receive_id": receive_id,
                     "msg_type": "text",
                     "content": json.dumps({"text": text}),
                 },

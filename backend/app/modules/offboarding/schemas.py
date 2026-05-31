@@ -50,6 +50,7 @@ class CaseOut(BaseModel):
     reason: str | None
     hr_channel: str
     status: OffboardingStatus
+    notified_at: datetime | None = None
     completed_at: datetime | None
     created_at: datetime
     # value/progress summary (filled by the router)

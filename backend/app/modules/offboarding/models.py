@@ -49,6 +49,10 @@ class OffboardingCase(Base):
     )
     assigned_it_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))
     created_by: Mapped[int | None] = mapped_column(BigInteger)
+    # When IT confirmed the case and the leaver/manager were notified. Stays
+    # NULL on auto-created cases until IT explicitly notifies — auto-creation
+    # alerts IT only, never the employee (avoids false-alarm spam).
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

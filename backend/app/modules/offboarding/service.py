@@ -1,9 +1,12 @@
 import uuid
 from datetime import UTC, date, datetime
 
+import anyio
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.config import get_settings
+from app.lark.client import get_lark_client
 from app.modules.assets import scrap_workflow
 from app.modules.assets import service as asset_service
 from app.modules.assets.models import Asset, AssetClass, AssetStatus
@@ -20,6 +23,31 @@ from app.modules.users.models import Department, User
 
 class OffboardingError(ValueError):
     pass
+
+
+# ── Lark notify (no-op-safe; never raise into business code) ─────────────────
+# Auto-creation only ever pings IT — the leaver/manager are messaged solely
+# from notify_leaver(), which an admin triggers after eyeballing the case.
+
+def _alert_it(text: str) -> None:
+    s = get_settings()
+    c = get_lark_client()
+    if not c.configured or not s.lark_alert_chat_id:
+        return
+    try:
+        anyio.run(c.send_text, s.lark_alert_chat_id, text)
+    except Exception:  # noqa: BLE001 — notification must not break the flow
+        pass
+
+
+def _dm(open_id: str | None, text: str) -> None:
+    c = get_lark_client()
+    if not c.configured or not open_id:
+        return
+    try:
+        anyio.run(c.send_user, open_id, text)
+    except Exception:  # noqa: BLE001
+        pass
 
 
 def _case_no() -> str:
@@ -55,6 +83,7 @@ def create_case(
     reason: str | None,
     channel: str,
     created_by: int | None,
+    alert_it: bool = True,
 ) -> OffboardingCase:
     user = db.get(User, user_id)
     if user is None:
@@ -109,7 +138,74 @@ def create_case(
         )
     db.commit()
     db.refresh(case)
+
+    # Ping IT only — the leaver is contacted later via notify_leaver (the
+    # explicit IT-confirmation gate), so a mistaken trigger doesn't spam them.
+    if alert_it:
+        n = len(assets)
+        src = "Lark 离职事件" if channel.startswith("lark_event") else "手工建单"
+        _alert_it(
+            f"【离职归还 · 待确认】{case.case_no}({src})\n"
+            f"员工 {user.name}{(' · ' + dept_name) if dept_name else ''},名下 {n} 件在用资产。"
+            f"\n请在系统核对后点「确认并通知员工」。"
+        )
     return case
+
+
+def notify_leaver(db: Session, case: OffboardingCase, operator_id: int | None) -> OffboardingCase:
+    """IT-confirmed gate: message the leaver (and their manager) to return
+    assets, and stamp notified_at. Idempotent — re-notifying is a no-op."""
+    if case.notified_at is not None:
+        return case
+    user = db.get(User, case.user_id)
+    pending = _count_pending(db, case.id)
+    if user is not None:
+        _dm(
+            user.lark_open_id,
+            f"【资产归还提醒】{user.name} 你好,离职流程已启动。请尽快归还名下 {pending} 件 IT 资产,"
+            f"并配合 IT 完成验收(工单 {case.case_no})。",
+        )
+        if user.manager_user_id:
+            mgr = db.get(User, user.manager_user_id)
+            if mgr is not None:
+                _dm(
+                    mgr.lark_open_id,
+                    f"你的下属 {user.name} 离职,名下还有 {pending} 件 IT 资产待归还,请协助督促(工单 {case.case_no})。",
+                )
+    case.notified_at = func.now()
+    db.commit()
+    db.refresh(case)
+    return case
+
+
+def create_from_lark(
+    db: Session, *, lark_open_id: str | None = None, lark_user_id: str | None = None
+) -> OffboardingCase | None:
+    """Auto-create a case from a Lark `user.left`/`user.deleted` event.
+    Best-effort: returns None when the user isn't found or already has a case.
+    Alerts IT; never messages the (departing) employee."""
+    stmt = select(User)
+    if lark_open_id:
+        stmt = stmt.where(User.lark_open_id == lark_open_id)
+    elif lark_user_id:
+        stmt = stmt.where(User.lark_user_id == lark_user_id)
+    else:
+        return None
+    user = db.scalar(stmt)
+    if user is None:
+        return None
+    try:
+        return create_case(
+            db,
+            user_id=user.id,
+            last_day=date.today(),
+            reason="Lark 离职事件自动建单",
+            channel="lark_event:user.left",
+            created_by=None,
+            alert_it=True,
+        )
+    except OffboardingError:
+        return None  # already has an open case
 
 
 def _item_or_err(db: Session, case_id: int, code: str) -> OffboardingItem:

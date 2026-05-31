@@ -19,8 +19,31 @@ import lark_oapi as lark
 from app.config import get_settings
 from app.db import SessionLocal
 from app.modules.approvals import service
+from app.modules.offboarding import service as offboarding_service
 
 log = logging.getLogger("lark.ws")
+
+
+def _on_user_deleted(data) -> None:
+    """Contact `user.deleted` (员工离职/移除) → auto-create an offboarding case.
+    Alerts IT only; the leaver is messaged later via the IT-confirm gate."""
+    try:
+        obj = getattr(getattr(data, "event", None), "object", None)
+        open_id = getattr(obj, "open_id", None)
+        user_id = getattr(obj, "user_id", None)
+        if not (open_id or user_id):
+            log.warning("user.deleted event without an id; skipping")
+            return
+        db = SessionLocal()
+        try:
+            case = offboarding_service.create_from_lark(
+                db, lark_open_id=open_id, lark_user_id=user_id
+            )
+            log.info("offboarding auto-create from user.deleted: %s", case.case_no if case else None)
+        finally:
+            db.close()
+    except Exception:  # noqa: BLE001 — a bad event must not kill the connection
+        log.exception("failed handling user.deleted")
 
 
 def _on_card_action(data) -> None:
@@ -49,13 +72,19 @@ def build_client() -> "lark.ws.Client | None":
         log.warning("Lark not configured — long-connection client not started")
         return None
 
-    handler = (
-        lark.EventDispatcherHandler.builder(
-            s.lark_verification_token, s.lark_encrypt_key
+    builder = lark.EventDispatcherHandler.builder(
+        s.lark_verification_token, s.lark_encrypt_key
+    ).register_p2_card_action_trigger(_on_card_action)
+    # Contact user-deleted registration is SDK-version dependent — wire it only
+    # if this build exposes it, so an older SDK doesn't break the connection.
+    reg = getattr(builder, "register_p2_contact_user_deleted_v3", None)
+    if reg is not None:
+        builder = reg(_on_user_deleted)
+    else:
+        log.warning(
+            "SDK lacks contact.user.deleted_v3 trigger — offboarding auto-create disabled"
         )
-        .register_p2_card_action_trigger(_on_card_action)
-        .build()
-    )
+    handler = builder.build()
     # domain is a base-URL string; reuse the settings value (variant-aware,
     # honours explicit overrides).
     return lark.ws.Client(

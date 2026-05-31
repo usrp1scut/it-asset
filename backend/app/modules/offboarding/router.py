@@ -125,6 +125,19 @@ def lost_item(
     return get_case(case_id, db, user)
 
 
+@router.post("/{case_id}/notify", response_model=CaseDetail)
+def notify_leaver(case_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """IT confirms the case and notifies the leaver (+ manager) to return
+    assets. Auto-created cases stay silent to the employee until this runs."""
+    case = service.get_case(db, case_id)
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "工单不存在")
+    service.notify_leaver(db, case, user.id)
+    write_audit(db, actor_user_id=user.id, action="offboarding.notify",
+                resource_type="offboarding_case", resource_id=case.case_no)
+    return get_case(case_id, db, user)
+
+
 @router.post("/{case_id}/close", response_model=CaseDetail)
 def close_case(case_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
     case = service.get_case(db, case_id)
