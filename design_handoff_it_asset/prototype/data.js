@@ -1,27 +1,4 @@
 // Mock data for IT asset management system
-//
-// ⚠️ 生产实现唯一基准 = PRD v0.2。本文件的 status 值与字段名是 v0.1 原型遗留,
-//    仅为让原型可视化跑起来而保留;实现时按下表映射到 v0.2,不要照搬这里的命名。
-//
-// ── 状态映射(v0.1 原型 → v0.2 生产,4 态)──────────────────────
-//   stocked / pending_in  →  idle        闲置(在库可分配)
-//   assigned              →  in_use      在用
-//   repairing             →  maintenance 维修中
-//   idle                  →  idle        闲置
-//   scrapped              →  scrapped    已报废
-//   lost / pending_scrap  →  (不再是状态)走 remark + scrap_candidate 标记
-//
-// ── 字段映射(v0.1 原型 → v0.2 生产)────────────────────────────
-//   code        →  asset_code        (生产规则 PC/MON/NET-####,无年份;原型用 IT-YYYY-#### 仅占位)
-//   name/brand/model → brand_model    (v0.2 合并为单一自由文本,不拆分)
-//   (PC 配置)   →  spec              (自由文本,不结构化)
-//   sn          →  serial_number     ('无' → null)
-//   (旧临时编号) → legacy_code        (如 gw-1/x99-1)
-//   owner       →  owner_user_id     (匹配飞书用户);未匹配 → owner_name 文本 + needs_review
-//   dept        →  department_id     (+ department_name 兜底)
-//   (无)        →  asset_class        personal | infrastructure(网络设备=infrastructure,不走领用/归还)
-//   (无)        →  scrap_candidate / needs_review(容脏标记,见 PRD §13.2)
-//
 // Departments
 window.DEPARTMENTS = [
   { id: 'd1', name: '研发部', en: 'Engineering', code: 'ENG' },
@@ -58,14 +35,11 @@ window.USERS.forEach((u, i) => { u.avatarColor = avatarColors[i % avatarColors.l
 
 // Asset status
 window.ASSET_STATUS = {
-  stocked: { label: '库存中', en: 'In Stock', color: 'success' },
-  assigned: { label: '已领用', en: 'Assigned', color: 'blue' },
-  repairing: { label: '维修中', en: 'Repairing', color: 'warning' },
-  idle: { label: '闲置', en: 'Idle', color: 'gray' },
-  lost: { label: '已丢失', en: 'Lost', color: 'danger' },
-  pending_scrap: { label: '待报废', en: 'Pending Scrap', color: 'warning' },
-  scrapped: { label: '已报废', en: 'Scrapped', color: 'gray-dark' },
-  pending_in: { label: '待入库', en: 'Pending', color: 'gray' },
+  // PRD v0.2 §5.1 — 4 态状态机(原 8 态简化)。详见 DESIGN_REVISIONS.md §1
+  in_use:      { label: '在用',   en: 'In Use',      color: 'blue' },
+  idle:        { label: '闲置',   en: 'Idle',        color: 'success' },  // 含旧的"库存中/待入库"
+  maintenance: { label: '维修中', en: 'Maintenance', color: 'warning' },
+  scrapped:    { label: '已报废', en: 'Scrapped',    color: 'gray-dark' },
 };
 
 window.ASSET_TYPES = [
@@ -81,39 +55,39 @@ window.ASSET_TYPES = [
 // Fixed assets — 32 items with rich detail
 window.ASSETS = [
   // MacBooks
-  { code: 'IT-2025-0001', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGD7M', status: 'assigned', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 19999, warranty: '2027-01-15', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0002', type: 't1', name: 'MacBook Pro 16"', brand: 'Apple', model: 'M3 Max', sn: 'C02ZK5XAGD8N', status: 'assigned', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 29999, warranty: '2027-01-15', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0003', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGD9P', status: 'assigned', owner: 'u2', dept: 'd1', location: '上海·张江', purchase: '2025-02-10', price: 19999, warranty: '2027-02-10', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0004', type: 't1', name: 'MacBook Air 13"', brand: 'Apple', model: 'M3', sn: 'C02ZK5XAGE1Q', status: 'assigned', owner: 'u3', dept: 'd2', location: '上海·张江', purchase: '2025-03-08', price: 10999, warranty: '2027-03-08', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0005', type: 't1', name: 'MacBook Pro 16"', brand: 'Apple', model: 'M3 Max', sn: 'C02ZK5XAGE2R', status: 'assigned', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 31999, warranty: '2027-03-15', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0006', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGE3S', status: 'stocked', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 19999, warranty: '2027-04-20', supplier: 'Apple 企业销售' },
-  { code: 'IT-2024-0087', type: 't1', name: 'ThinkPad X1 Carbon', brand: 'Lenovo', model: 'Gen 11', sn: 'PF3K9X2L', status: 'assigned', owner: 'u8', dept: 'd1', location: '上海·张江', purchase: '2024-08-12', price: 12999, warranty: '2027-08-12', supplier: '联想企业购' },
-  { code: 'IT-2024-0088', type: 't1', name: 'ThinkPad X1 Carbon', brand: 'Lenovo', model: 'Gen 11', sn: 'PF3K9X2M', status: 'repairing', owner: 'u16', dept: 'd1', location: 'IT 仓库·维修区', purchase: '2024-08-12', price: 12999, warranty: '2027-08-12', supplier: '联想企业购' },
+  { code: 'IT-2025-0001', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGD7M', status: 'in_use', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 19999, warranty: '2027-01-15', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0002', type: 't1', name: 'MacBook Pro 16"', brand: 'Apple', model: 'M3 Max', sn: 'C02ZK5XAGD8N', status: 'in_use', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 29999, warranty: '2027-01-15', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0003', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGD9P', status: 'in_use', owner: 'u2', dept: 'd1', location: '上海·张江', purchase: '2025-02-10', price: 19999, warranty: '2027-02-10', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0004', type: 't1', name: 'MacBook Air 13"', brand: 'Apple', model: 'M3', sn: 'C02ZK5XAGE1Q', status: 'in_use', owner: 'u3', dept: 'd2', location: '上海·张江', purchase: '2025-03-08', price: 10999, warranty: '2027-03-08', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0005', type: 't1', name: 'MacBook Pro 16"', brand: 'Apple', model: 'M3 Max', sn: 'C02ZK5XAGE2R', status: 'in_use', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 31999, warranty: '2027-03-15', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0006', type: 't1', name: 'MacBook Pro 14"', brand: 'Apple', model: 'M3 Pro', sn: 'C02ZK5XAGE3S', status: 'idle', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 19999, warranty: '2027-04-20', supplier: 'Apple 企业销售' },
+  { code: 'IT-2024-0087', type: 't1', name: 'ThinkPad X1 Carbon', brand: 'Lenovo', model: 'Gen 11', sn: 'PF3K9X2L', status: 'in_use', owner: 'u8', dept: 'd1', location: '上海·张江', purchase: '2024-08-12', price: 12999, warranty: '2027-08-12', supplier: '联想企业购' },
+  { code: 'IT-2024-0088', type: 't1', name: 'ThinkPad X1 Carbon', brand: 'Lenovo', model: 'Gen 11', sn: 'PF3K9X2M', status: 'maintenance', owner: 'u16', dept: 'd1', location: 'IT 仓库·维修区', purchase: '2024-08-12', price: 12999, warranty: '2027-08-12', supplier: '联想企业购' },
   { code: 'IT-2024-0089', type: 't1', name: 'Dell XPS 13', brand: 'Dell', model: '9340', sn: 'DXP9340Z1', status: 'idle', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2024-06-05', price: 9999, warranty: '2027-06-05', supplier: '戴尔直销' },
   // Monitors
-  { code: 'IT-2025-0101', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX0', status: 'assigned', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 4499, warranty: '2028-01-15', supplier: '戴尔直销' },
-  { code: 'IT-2025-0102', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX1', status: 'assigned', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 4499, warranty: '2028-01-15', supplier: '戴尔直销' },
-  { code: 'IT-2025-0103', type: 't2', name: 'LG 27UP850-W', brand: 'LG', model: '27UP850', sn: 'LG27UP850A1', status: 'assigned', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 3299, warranty: '2027-02-20', supplier: '京东企业购' },
-  { code: 'IT-2025-0104', type: 't2', name: 'BenQ PD2705Q', brand: 'BenQ', model: 'PD2705Q', sn: 'BNQPD2705A', status: 'assigned', owner: 'u5', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 3899, warranty: '2027-02-20', supplier: '京东企业购' },
-  { code: 'IT-2025-0105', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX2', status: 'stocked', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 4499, warranty: '2028-04-20', supplier: '戴尔直销' },
-  { code: 'IT-2025-0106', type: 't2', name: 'LG 27UP850-W', brand: 'LG', model: '27UP850', sn: 'LG27UP850A2', status: 'stocked', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 3299, warranty: '2027-04-20', supplier: '京东企业购' },
+  { code: 'IT-2025-0101', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX0', status: 'in_use', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 4499, warranty: '2028-01-15', supplier: '戴尔直销' },
+  { code: 'IT-2025-0102', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX1', status: 'in_use', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 4499, warranty: '2028-01-15', supplier: '戴尔直销' },
+  { code: 'IT-2025-0103', type: 't2', name: 'LG 27UP850-W', brand: 'LG', model: '27UP850', sn: 'LG27UP850A1', status: 'in_use', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 3299, warranty: '2027-02-20', supplier: '京东企业购' },
+  { code: 'IT-2025-0104', type: 't2', name: 'BenQ PD2705Q', brand: 'BenQ', model: 'PD2705Q', sn: 'BNQPD2705A', status: 'in_use', owner: 'u5', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 3899, warranty: '2027-02-20', supplier: '京东企业购' },
+  { code: 'IT-2025-0105', type: 't2', name: 'Dell U2723QE 27"', brand: 'Dell', model: 'U2723QE', sn: 'CN-0M8FX2', status: 'idle', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 4499, warranty: '2028-04-20', supplier: '戴尔直销' },
+  { code: 'IT-2025-0106', type: 't2', name: 'LG 27UP850-W', brand: 'LG', model: '27UP850', sn: 'LG27UP850A2', status: 'idle', owner: null, dept: null, location: 'IT 仓库·A 区', purchase: '2025-04-20', price: 3299, warranty: '2027-04-20', supplier: '京东企业购' },
   // Phones
-  { code: 'IT-2025-0201', type: 't3', name: 'iPhone 15 Pro', brand: 'Apple', model: 'A2848', sn: 'F2LZK5XPG', status: 'assigned', owner: 'u6', dept: 'd4', location: '上海·张江', purchase: '2025-01-20', price: 8999, warranty: '2026-01-20', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0202', type: 't3', name: 'iPhone 15 Pro', brand: 'Apple', model: 'A2848', sn: 'F2LZK5XPH', status: 'assigned', owner: 'u3', dept: 'd2', location: '上海·张江', purchase: '2025-01-20', price: 8999, warranty: '2026-01-20', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0201', type: 't3', name: 'iPhone 15 Pro', brand: 'Apple', model: 'A2848', sn: 'F2LZK5XPG', status: 'in_use', owner: 'u6', dept: 'd4', location: '上海·张江', purchase: '2025-01-20', price: 8999, warranty: '2026-01-20', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0202', type: 't3', name: 'iPhone 15 Pro', brand: 'Apple', model: 'A2848', sn: 'F2LZK5XPH', status: 'in_use', owner: 'u3', dept: 'd2', location: '上海·张江', purchase: '2025-01-20', price: 8999, warranty: '2026-01-20', supplier: 'Apple 企业销售' },
   { code: 'IT-2024-0203', type: 't3', name: 'Samsung S24 Ultra', brand: 'Samsung', model: 'SM-S928', sn: 'SAMS24U001', status: 'idle', owner: null, dept: null, location: 'IT 仓库·B 区', purchase: '2024-12-01', price: 9999, warranty: '2026-12-01', supplier: '三星企业' },
   // Tablets
-  { code: 'IT-2025-0301', type: 't4', name: 'iPad Pro 11"', brand: 'Apple', model: 'M4', sn: 'DMQZK5XIPA', status: 'assigned', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 7999, warranty: '2026-03-15', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0302', type: 't4', name: 'iPad Pro 13"', brand: 'Apple', model: 'M4', sn: 'DMQZK5XIPB', status: 'assigned', owner: 'u5', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 9999, warranty: '2026-03-15', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0301', type: 't4', name: 'iPad Pro 11"', brand: 'Apple', model: 'M4', sn: 'DMQZK5XIPA', status: 'in_use', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 7999, warranty: '2026-03-15', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0302', type: 't4', name: 'iPad Pro 13"', brand: 'Apple', model: 'M4', sn: 'DMQZK5XIPB', status: 'in_use', owner: 'u5', dept: 'd3', location: '上海·张江', purchase: '2025-03-15', price: 9999, warranty: '2026-03-15', supplier: 'Apple 企业销售' },
   // Docks & accessories (一物一码)
-  { code: 'IT-2025-0401', type: 't5', name: 'CalDigit TS4', brand: 'CalDigit', model: 'TS4', sn: 'CDTS4001', status: 'assigned', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2399, warranty: '2027-01-15', supplier: '京东企业购', boundTo: 'IT-2025-0001' },
-  { code: 'IT-2025-0402', type: 't5', name: 'CalDigit TS4', brand: 'CalDigit', model: 'TS4', sn: 'CDTS4002', status: 'assigned', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2399, warranty: '2027-01-15', supplier: '京东企业购', boundTo: 'IT-2025-0002' },
-  { code: 'IT-2025-0403', type: 't6', name: 'Sony WH-1000XM5', brand: 'Sony', model: 'WH-1000XM5', sn: 'SNYWH001', status: 'assigned', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2599, warranty: '2026-01-15', supplier: '索尼官方', boundTo: 'IT-2025-0001' },
-  { code: 'IT-2025-0404', type: 't6', name: 'Apple AirPods Pro 2', brand: 'Apple', model: 'A2698', sn: 'APPRO001', status: 'stocked', owner: null, dept: null, location: 'IT 仓库·B 区', purchase: '2025-04-01', price: 1899, warranty: '2026-04-01', supplier: 'Apple 企业销售' },
-  { code: 'IT-2025-0405', type: 't7', name: 'Logitech Brio 4K', brand: 'Logitech', model: 'Brio', sn: 'LGTBRIO01', status: 'assigned', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 1499, warranty: '2027-02-20', supplier: '罗技企业' },
+  { code: 'IT-2025-0401', type: 't5', name: 'CalDigit TS4', brand: 'CalDigit', model: 'TS4', sn: 'CDTS4001', status: 'in_use', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2399, warranty: '2027-01-15', supplier: '京东企业购', boundTo: 'IT-2025-0001' },
+  { code: 'IT-2025-0402', type: 't5', name: 'CalDigit TS4', brand: 'CalDigit', model: 'TS4', sn: 'CDTS4002', status: 'in_use', owner: 'u11', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2399, warranty: '2027-01-15', supplier: '京东企业购', boundTo: 'IT-2025-0002' },
+  { code: 'IT-2025-0403', type: 't6', name: 'Sony WH-1000XM5', brand: 'Sony', model: 'WH-1000XM5', sn: 'SNYWH001', status: 'in_use', owner: 'u1', dept: 'd1', location: '上海·张江', purchase: '2025-01-15', price: 2599, warranty: '2026-01-15', supplier: '索尼官方', boundTo: 'IT-2025-0001' },
+  { code: 'IT-2025-0404', type: 't6', name: 'Apple AirPods Pro 2', brand: 'Apple', model: 'A2698', sn: 'APPRO001', status: 'idle', owner: null, dept: null, location: 'IT 仓库·B 区', purchase: '2025-04-01', price: 1899, warranty: '2026-04-01', supplier: 'Apple 企业销售' },
+  { code: 'IT-2025-0405', type: 't7', name: 'Logitech Brio 4K', brand: 'Logitech', model: 'Brio', sn: 'LGTBRIO01', status: 'in_use', owner: 'u4', dept: 'd3', location: '上海·张江', purchase: '2025-02-20', price: 1499, warranty: '2027-02-20', supplier: '罗技企业' },
   // Scrapped
   { code: 'IT-2022-0011', type: 't1', name: 'MacBook Pro 13" (旧)', brand: 'Apple', model: 'Intel i7', sn: 'C02OLD001', status: 'scrapped', owner: null, dept: null, location: '已处置', purchase: '2022-03-10', price: 14999, warranty: '2024-03-10', supplier: 'Apple 企业销售' },
   { code: 'IT-2022-0012', type: 't2', name: 'Dell P2419H 24"', brand: 'Dell', model: 'P2419H', sn: 'DELLOLD01', status: 'scrapped', owner: null, dept: null, location: '已处置', purchase: '2022-03-10', price: 1299, warranty: '2025-03-10', supplier: '戴尔直销' },
-  { code: 'IT-2024-0099', type: 't1', name: 'ThinkPad T14', brand: 'Lenovo', model: 'T14 Gen 4', sn: 'PFLT14001', status: 'pending_scrap', owner: null, dept: null, location: 'IT 仓库·待处置', purchase: '2022-05-20', price: 8999, warranty: '2025-05-20', supplier: '联想企业购' },
+  { code: 'IT-2024-0099', type: 't1', name: 'ThinkPad T14', brand: 'Lenovo', model: 'T14 Gen 4', sn: 'PFLT14001', status: 'idle', scrapCandidate: true, owner: null, dept: null, location: 'IT 仓库·待处置', purchase: '2022-05-20', price: 8999, warranty: '2025-05-20', supplier: '联想企业购' },
 ];
 
 // SKU 库存物品(耗材 + 低值配件)
@@ -175,12 +149,15 @@ window.getType = (id) => window.ASSET_TYPES.find(t => t.id === id);
 // Stats
 window.STATS = (() => {
   const total = window.ASSETS.length;
-  const assigned = window.ASSETS.filter(a => a.status === 'assigned').length;
-  const stocked = window.ASSETS.filter(a => a.status === 'stocked').length;
-  const repairing = window.ASSETS.filter(a => a.status === 'repairing').length;
-  const idle = window.ASSETS.filter(a => a.status === 'idle').length;
-  const scrapped = window.ASSETS.filter(a => a.status === 'scrapped' || a.status === 'pending_scrap').length;
+  const inUse = window.ASSETS.filter(a => a.status === 'in_use').length;
+  const idle = window.ASSETS.filter(a => a.status === 'idle' && !a.scrapCandidate).length;
+  const maintenance = window.ASSETS.filter(a => a.status === 'maintenance').length;
+  const scrapped = window.ASSETS.filter(a => a.status === 'scrapped').length;
+  const pendingScrap = window.ASSETS.filter(a => a.scrapCandidate).length;
+  const needsReview = window.ASSETS.filter(a => a.needsReview).length;
   const totalValue = window.ASSETS.filter(a => a.status !== 'scrapped').reduce((s, a) => s + a.price, 0);
   const lowStock = window.SKUS.filter(s => s.stock < s.safety).length;
-  return { total, assigned, stocked, repairing, idle, scrapped, totalValue, lowStock };
+  // Backward-compatible aliases (for screens still using old names)
+  return { total, inUse, idle, maintenance, scrapped, pendingScrap, needsReview,
+           assigned: inUse, stocked: idle, repairing: maintenance, totalValue, lowStock };
 })();

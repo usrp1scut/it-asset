@@ -12,15 +12,7 @@
 
 ## 1. 给产品负责人:开始前要先决定的事
 
-> **决策已定(2026-05-18)**:
-> - **基准 = PRD v0.2**(4 态状态机 `in_use/idle/maintenance/scrapped`、`brand_model/spec/legacy_code/owner_name/scrap_candidate/needs_review`、编号 `PC-0001` 无年份、含 Phase 0 迁移)。本文件与 README、prototype 已对齐到 v0.2;原型 JSX 仅作视觉/交互参考,不进生产。
-> - §1.1 → 全新项目,用「推荐技术栈」。
-> - §1.2 → **飞书与 Lark 都要支持**:`app/lark/client.py` 把 endpoint/域名做成可配置(`open.feishu.cn` ↔ `open.larksuite.com`,passport 同理),不硬编码。
-> - §1.4 → PostgreSQL。§1.3 → 开发用 Docker Compose 起步。
-> - §1.6 → Lark 自建应用已创建,`app_id/app_secret` 由产品负责人放入环境变量(不写入代码库)。
-> - §1.5 → 未明确,暂按小团队 / monorepo / 单前端(`/m` 前缀)/ 8 周;如团队规模不同需重估 CI 与拆分。
-
-以下为原始待决策清单(已由上方决策覆盖,保留备查):
+Claude Code 会问你这些。先想清楚:
 
 ### 1.1 技术栈是否复用现有项目?
 - **A**:公司已有内部脚手架/中后台框架 → 把那个仓库连上,让 Claude Code 沿用
@@ -201,28 +193,9 @@ PRD §10 已经把所有表给齐了。Claude Code 应该按 PRD 把这些表落
 - §10.4 `inventory_tasks`, `inventory_items`
 - §10.5 `item_categories`, `skus`, `inventory_locations`, `inventory_stocks`, `inventory_transactions`, `inventory_orders`, `inventory_order_items`, `employee_item_issues`
 
-**v0.2 关键点(对齐 PRD §10.1 / §13,务必按此落库)**:
+**额外建议字段(PRD 没有但需要)**:
 
 ```sql
--- assets:v0.2 字段(替代 v0.1 的 name/brand/model/sn/owner)
-asset_class      text not null   -- 'personal' | 'infrastructure'
-brand_model      text            -- 自由文本,不拆分,可空
-spec             text            -- 配置自由文本,可空
-serial_number    text            -- 可空,'无'→null
-legacy_code      text            -- 旧临时编号(gw-1 等),可空
-status           text not null   -- 仅 4 态 in_use/idle/maintenance/scrapped
-owner_user_id    bigint          -- 可空
-owner_name       text            -- 使用人原文兜底,可空
-department_name  text            -- 部门原文兜底,可空
-scrap_candidate  boolean default false
-needs_review     boolean default false
--- 除 id/asset_code/asset_class/status/时间戳外,绝大多数字段允许 NULL(容脏)
-
--- 资产编号 sequence(PRD §13.1):每个前缀(PC/MON/NET…)一条 DB sequence
---   asset_code = printf('%s-%04d', prefix, nextval('asset_seq_<prefix>'))
---   禁止 max+1;前缀可配置扩展;不嵌年份
-
--- 额外建议字段
 -- 所有表
 created_at timestamp not null default now()
 updated_at timestamp not null default now()
@@ -268,22 +241,8 @@ id, actor_user_id, action, resource_type, resource_id, payload jsonb, ip, ua, cr
   - **生命周期 Tab(签名时刻)** ⭐ —— 用 React 组件复刻原型的 Timeline
   - **配件绑定 Tab(签名时刻)** ⭐ —— SVG 画树枝线
   - 附件 Tab 留占位
-- [ ] 状态机校验:**仅 4 态 in_use/idle/maintenance/scrapped**,不允许非法跳转;`infrastructure` 类不开放分配/归还动作
+- [ ] 状态机校验:不允许非法跳转
 - [ ] 操作日志自动落审计表
-
-### Sprint 2.5(1 周):Phase 0 存量数据迁移(PRD §13)
-
-> 排在此处(而非 Sprint 2 之前)是因为导入器依赖 Sprint 2 落好的 `assets` 表与编号 sequence。**必须在 Sprint 5 UAT 前完成**,否则没有真实数据可演示。
-
-- [ ] 资产编号 sequence:按前缀(PC/MON/NET)建 DB sequence + `generate_asset_code(prefix)`(禁 max+1)
-- [ ] Excel/云文档导入器:按 PRD §13.2 字段映射,**容脏**——绝大多数字段可空,脏数据置 `needs_review`,不卡门
-  - 类型→`asset_class`(PC/显示器→personal;网络设备→infrastructure;新值→needs_review)
-  - 序列号 `无`→null;`无,临时编号X`→`legacy_code`=X
-  - 使用人匹配飞书用户失败→`owner_name` 留文本 + needs_review
-  - 备注命中"建议报废/无法点亮/损坏/已超10年"→`scrap_candidate`=true
-- [ ] 导入幂等:二次导入以真实 `serial_number` 或已生成 `asset_code` 为匹配键
-- [ ] 导出带编号清单(供 IT 打印贴标)+ 编号回写流程说明
-- [ ] `needs_review` 队列页(管理端筛选 chip)供 IT 逐步人工核对
 
 ### Sprint 3(1.5 周):库存物品
 - [ ] 数据库:`skus / inventory_stocks / inventory_transactions / inventory_orders / inventory_order_items / employee_item_issues`
@@ -314,7 +273,7 @@ id, actor_user_id, action, resource_type, resource_id, payload jsonb, ip, ua, cr
 - [ ] 操作日志列表页(系统设置下)
 - [ ] 部署到测试环境,业务方走一遍 UAT
 
-### 总计:9 周(8 周 MVP + 1 周 Phase 0 存量迁移)
+### 总计:8 周 MVP
 
 ---
 
@@ -472,7 +431,6 @@ PRD §13 要求所有资产状态变化、库存变化都要留痕。建议用 S
 
 ## 9. 不要做的事(防止 Claude Code 跑偏)
 
-❌ 不要采用原型 `data.js` 里的旧 8 态 / 带年份编号(`IT-2025-0001`)/ `name/brand/model/sn` 字段 —— **唯一基准是 PRD v0.2**(4 态 + `PC-0001` + `brand_model/spec/...`)
 ❌ 不要把原型 HTML 直接搬过去当生产代码
 ❌ 不要在 Phase 1 引入 MDM / Jamf / CMDB / 财务系统对接(PRD §12.2 明确暂缓)
 ❌ 不要自己设计审批流编排引擎(用最简单的「主管→IT」两步固定流即可)
@@ -490,8 +448,7 @@ PRD §13 要求所有资产状态变化、库存变化都要留痕。建议用 S
 1. ✅ 员工打开 Lark 工作台进入应用,免登成功,看到首页
 2. ✅ 员工提交「申请领用 USB-C 转 HDMI 转接头 × 1」,Lark 收到审批卡片
 3. ✅ 部门主管在 Lark 卡片点「同意」,审批通过,IT 管理员收到「待发放」提醒
-4. ✅ IT 管理员在 Web 后台「资产台账」筛选 `在用 in_use` 状态,搜索员工姓名,看到对应资产
-4b. ✅ Phase 0 导入的存量资产已生成 `PC/MON/NET-####` 编号,`needs_review` 队列可见可核
+4. ✅ IT 管理员在 Web 后台「资产台账」筛选 `已领用` 状态,搜索员工姓名,看到对应资产
 5. ✅ 点击一条资产打开抽屉,看到完整生命周期 + 配件绑定
 6. ✅ 工作台显示正确的 KPI 和图表
 7. ✅ 库存预警 SKU 自动每周一推送给 IT 管理员
@@ -506,109 +463,10 @@ PRD §13 要求所有资产状态变化、库存变化都要留痕。建议用 S
 | 风险 | 应对 |
 |---|---|
 | Lark 通讯录权限审批慢 | Sprint 1 开始前就提交申请,平行推进 |
-| 业务方对状态机有歧义 | 严格按 PRD §5.1 **v0.2 四态**(in_use/idle/maintenance/scrapped)实现;旧 8 态/已丢失/待报废一律不引入,有歧义找业务方拍板 |
+| 业务方对状态机有歧义 | 严格按 PRD §5.1 实现,有歧义找业务方拍板 |
 | 二维码标签打印对接复杂 | Phase 1 只生成 QR 图,实物打印放 Phase 2 |
 | 移动端在 Lark 内 webview 兼容 | 早期就在真机 Lark 里测,不要只在浏览器看 |
 | 员工端中英双语翻译 | Phase 1 只做骨架,完整翻译让业务方提供 |
-
----
-
-## 12. Phase 2 路线图
-
-> 写于 2026-05-22,Phase 1 验收已落地。基于 **PRD §12.2(第一版暂缓)**
-> 和 UAT 反馈,把 Phase 2 拆成可挑选的 Sprint。仍按「小步快走、一 Sprint 一
-> PR」节奏。排序为推荐优先级,产品负责人按需重排。
-
-### 12.0 Phase 2 已落地的部分
-
-按 PRD §12.2 / UAT 反馈先做的,已上线:
-
-| 模块 | 已完成功能 |
-|---|---|
-| 资产 | 报废处置工作流(申请→审批→处置)、维修工单(开单→进度→完结/取消)、软删除、删除按钮、QR 批量打印 PDF、摄像头扫码、**资产类型 CRUD + 类型驱动新建 + 旧资产回填**、责任人/部门防误改 |
-| 库存 | 库存物品软删除、库存调整(盘盈/盘亏/损耗/清零)、SKU + 流水 Excel 导出 |
-| 用户 / 同步 | 取 Lark `nickname` 拼显示名、自动模糊匹配绑定责任人、同步时回填资产快照、关联部门 |
-| 操作日志 | 显示操作人姓名、覆盖库存出入库 / 盘点动作 |
-| 工作台 | 「待我审批」接真实数据 |
-| 入口 | 管理员/员工视图双向切换 |
-
-### 12.1 Phase 2 候选 Sprint(按优先级)
-
-#### Sprint 6 — 资产折旧与账面价值(PRD §12.2 #3)
-**目标**:利用 `asset_types.depreciation_years`(已有字段)计算账面价值。
-- 后端:`book_value(asset)` 工具函数 —— 直线折旧,从 `purchase_date` 起算,扣减后取下限 0。
-- 资产详情新增「账面价值」展示(原值 / 已折旧 / 剩余账面)。
-- 工作台「资产总值」补充「账面总值」KPI。
-- 按类型 / 部门的折旧汇总报表。
-- **范围外**:加速折旧 / 残值率 / 多种折旧方法(看 PRD §2.2 财务深度,本期只做朴素直线法)。
-
-#### Sprint 7 — 供应商管理(PRD §12.2 #6)
-**目标**:把 `Asset.supplier`(自由文本)升级为主数据。
-- 新表 `suppliers`(name, contact, phone, address, remark)+ CRUD。
-- 「供应商」管理页(adminOnly)。
-- `Asset.supplier_id` (FK) 与 `Asset.supplier` (text) 并存:编辑时下拉选,留兜底文本给脏数据。
-- 数据迁移:把现有 supplier 文本去重生成主数据 + 把资产指过去。
-
-#### Sprint 8 — Lark 通知扩展(PRD §12.1 #15 延伸)
-**目标**:把现有 Lark 机器人卡片能力扩展到更多场景。
-- 盘点未确认者催办(可手动触发,也可定时):给未确认资产的责任人发卡片。
-- 库存预警机器人推送(`scan_low_stock` 已扫,补 push 卡片到 IT 群)。
-- 资产被分配 / 转移 / 报废 / 维修开单 时通知相关员工。
-- 卡片回调按需扩展(已收到 / 确认无误)。
-- **前置**:Lark 应用权限范围 `im:message`(发卡片)需已开通。
-
-#### Sprint 9 — 报表 / 统计扩展(PRD §12.2 延伸)
-**目标**:扩展现有 Excel 导出 + 工作台。
-- 资产按 部门 / 类型 / 状态 透视报表(Excel)。
-- 月度库存出入库汇总(按 SKU、按类型、按操作人)。
-- 资产生命周期事件统计(分配 / 归还 / 维修 / 报废 月度趋势)。
-- 报表中心页(可扩展 / 替代现有工作台图表)。
-
-#### Sprint 10 — 自动采购建议(PRD §12.2 #4)
-**目标**:补货建议自动算。
-- 基于 `monthly_use` + `safety_stock` + 最近 N 月实际出库,算建议补货量。
-- 周期任务 + 仪表盘卡片 +(可选)采购员 Lark 通知。
-- **范围外**:不接外部采购系统,只输出建议;采购员手动下单。
-
-#### Sprint 11 — 批量打印增强(PRD §12.2 #7,已部分做)
-**目标**:在已有 QR 标签 PDF 基础上加灵活度。
-- 标签模板:32/p、24/p、12/p 等不同布局。
-- 不同纸张尺寸(A4 / Letter)。
-- 可选条码格式(Code128 / EAN-13)。
-- 标签内容字段可配(编号 / 品牌 / 责任人 / 部门 / 二维码)。
-
-#### Sprint 12 — 多仓库与跨仓调拨(PRD §12.2 #1)
-**目标**:`InventoryLocation` 模型已有,补足跨仓流程。
-- 跨仓调拨单(transfer):出库仓 → 入库仓 + 流水。
-- 库位级库存查询。
-- 库位间安全库存与补货策略。
-- 库位负责人。
-- **慎重**:多数中小团队只有一个 IT 仓库;先看真实需求再做。
-
-#### Sprint 13 — 复杂审批编排(PRD §12.2 #5)
-**目标**:把当前固定的「主管 → IT」两步流改为可配置。
-- 审批规则配置(按申请类型 / 金额 / 部门走不同流)。
-- 多步骤、并行 / 串行、条件分支。
-- 角色 / 具体人 审批配置。
-- **慎重**:复杂度高,DEV PLAN §9 原本禁;先看业务方是否真有这需求再开做。
-
-### 12.2 长期暂不做(PRD §2.2)
-
-- 软件 License 管理
-- 云资源自动发现 / 自动同步
-- CMDB 深度集成
-- MDM / Jamf / Intune 自动同步
-- 多租户 SaaS 化
-- 财务系统深度集成(SAP / 用友 / 金蝶 等)
-- 复杂采购流程(超出 §12.2 #4 自动建议)
-
-### 12.3 跨 Sprint 待办(随时可做的小项)
-
-- Lark 应用 `nickname` / 部门 字段权限(待业务方在开发者后台开通 + 审批,代码无需改)
-- 服务器 `.env` 配 `PUBLIC_BASE_URL`(启用二维码扫码跳转资产页)
-- 操作日志「操作人」在用户被删 / 改名时仍能正确显示当时姓名(目前实时拉,改名后会"溯及既往")
-- 移动端 H5 UI 改进(业务方走完真机 UAT 后挑改进点)
-- Phase 0 `needs_review` 队列专属页(目前可通过台账「仅看待核」筛选实现,够用)
 
 ---
 

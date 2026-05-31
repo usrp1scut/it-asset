@@ -5,11 +5,11 @@ const Dashboard = ({ onNav, onOpenAsset }) => {
 
   // Status distribution (donut)
   const statusData = [
-    { key: 'assigned', label: '已领用', count: stats.assigned, color: '#3370FF' },
-    { key: 'stocked', label: '库存中', count: stats.stocked, color: '#00B42A' },
-    { key: 'repairing', label: '维修中', count: stats.repairing, color: '#FF8800' },
-    { key: 'idle', label: '闲置', count: stats.idle, color: '#7E5EE5' },
-    { key: 'scrapped', label: '报废', count: stats.scrapped, color: '#C9CDD4' },
+    { key: 'in_use', label: '在用', count: stats.inUse, color: '#3370FF' },
+    { key: 'idle', label: '闲置', count: stats.idle, color: '#00B42A' },
+    { key: 'maintenance', label: '维修中', count: stats.maintenance, color: '#FF8800' },
+    { key: 'pending_scrap', label: '报废中', count: stats.pendingScrap, color: '#7E5EE5' },
+    { key: 'scrapped', label: '已报废', count: stats.scrapped, color: '#C9CDD4' },
   ];
   const statusTotal = statusData.reduce((s, d) => s + d.count, 0);
 
@@ -34,11 +34,11 @@ const Dashboard = ({ onNav, onOpenAsset }) => {
   const areaPath = (data) => linePath(data) + ` L ${padding.l + (data.length - 1) * xStep} ${padding.t + innerH} L ${padding.l} ${padding.t + innerH} Z`;
 
   // Recent activity
-  const recentAssets = window.ASSETS.filter(a => a.status === 'assigned').slice(0, 5);
+  const recentAssets = window.ASSETS.filter(a => a.status === 'in_use').slice(0, 5);
 
   // Department distribution
   const deptDist = window.DEPARTMENTS.map(d => ({
-    ...d, count: window.ASSETS.filter(a => a.dept === d.id && a.status === 'assigned').length,
+    ...d, count: window.ASSETS.filter(a => a.dept === d.id && a.status === 'in_use').length,
   })).filter(d => d.count > 0).sort((a, b) => b.count - a.count);
   const maxDept = Math.max(...deptDist.map(d => d.count));
 
@@ -52,8 +52,8 @@ const Dashboard = ({ onNav, onOpenAsset }) => {
           </div>
           <div style={{ fontSize: 13, color: 'var(--text-3)', marginTop: 4 }}>
             今天有 <b style={{ color: 'var(--lark-blue)' }}>{window.APPROVALS.length}</b> 个待审批 ·
-            <b style={{ color: 'var(--warning)' }}> {stats.lowStock}</b> 个 SKU 库存预警 ·
-            <b style={{ color: 'var(--text-2)' }}> {stats.repairing}</b> 件资产维修中
+            <b style={{ color: 'var(--warning)' }}>{stats.lowStock}</b> 个 SKU 库存预警 ·
+            <b style={{ color: 'var(--text-2)' }}>{stats.maintenance}</b> 件资产维修中
           </div>
         </div>
         <div style={{ display: 'flex', gap: 8 }}>
@@ -325,4 +325,4 @@ const KPICard = ({ label, value, suffix, trend, trendDir, hint, icon, color }) =
   );
 };
 
-Object.assign(window, { Dashboard });
+Object.assign(window, { Dashboard, tableHeaderStyle, tableCellStyle, KPICard });
