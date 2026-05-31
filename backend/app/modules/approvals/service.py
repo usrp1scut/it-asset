@@ -1,7 +1,7 @@
 import uuid
 
 import anyio
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -52,27 +52,53 @@ def _load(db: Session, req_id: int) -> ApprovalRequest:
     return req
 
 
-def approve(db: Session, req_id: int, operator: User) -> ApprovalRequest:
+def approve(db: Session, req_id: int, operator: User, note: str | None = None) -> ApprovalRequest:
     req = _load(db, req_id)
     if req.status != ApprovalStatus.pending:
         raise ApprovalError(f"当前状态 {req.status} 不可审批")
     req.status = ApprovalStatus.approved
     req.decided_by = operator.id
+    req.decided_at = func.now()
+    req.decision_note = note
     db.commit()
     db.refresh(req)
     _notify(f"申请 {req.request_no} 已通过,待 IT 发放")
     return req
 
 
-def reject(db: Session, req_id: int, operator: User) -> ApprovalRequest:
+def reject(db: Session, req_id: int, operator: User, note: str | None = None) -> ApprovalRequest:
     req = _load(db, req_id)
     if req.status != ApprovalStatus.pending:
         raise ApprovalError(f"当前状态 {req.status} 不可审批")
     req.status = ApprovalStatus.rejected
     req.decided_by = operator.id
+    req.decided_at = func.now()
+    req.decision_note = note
     db.commit()
     db.refresh(req)
     return req
+
+
+def batch_decide(
+    db: Session, ids: list[int], action: str, operator: User, note: str | None = None
+) -> dict:
+    """Approve/reject several pending requests at once. Non-pending or unknown
+    ids are skipped (reported in `skipped`), so the call is forgiving."""
+    fn = approve if action == "approve" else reject
+    done, skipped = 0, 0
+    for rid in ids:
+        try:
+            fn(db, rid, operator, note)
+            done += 1
+        except ApprovalError:
+            skipped += 1
+    return {"done": done, "skipped": skipped}
+
+
+def list_all(db: Session) -> list[ApprovalRequest]:
+    return list(
+        db.scalars(select(ApprovalRequest).order_by(ApprovalRequest.created_at.desc())).all()
+    )
 
 
 def fulfill(db: Session, req_id: int, operator: User) -> ApprovalRequest:

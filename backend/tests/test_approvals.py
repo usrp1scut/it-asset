@@ -149,3 +149,55 @@ def test_dashboard_pending_reflects_requests():
     ov = client.get("/api/dashboard/overview", headers=admin).json()
     assert ov["stats"]["pending_approvals"] >= 1
     assert len(ov["recent_approvals"]) >= 1
+
+
+def test_approval_enriched_names_and_items():
+    admin, _ = _login("it_admin")
+    emp_h, emp = _login("employee")
+    sid = _stocked_sku(admin, 10)
+    req = client.post(
+        "/api/m/requests",
+        json={"request_type": "consumable", "items": [{"sku_id": sid, "qty": 2}],
+              "reason": "会议室"},
+        headers=emp_h,
+    ).json()
+    # the create response is already enriched
+    assert req["requester_name"] == emp["name"]
+    assert req["items"] and req["items"][0]["name"] == "鼠标"
+    assert req["items"][0]["qty"] == 2
+
+    # approve with a note → enriched approver_name + decision_note + decided_at
+    a = client.post(f"/api/approvals/{req['id']}/approve",
+                    json={"note": "同意,下周发"}, headers=admin).json()
+    assert a["status"] == "approved"
+    assert a["decision_note"] == "同意,下周发"
+    assert a["approver_name"] is not None and a["decided_at"] is not None
+
+
+def test_approval_batch_and_scope_all():
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    sid = _stocked_sku(admin, 10)
+    ids = []
+    for _ in range(3):
+        ids.append(client.post(
+            "/api/m/requests",
+            json={"request_type": "consumable", "items": [{"sku_id": sid, "qty": 1}],
+                  "reason": "批量"},
+            headers=emp_h,
+        ).json()["id"])
+
+    res = client.post("/api/approvals/batch",
+                      json={"ids": ids, "action": "approve", "note": "批量通过"},
+                      headers=admin)
+    assert res.status_code == 200 and res.json()["done"] == 3
+
+    # re-running is forgiving — all now non-pending, so skipped
+    again = client.post("/api/approvals/batch",
+                        json={"ids": ids, "action": "approve"}, headers=admin).json()
+    assert again["done"] == 0 and again["skipped"] == 3
+
+    # scope=all surfaces the approved ones (the approval-centre history view)
+    all_rows = client.get("/api/approvals?scope=all", headers=admin).json()
+    got = {r["id"]: r for r in all_rows}
+    assert all(got[i]["status"] == "approved" for i in ids)
