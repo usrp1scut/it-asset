@@ -24,6 +24,7 @@ const ITEMS: MenuItemDef[] = [
   { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true, section: '流程管理' },
   { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
   { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
+  { key: '/offboarding', label: '离职归还', icon: 'user', adminOnly: true },
   // Tools / system group
   { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '工具与系统' },
   { key: '/logs', label: '操作日志', icon: 'clock' },
