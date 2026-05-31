@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Button,
   Form,
@@ -7,10 +8,10 @@ import {
   Modal,
   Popconfirm,
   Progress,
+  Segmented,
   Select,
   Space,
   Table,
-  Tabs,
   Tag,
   message,
 } from 'antd'
@@ -40,6 +41,7 @@ interface ItemRow {
   location: string | null
   confirm_status: ConfirmStatus
   remark: string | null
+  expected_owner_id: number | null
 }
 
 interface TaskDetail extends TaskListRow {
@@ -54,14 +56,233 @@ const SCOPES: { value: string; label: string }[] = [
   { value: 'by_department', label: '按部门 ID' },
 ]
 
-const CONFIRM_META: Record<ConfirmStatus, { label: string; color: string }> = {
-  pending: { label: '待核', color: 'default' },
-  ok: { label: '已确认', color: 'green' },
-  mismatch: { label: '差异', color: 'red' },
+// ── kanban helpers ───────────────────────────────────────────────────────────
+
+const AVATAR_COLORS = [
+  '#3370FF', '#00B42A', '#FF8800', '#7E5EE5',
+  '#F53F3F', '#00B2C7', '#D4380D', '#52C41A',
+]
+function colorFor(seed: string): string {
+  let h = 0
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
+  return AVATAR_COLORS[h % AVATAR_COLORS.length]
+}
+
+function CircleProgress({ percent, size = 38, color }: { percent: number; size?: number; color: string }) {
+  const r = size / 2 - 3
+  const c = 2 * Math.PI * r
+  return (
+    <svg width={size} height={size} aria-hidden>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#F2F3F5" strokeWidth="3" />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={color}
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeDasharray={c}
+        strokeDashoffset={c - (percent / 100) * c}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        style={{ transition: 'stroke-dashoffset 0.4s' }}
+      />
+    </svg>
+  )
+}
+
+const ITEM_DOT: Record<ConfirmStatus, { dot: string; bg: string }> = {
+  pending: { dot: '#86909C', bg: '#FAFBFC' },
+  ok: { dot: '#00B42A', bg: '#fff' },
+  mismatch: { dot: '#F53F3F', bg: '#FFF7F5' },
+}
+
+const CONFIRM_LABEL: Record<ConfirmStatus, string> = {
+  pending: '待确认',
+  ok: '已确认',
+  mismatch: '差异',
+}
+
+interface OwnerBucket {
+  key: string
+  name: string
+  isUnassigned: boolean
+  items: ItemRow[]
+  ok: number
+  mismatch: number
+  pending: number
+}
+
+function bucketByOwner(items: ItemRow[]): OwnerBucket[] {
+  const map = new Map<string, OwnerBucket>()
+  for (const it of items) {
+    const unassigned = it.expected_owner_id == null && !it.owner_name
+    const key = it.expected_owner_id != null ? `u${it.expected_owner_id}` : `n:${it.owner_name ?? '__'}`
+    let b = map.get(key)
+    if (!b) {
+      b = {
+        key,
+        name: it.owner_name ?? '未分配 / 基础设施',
+        isUnassigned: unassigned,
+        items: [],
+        ok: 0,
+        mismatch: 0,
+        pending: 0,
+      }
+      map.set(key, b)
+    }
+    b.items.push(it)
+    b[it.confirm_status] += 1
+  }
+  // pending groups first, then mismatch, then done; stable-ish by name.
+  const rank = (b: OwnerBucket) => (b.pending > 0 ? 0 : b.mismatch > 0 ? 1 : 2)
+  return [...map.values()].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name))
+}
+
+function OwnerGroup({
+  bucket,
+  filter,
+  onOpen,
+}: {
+  bucket: OwnerBucket
+  filter: 'all' | ConfirmStatus
+  onOpen: (code: string) => void
+}) {
+  const shown = filter === 'all' ? bucket.items : bucket.items.filter((i) => i.confirm_status === filter)
+  if (shown.length === 0) return null
+
+  const total = bucket.items.length
+  const completion = total ? Math.round(((bucket.ok + bucket.mismatch) / total) * 100) : 0
+  const state = bucket.pending > 0 ? 'pending' : bucket.mismatch > 0 ? 'mismatch' : 'done'
+  const banner = {
+    pending: { bg: '#FFF7E8', accent: '#FF8800', text: '待确认' },
+    mismatch: { bg: '#FFECE8', accent: '#F53F3F', text: '存在差异' },
+    done: { bg: '#E8FFEA', accent: '#00B42A', text: '已全部确认' },
+  }[state]
+  const avColor = bucket.isUnassigned ? '#86909C' : colorFor(bucket.name)
+
+  return (
+    <div style={{ background: '#fff', borderRadius: 10, border: '1px solid var(--border)', overflow: 'hidden' }}>
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 14,
+          padding: '12px 18px',
+          borderLeft: `3px solid ${banner.accent}`,
+          background: banner.bg,
+        }}
+      >
+        <div
+          style={{
+            width: 40,
+            height: 40,
+            borderRadius: '50%',
+            background: avColor,
+            color: '#fff',
+            display: 'inline-flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 16,
+            fontWeight: 500,
+            flexShrink: 0,
+          }}
+        >
+          {bucket.isUnassigned ? '—' : bucket.name.slice(0, 1)}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text-1)' }}>{bucket.name}</span>
+            <span
+              style={{
+                fontSize: 11,
+                padding: '1px 8px',
+                borderRadius: 3,
+                background: '#fff',
+                color: banner.accent,
+                fontWeight: 500,
+              }}
+            >
+              {banner.text}
+            </span>
+          </div>
+          <div style={{ fontSize: 12, color: 'var(--text-3)', marginTop: 3 }}>
+            共 {total} 件 · 已确认 {bucket.ok} · 差异 {bucket.mismatch} · 待确认 {bucket.pending}
+          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <CircleProgress percent={completion} color={banner.accent} />
+          <span style={{ fontSize: 13, fontWeight: 600, color: banner.accent }}>{completion}%</span>
+        </div>
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}>
+        {shown.map((it) => {
+          const s = ITEM_DOT[it.confirm_status]
+          return (
+            <button
+              key={it.asset_code}
+              onClick={() => onOpen(it.asset_code)}
+              style={{
+                display: 'flex',
+                alignItems: 'flex-start',
+                gap: 10,
+                padding: '12px 16px',
+                borderTop: '1px solid var(--divider)',
+                borderRight: '1px solid var(--divider)',
+                background: s.bg,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <span
+                style={{
+                  width: 8,
+                  height: 8,
+                  borderRadius: '50%',
+                  background: s.dot,
+                  marginTop: 6,
+                  flexShrink: 0,
+                }}
+              />
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="text-mono" style={{ fontSize: 12, color: 'var(--lark-blue)' }}>
+                    {it.asset_code}
+                  </span>
+                  <span style={{ fontSize: 11, color: ITEM_DOT[it.confirm_status].dot }}>
+                    {CONFIRM_LABEL[it.confirm_status]}
+                  </span>
+                </div>
+                <div
+                  style={{
+                    fontSize: 13,
+                    color: 'var(--text-1)',
+                    marginTop: 2,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
+                  {it.brand_model ?? '(未填型号)'}
+                </div>
+                {it.confirm_status === 'mismatch' && it.remark && (
+                  <div style={{ fontSize: 12, color: 'var(--danger)', marginTop: 2 }}>
+                    差异:{it.remark}
+                  </div>
+                )}
+              </div>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
 }
 
 export default function Inspections() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [selectedId, setSelectedId] = useState<number | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [scope, setScope] = useState('personal_in_use')
@@ -84,8 +305,7 @@ export default function Inspections() {
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['inspections'] })
-    if (selectedId !== null)
-      qc.invalidateQueries({ queryKey: ['inspection', selectedId] })
+    if (selectedId !== null) qc.invalidateQueries({ queryKey: ['inspection', selectedId] })
   }
 
   const createMut = useMutation({
@@ -103,10 +323,10 @@ export default function Inspections() {
 
   const confirmMut = useMutation({
     mutationFn: async (v: { code: string; status: ConfirmStatus; remark?: string }) =>
-      api.post(
-        `/inspections/${selectedId}/items/${v.code}/confirm`,
-        { status: v.status, remark: v.remark || null },
-      ),
+      api.post(`/inspections/${selectedId}/items/${v.code}/confirm`, {
+        status: v.status,
+        remark: v.remark || null,
+      }),
     onSuccess: (_d, v) => {
       message.success(v.status === 'ok' ? '已确认' : '已记差异')
       setScanCode('')
@@ -155,39 +375,18 @@ export default function Inspections() {
         <Tag color={s === 'open' ? 'blue' : 'default'}>{s === 'open' ? '进行中' : '已关闭'}</Tag>
       ),
     },
-    { title: '开始时间', dataIndex: 'started_at', render: (v) => (v ? v.slice(0, 19).replace('T', ' ') : '—') },
+    {
+      title: '开始时间',
+      dataIndex: 'started_at',
+      render: (v) => (v ? v.slice(0, 19).replace('T', ' ') : '—'),
+    },
   ]
 
-  const itemCols: ColumnsType<ItemRow> = [
-    {
-      title: '资产编号',
-      dataIndex: 'asset_code',
-      render: (v) => <span className="text-mono">{v}</span>,
-    },
-    {
-      title: '名称',
-      render: (_, r) => (
-        <div>
-          <div>{r.brand_model ?? '—'}</div>
-          <div style={{ fontSize: 12, color: 'var(--text-3)' }}>
-            {r.owner_name ?? '—'} · {r.location ?? '—'}
-          </div>
-        </div>
-      ),
-    },
-    {
-      title: '核对状态',
-      dataIndex: 'confirm_status',
-      render: (s: ConfirmStatus) => {
-        const m = CONFIRM_META[s]
-        return <Tag color={m.color}>{m.label}</Tag>
-      },
-    },
-    { title: '备注', dataIndex: 'remark', render: (v) => v ?? '—' },
-  ]
-
-  const items = detail?.items ?? []
-  const filtered = tab === 'all' ? items : items.filter((i) => i.confirm_status === tab)
+  const items = useMemo(() => detail?.items ?? [], [detail])
+  const buckets = useMemo(() => bucketByOwner(items), [items])
+  const visibleBuckets = buckets.filter(
+    (b) => tab === 'all' || b.items.some((i) => i.confirm_status === tab),
+  )
 
   return (
     <div style={{ padding: 24 }}>
@@ -209,8 +408,15 @@ export default function Inspections() {
       />
 
       {detail && (
-        <div style={{ marginTop: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ marginTop: 24 }}>
+          <div
+            style={{
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+              marginBottom: 12,
+            }}
+          >
             <div>
               <span style={{ fontSize: 16, fontWeight: 600 }}>{detail.name}</span>
               <Tag style={{ marginLeft: 8 }} color={detail.status === 'open' ? 'blue' : 'default'}>
@@ -232,6 +438,20 @@ export default function Inspections() {
             )}
           </div>
 
+          {/* KPI summary */}
+          <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+            {([
+              ['已确认', detail.progress.ok, '#00B42A', '#E8FFEA'],
+              ['差异', detail.progress.mismatch, '#F53F3F', '#FFECE8'],
+              ['待确认', detail.progress.pending, '#FF8800', '#FFF7E8'],
+            ] as const).map(([label, val, color, bg]) => (
+              <div key={label} style={{ flex: 1, padding: '12px 16px', borderRadius: 8, background: bg }}>
+                <div style={{ fontSize: 22, fontWeight: 600, color }}>{val}</div>
+                <div style={{ fontSize: 12, color: 'var(--text-2)' }}>{label}</div>
+              </div>
+            ))}
+          </div>
+
           {detail.status === 'open' && (
             <div
               style={{
@@ -247,10 +467,7 @@ export default function Inspections() {
                 placeholder="输入或扫描资产编号(如 PC-0001)"
                 value={scanCode}
                 onChange={(e) => setScanCode(e.target.value.trim())}
-                onPressEnter={() =>
-                  scanCode &&
-                  confirmMut.mutate({ code: scanCode, status: 'ok' })
-                }
+                onPressEnter={() => scanCode && confirmMut.mutate({ code: scanCode, status: 'ok' })}
                 style={{ flex: 1 }}
               />
               <Button onClick={() => setScannerOpen(true)}>扫码</Button>
@@ -279,23 +496,33 @@ export default function Inspections() {
             </div>
           )}
 
-          <Tabs
-            activeKey={tab}
+          <Segmented
+            value={tab}
             onChange={(k) => setTab(k as 'all' | ConfirmStatus)}
-            items={[
-              { key: 'all', label: `全部 (${items.length})` },
-              { key: 'pending', label: `待核 (${detail.progress.pending})` },
-              { key: 'ok', label: `已确认 (${detail.progress.ok})` },
-              { key: 'mismatch', label: `差异 (${detail.progress.mismatch})` },
+            options={[
+              { value: 'all', label: `全部 ${items.length}` },
+              { value: 'pending', label: `待核 ${detail.progress.pending}` },
+              { value: 'ok', label: `已确认 ${detail.progress.ok}` },
+              { value: 'mismatch', label: `差异 ${detail.progress.mismatch}` },
             ]}
+            style={{ marginBottom: 16 }}
           />
-          <Table<ItemRow>
-            rowKey="asset_code"
-            columns={itemCols}
-            dataSource={filtered}
-            size="small"
-            pagination={{ pageSize: 10 }}
-          />
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {visibleBuckets.map((b) => (
+              <OwnerGroup
+                key={b.key}
+                bucket={b}
+                filter={tab}
+                onOpen={(code) => navigate(`/assets?code=${encodeURIComponent(code)}`)}
+              />
+            ))}
+            {visibleBuckets.length === 0 && (
+              <div style={{ padding: 48, textAlign: 'center', color: 'var(--text-3)' }}>
+                该筛选下暂无资产
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -339,7 +566,7 @@ export default function Inspections() {
 
       <Space style={{ marginTop: 12 }}>
         <span style={{ fontSize: 12, color: 'var(--text-3)' }}>
-          说明:扫码/输入编号 → 选 OK 或差异;差异行可在「资产台账」打开抽屉做转移/报修等处置。
+          说明:扫码/输入编号 → 选 OK 或差异;点资产卡可在「资产台账」打开抽屉做转移/报修等处置。
         </span>
       </Space>
 
