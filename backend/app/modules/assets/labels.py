@@ -12,9 +12,9 @@ asset_code / brand_model / spec / owner stacked on the right:
 
 Three preset layouts (selectable per render call):
 
-  compact  — 4×8 = 32/page, QR 22mm, smallest text (operations vibe)
-  standard — 3×6 = 18/page, QR 32mm, comfortable text (default for staff)
-  large    — 2×4 =  8/page, QR 48mm, big readable text (servers / printers)
+  compact  — 4×8 = 32/page, QR 18mm, smallest text (operations vibe)
+  standard — 3×6 = 18/page, QR 26mm, comfortable text (default for staff)
+  large    — 2×4 =  8/page, QR 40mm, big readable text (servers / printers)
 
 QR uses `micro=False` so it stays a standard QR (3 finder patterns)
 even for the bare-asset_code payload — Lark scanCode + most generic
@@ -91,7 +91,7 @@ LAYOUTS: dict[str, Layout] = {
     "compact": Layout(
         id="compact",
         label="紧凑 · 4×8(32 张/页)",
-        cols=4, rows=8, qr_mm=22, pad=2, gap=2,
+        cols=4, rows=8, qr_mm=18, pad=2, gap=2,
         pt_code=10, pt_brand=7.5, pt_spec=6.5, pt_owner=6.5,
         line_offsets=(0, 5.5, 9.5, 13),
         line_heights=(4, 3.2, 3, 3),
@@ -100,7 +100,7 @@ LAYOUTS: dict[str, Layout] = {
     "standard": Layout(
         id="standard",
         label="标准 · 3×6(18 张/页)",
-        cols=3, rows=6, qr_mm=32, pad=3, gap=3,
+        cols=3, rows=6, qr_mm=26, pad=3, gap=3,
         pt_code=13, pt_brand=10, pt_spec=8.5, pt_owner=8.5,
         line_offsets=(0, 7, 12.5, 17),
         line_heights=(5, 4.2, 4, 4),
@@ -109,7 +109,7 @@ LAYOUTS: dict[str, Layout] = {
     "large": Layout(
         id="large",
         label="大号 · 2×4(8 张/页)",
-        cols=2, rows=4, qr_mm=48, pad=4, gap=5,
+        cols=2, rows=4, qr_mm=40, pad=4, gap=5,
         pt_code=18, pt_brand=13, pt_spec=11, pt_owner=11,
         line_offsets=(0, 9.5, 17, 23),
         line_heights=(7, 5.5, 5, 5),
