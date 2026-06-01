@@ -62,8 +62,10 @@ class LabelRow:
 class Layout:
     """One label-grid preset.
 
-    All sizes are in mm except font sizes (pt) and truncation budgets
-    (units, where a CJK char is counted as ~2 Latin units).
+    All sizes are in mm except font sizes (pt). Each text line auto-fits
+    to the cell width at render time (see `_fit`), so there are no
+    hand-tuned truncation budgets — the base font sizes below are the
+    *maximum* used; long strings shrink a little then ellipsis-truncate.
     """
 
     id: str
@@ -73,7 +75,7 @@ class Layout:
     qr_mm: float
     pad: float           # inset from cell edge on all sides
     gap: float           # space between QR and text block
-    # Font sizes (pt) for the 4 stacked text lines
+    # Base (max) font sizes (pt) for the 4 stacked text lines
     pt_code: float
     pt_brand: float
     pt_spec: float
@@ -81,10 +83,6 @@ class Layout:
     # Line baselines, expressed as offsets from block_top (mm)
     line_offsets: tuple[float, float, float, float]
     line_heights: tuple[float, float, float, float]
-    # Truncation budgets in "weighted units" (CJK char counts as 2)
-    trunc_brand: int
-    trunc_spec: int
-    trunc_owner: int
 
 
 LAYOUTS: dict[str, Layout] = {
@@ -95,7 +93,6 @@ LAYOUTS: dict[str, Layout] = {
         pt_code=10, pt_brand=7.5, pt_spec=6.5, pt_owner=6.5,
         line_offsets=(0, 5.5, 9.5, 13),
         line_heights=(4, 3.2, 3, 3),
-        trunc_brand=22, trunc_spec=26, trunc_owner=26,
     ),
     "standard": Layout(
         id="standard",
@@ -104,7 +101,6 @@ LAYOUTS: dict[str, Layout] = {
         pt_code=13, pt_brand=10, pt_spec=8.5, pt_owner=8.5,
         line_offsets=(0, 7, 12.5, 17),
         line_heights=(5, 4.2, 4, 4),
-        trunc_brand=28, trunc_spec=34, trunc_owner=34,
     ),
     "large": Layout(
         id="large",
@@ -113,7 +109,6 @@ LAYOUTS: dict[str, Layout] = {
         pt_code=18, pt_brand=13, pt_spec=11, pt_owner=11,
         line_offsets=(0, 9.5, 17, 23),
         line_heights=(7, 5.5, 5, 5),
-        trunc_brand=36, trunc_spec=44, trunc_owner=44,
     ),
 }
 
@@ -144,20 +139,33 @@ def _register_cjk_font(pdf: FPDF) -> str:
     return "Helvetica"
 
 
-def _truncate(s: str, max_units: int) -> str:
-    """Soft truncate so wide CJK strings still fit visually. Counts a
-    CJK char as ~2 Latin units so the printed-width budget is honest."""
-    if not s:
-        return ""
-    weight = 0
-    out: list[str] = []
-    for ch in s:
-        w = 2 if ord(ch) > 0x2E80 else 1
-        if weight + w > max_units:
-            return "".join(out) + "…"
-        weight += w
-        out.append(ch)
-    return "".join(out)
+def _fit(
+    pdf: FPDF, font: str, text: str, max_w: float, base_pt: float,
+    *, min_ratio: float = 0.8,
+) -> tuple[float, str]:
+    """Fit `text` into `max_w` mm using real font metrics.
+
+    Strategy (shrink-to-fit): try the base point size; if it overflows,
+    step the font down toward `base_pt * min_ratio` until it fits. If it
+    still overflows at that floor, drop trailing characters and append an
+    ellipsis. Returns the (point_size, text) to actually draw — so nothing
+    ever spills into the neighbouring cell, and we shrink before we cut.
+    """
+    if not text:
+        return base_pt, ""
+    min_pt = base_pt * min_ratio
+    pt = base_pt
+    while pt >= min_pt:
+        pdf.set_font(font, size=pt)
+        if pdf.get_string_width(text) <= max_w:
+            return pt, text
+        pt -= 0.5
+    # Floor reached and still too wide → ellipsis-truncate at the floor.
+    pdf.set_font(font, size=min_pt)
+    ell = "…"
+    while text and pdf.get_string_width(text + ell) > max_w:
+        text = text[:-1]
+    return min_pt, (text + ell if text else ell)
 
 
 def render_labels_pdf(
@@ -195,32 +203,35 @@ def render_labels_pdf(
         # against the QR; line baselines live on a fixed grid so labels
         # line up across the sheet regardless of which assets have spec.
         tx = x + text_x_offset
-        block_top = qr_y + layout.qr_mm / 2 - (layout.line_offsets[-1] + layout.line_heights[-1]) / 2
+        block_h = layout.line_offsets[-1] + layout.line_heights[-1]
+        block_top = qr_y + layout.qr_mm / 2 - block_h / 2
 
-        def line(idx: int, pt: float, text: str) -> None:
-            pdf.set_font(font, size=pt)
-            pdf.set_xy(tx, block_top + layout.line_offsets[idx])
-            pdf.cell(text_w, layout.line_heights[idx], text, align="L")
+        # Bind per-cell tx/block_top as defaults so the closure captures
+        # this iteration's values (not the loop variable) — and stays clean
+        # under flake8-bugbear B023.
+        def line(idx: int, pt: float, text: str, *, _tx=tx, _top=block_top) -> None:
+            if not text:
+                return
+            fit_pt, fit_text = _fit(pdf, font, text, text_w, pt)
+            pdf.set_font(font, size=fit_pt)
+            pdf.set_xy(_tx, _top + layout.line_offsets[idx])
+            pdf.cell(text_w, layout.line_heights[idx], fit_text, align="L")
 
         # Line 1: asset_code — always present.
         line(0, layout.pt_code, row.asset_code)
 
         # Line 2: brand_model.
-        line(
-            1,
-            layout.pt_brand,
-            _truncate(row.brand_model or "—", layout.trunc_brand),
-        )
+        line(1, layout.pt_brand, row.brand_model or "—")
 
         # Line 3: spec — render only if non-empty (slot reserved
         # regardless so line 4 keeps its baseline).
         if row.spec:
-            line(2, layout.pt_spec, _truncate(row.spec, layout.trunc_spec))
+            line(2, layout.pt_spec, row.spec)
 
         # Line 4: owner · department.
         owner_bits = [b for b in (row.owner_name, row.department_name) if b]
         owner_line = " · ".join(owner_bits) if owner_bits else "未分配"
-        line(3, layout.pt_owner, _truncate(owner_line, layout.trunc_owner))
+        line(3, layout.pt_owner, owner_line)
 
     return bytes(pdf.output())
 
