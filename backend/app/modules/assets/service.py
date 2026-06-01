@@ -49,11 +49,39 @@ def _clear_owner(asset: Asset) -> None:
     asset.owner_name = None
 
 
+def _max_seq_for_prefix(db: Session, prefix: str) -> int:
+    """Highest numeric suffix among existing ``PREFIX-####`` codes (0 if none).
+
+    Soft-deleted assets are included on purpose: their code still occupies
+    the UNIQUE index, so we must not re-issue it. Odd imported codes that
+    don't match ``PREFIX-<digits>`` (e.g. ``PC-A1``) are ignored — they can't
+    contribute a numeric floor.
+    """
+    best = 0
+    for code in db.scalars(
+        select(Asset.asset_code).where(Asset.asset_code.like(f"{prefix}-%"))
+    ):
+        tail = code.split("-", 1)[1]
+        if tail.isdigit():
+            best = max(best, int(tail))
+    return best
+
+
 def generate_asset_code(db: Session, prefix: str) -> str:
     """Allocate the next asset code for `prefix`, concurrency-safe.
 
     Locks the counter row (SELECT … FOR UPDATE) so parallel creates can't
-    collide. Explicitly NOT max(code)+1 (PRD §13.1).
+    collide. The counter drives numbering and gaps are fine — explicitly NOT
+    plain max(code)+1 (PRD §13.1).
+
+    Hardening: the next number is additionally floored at
+    ``(existing max for this prefix) + 1``. That makes auto-allocation
+    collision-proof against (a) a counter that started behind already-migrated
+    data, and (b) a manually entered / imported code (importer honours an
+    explicit ``资产编号`` without bumping the counter). Since ``asset_code`` is
+    UNIQUE, a collision would otherwise hard-fail the create. The floor read
+    happens inside the row lock, so it's atomic w.r.t. concurrent allocations
+    of the same prefix.
     """
     prefix = prefix.upper()
     counter = db.execute(
@@ -63,7 +91,7 @@ def generate_asset_code(db: Session, prefix: str) -> str:
         counter = AssetCodeCounter(prefix=prefix, next_val=1)
         db.add(counter)
         db.flush()
-    n = counter.next_val
+    n = max(counter.next_val, _max_seq_for_prefix(db, prefix) + 1)
     counter.next_val = n + 1
     db.flush()
     return f"{prefix}-{n:04d}"

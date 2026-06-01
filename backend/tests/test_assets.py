@@ -305,6 +305,42 @@ def test_sequential_codes_no_collision():
     assert len(codes) == 5  # all unique
 
 
+def test_generate_code_floored_past_manual_and_lagging_counter():
+    """Auto-allocation must never collide with an existing (manual / imported)
+    code or a counter that started behind real data. Uses a unique prefix so
+    the shared dev DB can't interfere."""
+    from app.db import SessionLocal
+    from app.modules.assets import service
+    from app.modules.assets.models import Asset, AssetCodeCounter, AssetStatus
+
+    prefix = f"QA{uuid.uuid4().hex[:4].upper()}"  # 6 chars, fits String(32)
+    db = SessionLocal()
+    try:
+        # A manually-entered code sits at #50; the counter is still at 1
+        # (simulating import-without-bump and a fresh/lagging counter).
+        db.add(Asset(asset_code=f"{prefix}-0050", asset_class="personal",
+                     status=AssetStatus.idle))
+        db.add(AssetCodeCounter(prefix=prefix, next_val=1))
+        db.commit()
+
+        first = service.generate_asset_code(db, prefix)
+        db.commit()
+        assert first == f"{prefix}-0051"  # floored to max(50)+1, not 0001
+
+        second = service.generate_asset_code(db, prefix)
+        db.commit()
+        assert second == f"{prefix}-0052"  # then plain sequential
+    finally:
+        db.query(Asset).filter(Asset.asset_code.like(f"{prefix}-%")).delete(
+            synchronize_session=False
+        )
+        db.query(AssetCodeCounter).filter(AssetCodeCounter.prefix == prefix).delete(
+            synchronize_session=False
+        )
+        db.commit()
+        db.close()
+
+
 def test_state_machine_and_infrastructure_rule():
     admin = _login()
     emp = client.post(
@@ -470,7 +506,8 @@ def test_infrastructure_repair_completes_back_to_idle():
                          json={"repair_type": "in_house", "reason": "端口故障"},
                          headers=_h(admin))
     assert opened.status_code in (200, 201), opened.text
-    assert client.get(f"/api/assets/{code}", headers=_h(admin)).json()["asset"]["status"] == "maintenance"
+    detail = client.get(f"/api/assets/{code}", headers=_h(admin)).json()
+    assert detail["asset"]["status"] == "maintenance"
     order_id = opened.json()["id"]
 
     # completing must bring an infra asset back to idle (not error on return)
