@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
   Button,
+  DatePicker,
   Form,
   Input,
   InputNumber,
@@ -14,6 +15,7 @@ import {
   Upload,
   message,
 } from 'antd'
+import type { Dayjs } from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -269,7 +271,8 @@ export default function Assets() {
           onFinish={(v: Record<string, unknown>) => {
             const body: Record<string, unknown> = {}
             for (const [k, val] of Object.entries(v)) {
-              if (val !== '' && val !== undefined) body[k] = val
+              if (val === '' || val === undefined || val === null) continue
+              body[k] = k === 'purchase_date' ? (val as Dayjs).format('YYYY-MM-DD') : val
             }
             createMut.mutate(body)
           }}
@@ -325,8 +328,8 @@ export default function Assets() {
             </Form.Item>
           </div>
           <div style={{ display: 'flex', gap: 12 }}>
-            <Form.Item name="purchase_date" label="采购日期 (YYYY-MM-DD)" style={{ flex: 1 }}>
-              <Input placeholder="2025-01-15" />
+            <Form.Item name="purchase_date" label="采购日期" style={{ flex: 1 }}>
+              <DatePicker style={{ width: '100%' }} />
             </Form.Item>
             <Form.Item name="purchase_price" label="采购价" style={{ flex: 1 }}>
               <InputNumber style={{ width: '100%' }} min={0} />

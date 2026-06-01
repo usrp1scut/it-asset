@@ -16,7 +16,7 @@ import {
   Tag,
   message,
 } from 'antd'
-import type { Dayjs } from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../api/client'
 import type { Asset, AssetDetail } from './types'
@@ -193,9 +193,9 @@ export default function AssetDrawer({
       spec: a.spec ?? '',
       serial_number: a.serial_number ?? '',
       location: a.location ?? '',
-      purchase_date: a.purchase_date ?? '',
+      purchase_date: a.purchase_date ? dayjs(a.purchase_date) : undefined,
       purchase_price: a.purchase_price ? Number(a.purchase_price) : undefined,
-      warranty_expire_date: a.warranty_expire_date ?? '',
+      warranty_expire_date: a.warranty_expire_date ? dayjs(a.warranty_expire_date) : undefined,
       supplier: a.supplier ?? '',
       remark: a.remark ?? '',
       scrap_candidate: a.scrap_candidate,
@@ -218,7 +218,11 @@ export default function AssetDrawer({
     } & Record<string, unknown>
     const body: Record<string, unknown> = {}
     for (const [k, val] of Object.entries(rest)) {
-      body[k] = val === '' ? null : val
+      if (k === 'purchase_date' || k === 'warranty_expire_date') {
+        body[k] = val ? (val as Dayjs).format('YYYY-MM-DD') : null
+      } else {
+        body[k] = val === '' ? null : val
+      }
     }
 
     const typeChanged = asset_type_id != null && asset_type_id !== a.asset_type_id
@@ -798,11 +802,11 @@ export default function AssetDrawer({
                 </Form.Item>
               </div>
               <div style={{ display: 'flex', gap: 12 }}>
-                <Form.Item name="purchase_date" label="采购日期 (YYYY-MM-DD)" style={{ flex: 1 }}>
-                  <Input placeholder="2025-01-15" />
+                <Form.Item name="purchase_date" label="采购日期" style={{ flex: 1 }}>
+                  <DatePicker style={{ width: '100%' }} />
                 </Form.Item>
-                <Form.Item name="warranty_expire_date" label="保修截止 (YYYY-MM-DD)" style={{ flex: 1 }}>
-                  <Input placeholder="2027-01-15" />
+                <Form.Item name="warranty_expire_date" label="保修截止" style={{ flex: 1 }}>
+                  <DatePicker style={{ width: '100%' }} />
                 </Form.Item>
                 <Form.Item name="purchase_price" label="采购价" style={{ flex: 1 }}>
                   <InputNumber style={{ width: '100%' }} min={0} />
