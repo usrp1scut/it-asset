@@ -17,6 +17,17 @@ interface Approval {
   requester_name: string | null
   approver_id: number | null
   status: string
+  // Enriched, top-level (from /api/approvals): carries SKU directory names so
+  // we show "罗技 M185 鼠标 ×1" instead of "#42 ×1". payload_json.items stays
+  // the raw {sku_id, qty} source of truth.
+  items?: {
+    sku_id: number
+    sku_code: string | null
+    name: string | null
+    spec: string | null
+    unit: string | null
+    qty: number
+  }[]
   payload_json: {
     items?: { sku_id: number; qty: number }[]
     reason?: string
@@ -78,9 +89,9 @@ function fmtTime(s: string): string {
 }
 
 function itemsText(a: Approval): string {
-  const items = a.payload_json?.items ?? []
+  const items = a.items ?? []
   if (!items.length) return ''
-  return items.map((i) => `#${i.sku_id} ×${i.qty}`).join('、')
+  return items.map((i) => `${i.name ?? `#${i.sku_id}`} ×${i.qty}`).join('、')
 }
 
 export default function MobileAdminApprovals() {
@@ -470,26 +481,28 @@ export default function MobileAdminApprovals() {
                   </div>
 
                   {/* Items */}
-                  {(detail.payload_json?.items?.length ?? 0) > 0 && (
+                  {(detail.items?.length ?? 0) > 0 && (
                     <div style={{ background: '#fff', borderRadius: 12, marginTop: 12, overflow: 'hidden' }}>
                       <div style={{ padding: '10px 14px 4px', fontSize: 12, color: '#86909C' }}>
                         申请物品
                       </div>
-                      {detail.payload_json!.items!.map((it, i) => (
+                      {detail.items!.map((it, i) => (
                         <div
                           key={i}
                           style={{
                             display: 'flex',
                             justifyContent: 'space-between',
+                            gap: 12,
                             padding: '8px 14px',
                             fontSize: 13,
                             color: '#1F2329',
                           }}
                         >
-                          <span style={{ fontFamily: 'ui-monospace, monospace' }}>
-                            SKU #{it.sku_id}
+                          <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {it.name ?? `SKU #${it.sku_id}`}
+                            {it.spec ? <span style={{ color: '#86909C' }}> · {it.spec}</span> : null}
                           </span>
-                          <span>×{it.qty}</span>
+                          <span style={{ whiteSpace: 'nowrap' }}>×{it.qty}{it.unit ? ` ${it.unit}` : ''}</span>
                         </div>
                       ))}
                     </div>
