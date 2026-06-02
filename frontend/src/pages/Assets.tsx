@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import {
+  Alert,
   Button,
   DatePicker,
   Form,
@@ -15,7 +16,7 @@ import {
   Upload,
   message,
 } from 'antd'
-import type { Dayjs } from 'dayjs'
+import dayjs, { type Dayjs } from 'dayjs'
 import type { ColumnsType } from 'antd/es/table'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -55,9 +56,45 @@ export default function Assets() {
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [labelsOpen, setLabelsOpen] = useState(false)
   const [snScanOpen, setSnScanOpen] = useState(false)
+  // Pre-fill for "copy from existing asset": carries descriptive + procurement
+  // fields (model/spec/type/location/supplier/date/price/remark) but NOT the
+  // per-unit fields (serial number, owner) which must be unique / reassigned.
+  const [copySeed, setCopySeed] = useState<Record<string, unknown> | null>(null)
+  const [copyFromCode, setCopyFromCode] = useState<string | null>(null)
   const [form] = Form.useForm()
   const size = 20
   const qc = useQueryClient()
+
+  const openCreateBlank = () => {
+    setCopySeed(null)
+    setCopyFromCode(null)
+    setCreateOpen(true)
+  }
+
+  const openCreateFromAsset = (a: Asset) => {
+    setOpenCode(null) // close the detail drawer
+    setCopySeed({
+      asset_type_id: a.asset_type_id ?? undefined,
+      brand_model: a.brand_model ?? undefined,
+      spec: a.spec ?? undefined,
+      location: a.location ?? undefined,
+      supplier: a.supplier ?? undefined,
+      purchase_date: a.purchase_date ? dayjs(a.purchase_date) : undefined,
+      purchase_price: a.purchase_price ? Number(a.purchase_price) : undefined,
+      remark: a.remark ?? undefined,
+    })
+    setCopyFromCode(a.asset_code)
+    setCreateOpen(true)
+  }
+
+  // Drive the create form whenever it opens (runs after the form commits, so
+  // it's deterministic across reopen — AntD won't re-apply initialValues to a
+  // persisted form store). Blank first, then layer the copy seed if any.
+  useEffect(() => {
+    if (!createOpen) return
+    form.resetFields()
+    if (copySeed) form.setFieldsValue(copySeed)
+  }, [createOpen, copySeed, form])
 
   const createMut = useMutation({
     mutationFn: async (body: object) => (await api.post('/assets', body)).data,
@@ -158,7 +195,7 @@ export default function Assets() {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <h2 style={{ marginTop: 0 }}>资产台账</h2>
         <Space>
-          <Button type="primary" onClick={() => setCreateOpen(true)}>
+          <Button type="primary" onClick={openCreateBlank}>
             新增资产
           </Button>
           <Upload
@@ -257,17 +294,25 @@ export default function Assets() {
       />
       <Modal
         open={createOpen}
-        title="新增资产"
+        title={copyFromCode ? `新增资产 · 复制自 ${copyFromCode}` : '新增资产'}
         width={620}
         onCancel={() => setCreateOpen(false)}
         onOk={() => form.submit()}
         confirmLoading={createMut.isPending}
         destroyOnClose
       >
+        {copyFromCode && (
+          <Alert
+            type="info"
+            showIcon
+            style={{ marginBottom: 16 }}
+            message={`已从 ${copyFromCode} 复制型号 / 配置 / 采购信息`}
+            description="序列号与责任人未复制(每台需唯一 / 单独分配),请按本台实物填写。"
+          />
+        )}
         <Form
           form={form}
           layout="vertical"
-          initialValues={{}}
           onFinish={(v: Record<string, unknown>) => {
             const body: Record<string, unknown> = {}
             for (const [k, val] of Object.entries(v)) {
@@ -357,6 +402,7 @@ export default function Assets() {
         code={openCode}
         onClose={() => setOpenCode(null)}
         onCodeChange={(newCode) => setOpenCode(newCode)}
+        onCopy={openCreateFromAsset}
       />
       <LabelsPrintModal
         open={labelsOpen}

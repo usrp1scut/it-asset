@@ -33,12 +33,15 @@ export default function AssetDrawer({
   code,
   onClose,
   onCodeChange,
+  onCopy,
 }: {
   code: string | null
   onClose: () => void
   // Called when a type change re-codes the asset; lets the parent re-key the
   // drawer onto the new asset_code so it keeps showing the same asset.
   onCodeChange?: (newCode: string) => void
+  // "Copy entry": open the new-asset form pre-filled from this asset.
+  onCopy?: (a: Asset) => void
 }) {
   const qc = useQueryClient()
   const [assignOpen, setAssignOpen] = useState(false)
@@ -273,6 +276,7 @@ export default function AssetDrawer({
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
       <div style={{ display: 'flex', gap: 8 }}>
         <Button onClick={openEdit}>编辑</Button>
+        {onCopy && <Button onClick={() => onCopy(a)}>复制录入</Button>}
         <Popconfirm
           title="删除该资产?"
           description="删除后将从台账移除(记录保留,可在数据库恢复)"
