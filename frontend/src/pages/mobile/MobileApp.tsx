@@ -15,7 +15,15 @@ interface Me {
     asset_type_icon: string | null
     asset_type_color: string | null
   }[]
-  issues: { sku_id: number; quantity: number; status: string; created_at: string }[]
+  issues: {
+    sku_id: number
+    sku_name: string | null
+    spec: string | null
+    unit: string | null
+    quantity: number
+    status: string
+    created_at: string
+  }[]
   pending_todos: number
 }
 interface SkuOpt {
@@ -341,9 +349,21 @@ export default function MobileApp() {
                 fontSize: 13,
               }}
             >
-              <span>SKU #{i.sku_id}</span>
-              <span style={{ color: 'var(--text-3)' }}>
-                × {i.quantity} · {new Date(i.created_at).toLocaleDateString('zh-CN')}
+              <span
+                style={{
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  paddingRight: 8,
+                }}
+              >
+                {i.sku_name ?? `SKU #${i.sku_id}`}
+                {i.spec ? <span style={{ color: 'var(--text-3)' }}> · {i.spec}</span> : null}
+              </span>
+              <span style={{ color: 'var(--text-3)', whiteSpace: 'nowrap' }}>
+                × {i.quantity}
+                {i.unit ? ` ${i.unit}` : ''} · {new Date(i.created_at).toLocaleDateString('zh-CN')}
               </span>
             </div>
           ))}

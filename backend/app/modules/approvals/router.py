@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from app.deps import get_current_user, get_db, require_roles
 from app.lark.security import WebhookAuthError, process_webhook
 from app.modules.approvals import service
+from app.modules.approvals.models import ApprovalRequest
 from app.modules.approvals.schemas import (
     ApprovalItemOut,
     ApprovalOut,
@@ -14,7 +15,6 @@ from app.modules.approvals.schemas import (
     CreateRequestIn,
     DecisionIn,
 )
-from app.modules.approvals.models import ApprovalRequest
 from app.modules.assets.models import Asset, AssetType
 from app.modules.inventory.models import EmployeeItemIssue, Sku
 from app.modules.inventory.service import InsufficientStock
@@ -89,6 +89,25 @@ def my_overview(db: Session = Depends(get_db), user: User = Depends(get_current_
         .order_by(EmployeeItemIssue.created_at.desc())
         .limit(10)
     ).all()
+    # Enrich领用记录 with SKU directory names so the H5「我的」page shows
+    # "罗技 M185 鼠标 ×1" instead of "SKU #42 ×1".
+    issue_sku_ids = {i.sku_id for i in issues if i.sku_id is not None}
+    issue_skus: dict[int, Sku] = (
+        {s.id: s for s in db.scalars(select(Sku).where(Sku.id.in_(issue_sku_ids)))}
+        if issue_sku_ids else {}
+    )
+    issues_out = []
+    for i in issues:
+        s = issue_skus.get(i.sku_id)
+        issues_out.append({
+            "sku_id": i.sku_id,
+            "sku_name": s.name if s else None,
+            "spec": s.spec if s else None,
+            "unit": s.unit if s else None,
+            "quantity": i.quantity,
+            "status": i.status.value,
+            "created_at": i.created_at.isoformat(),
+        })
     my_reqs = service.list_mine(db, user)
     return {
         "user": {"id": user.id, "name": user.name, "role": user.role.value},
@@ -103,11 +122,7 @@ def my_overview(db: Session = Depends(get_db), user: User = Depends(get_current_
             }
             for a in assets
         ],
-        "issues": [
-            {"sku_id": i.sku_id, "quantity": i.quantity, "status": i.status.value,
-             "created_at": i.created_at.isoformat()}
-            for i in issues
-        ],
+        "issues": issues_out,
         "pending_todos": sum(1 for r in my_reqs if r.status.value in ("pending", "approved")),
     }
 
