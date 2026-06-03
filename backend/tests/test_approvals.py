@@ -57,9 +57,12 @@ def test_submit_approve_fulfill_deducts_stock():
     # stock deducted 10 -> 7
     skus = client.get("/api/skus", headers=admin).json()["items"]
     assert next(s for s in skus if s["id"] == sid)["available"] == 7
-    # employee sees the issue
+    # employee sees the issue, enriched with the SKU name (not just #id)
     me = client.get("/api/m/me", headers=emp_h).json()
-    assert any(i["sku_id"] == sid for i in me["issues"])
+    issue = next(i for i in me["issues"] if i["sku_id"] == sid)
+    assert issue["sku_name"] == "鼠标"  # _stocked_sku names it 鼠标
+    assert issue["unit"] == "个"
+    assert issue["quantity"] == 3
 
 
 def test_reject_and_bad_state():
