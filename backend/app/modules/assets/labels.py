@@ -197,9 +197,14 @@ def _fit(
 
 
 def render_labels_pdf(
-    rows: list[LabelRow], layout_id: str = DEFAULT_LAYOUT
+    rows: list[LabelRow], layout_id: str = DEFAULT_LAYOUT, start_offset: int = 0
 ) -> bytes:
-    """Render labels using one of the named layouts in `LAYOUTS`."""
+    """Render labels using one of the named layouts in `LAYOUTS`.
+
+    `start_offset` leaves the first N label slots of the first page blank so a
+    partially-used sheet can be reused — printing starts at slot N (0-based),
+    skipping the already-peeled positions. Clamped to one page.
+    """
     layout = LAYOUTS.get(layout_id) or LAYOUTS[DEFAULT_LAYOUT]
     if layout.label_w is not None and layout.label_h is not None:
         # Physical die-cut sheet: fixed label size + gaps, so the print lands
@@ -230,10 +235,16 @@ def render_labels_pdf(
     font = _register_cjk_font(pdf)
 
     per_page = layout.cols * layout.rows
+    start_offset = max(0, min(start_offset, per_page - 1))
+    current_page = -1
     for i, row in enumerate(rows):
-        slot = i % per_page
-        if slot == 0:
+        # Offset the global slot index so the first `start_offset` slots stay
+        # blank. pos is monotonic, so `page` only ever increases → adding a
+        # page when it changes never skips or duplicates a page.
+        page, slot = divmod(i + start_offset, per_page)
+        if page != current_page:
             pdf.add_page()
+            current_page = page
         col, r = slot % layout.cols, slot // layout.cols
         x = margin_x + col * pitch_x
         y = margin_y + r * pitch_y

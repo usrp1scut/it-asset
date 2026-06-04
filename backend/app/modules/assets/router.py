@@ -26,9 +26,9 @@ from app.modules.assets.schemas import (
     BindAccessoriesIn,
     ChangeLogOut,
     ChangeTypeIn,
-    SetStatusIn,
     NoteIn,
     ReasonIn,
+    SetStatusIn,
     TransferIn,
 )
 from app.modules.assets.state_machine import (
@@ -161,8 +161,11 @@ def export_assets(db: Session = Depends(get_db), _: User = Depends(it_admin)):
 class LabelsIn(BaseModel):
     codes: list[str]
     # Layout key from labels.LAYOUTS — `compact` (4×8), `standard` (3×6),
-    # `large` (2×4). Defaults to compact.
+    # `large` (2×4), `a204` (die-cut 3×6). Defaults to compact.
     layout: str = labels.DEFAULT_LAYOUT
+    # Skip this many leading label slots on the first page (0-based start
+    # position) so a partially-used sheet can be reused. Clamped to one page.
+    start_offset: int = 0
 
 
 @router.get("/labels/layouts")
@@ -211,10 +214,13 @@ def print_labels(
         )
         for c in codes
     ]
-    pdf = labels.render_labels_pdf(rows, layout_id=body.layout)
+    per_page = labels.LAYOUTS[body.layout].cols * labels.LAYOUTS[body.layout].rows
+    start_offset = max(0, min(body.start_offset, per_page - 1))
+    pdf = labels.render_labels_pdf(rows, layout_id=body.layout, start_offset=start_offset)
     write_audit(db, actor_user_id=user.id, action="asset.labels.print",
                 resource_type="asset",
-                payload={"count": len(codes), "layout": body.layout})
+                payload={"count": len(codes), "layout": body.layout,
+                         "start_offset": start_offset})
     return Response(
         content=pdf,
         media_type="application/pdf",

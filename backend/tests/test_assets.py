@@ -294,6 +294,37 @@ def test_labels_pdf_generation():
     assert miss.status_code == 404
 
 
+def test_labels_start_offset_for_partial_sheet_reuse():
+    """start_offset blanks leading slots so a partially-used sheet can be
+    reused — leading skips can push labels onto a second page, and an
+    out-of-range offset is clamped (never errors)."""
+    import re
+
+    from app.modules.assets.labels import LAYOUTS, LabelRow, render_labels_pdf
+
+    def pages(b: bytes) -> int:
+        return int(re.search(rb"/Count (\d+)", b).group(1))
+
+    rows = [LabelRow(asset_code=f"PC-{n:04d}") for n in range(2)]
+    per_page = LAYOUTS["standard"].cols * LAYOUTS["standard"].rows
+    # 2 labels normally fit one page…
+    assert pages(render_labels_pdf(rows, "standard", start_offset=0)) == 1
+    # …but starting at the last slot pushes the 2nd onto page 2.
+    assert pages(render_labels_pdf(rows, "standard", start_offset=per_page - 1)) == 2
+
+    # HTTP path accepts + clamps an absurd offset (still one valid PDF page).
+    admin = _login()
+    code = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+    ).json()["asset_code"]
+    r = client.post(
+        "/api/assets/labels",
+        json={"codes": [code], "layout": "standard", "start_offset": 999},
+        headers=_h(admin),
+    )
+    assert r.status_code == 200 and r.content.startswith(b"%PDF")
+
+
 def test_sequential_codes_no_collision():
     admin = _login()
     codes = {
