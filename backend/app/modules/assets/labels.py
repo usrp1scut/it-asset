@@ -83,6 +83,20 @@ class Layout:
     # Line baselines, expressed as offsets from block_top (mm)
     line_offsets: tuple[float, float, float, float]
     line_heights: tuple[float, float, float, float]
+    # Physical die-cut geometry (mm). Set label_w/label_h to match a real
+    # pre-cut sheet (e.g. A204 亚银 66×47): cells are then placed at
+    # margin + i*(label + gap), so content lands on each physical label
+    # instead of an evenly-divided grid — this is what fixes the "left column
+    # drifts right / right column drifts left" you get when the page is split
+    # evenly but the real label pitch differs. Leave None for generic
+    # full-sheet presets (even division with a uniform _MARGIN). margin_*
+    # default to symmetric auto-centering (computed from gaps) when None.
+    label_w: float | None = None
+    label_h: float | None = None
+    gap_x: float = 0
+    gap_y: float = 0
+    margin_x: float | None = None
+    margin_y: float | None = None
 
 
 LAYOUTS: dict[str, Layout] = {
@@ -109,6 +123,20 @@ LAYOUTS: dict[str, Layout] = {
         pt_code=18, pt_brand=13, pt_spec=11, pt_owner=11,
         line_offsets=(0, 9.5, 17, 23),
         line_heights=(7, 5.5, 5, 5),
+    ),
+    # Die-cut sheet preset — matches the physical 亚银模切 A204 sheet
+    # (3×6 = 18 labels, each 66×47mm). Uses fixed label geometry so the
+    # print registers on each pre-cut label. gap≈2mm → symmetric auto margins
+    # (≈4mm sides, ≈2.5mm top/bottom). If a test print is still off by a hair,
+    # tune gap_x/gap_y (label pitch) or set margin_x/margin_y explicitly.
+    "a204": Layout(
+        id="a204",
+        label="亚银 A204 模切 · 3×6(66×47mm,18 张/页)",
+        cols=3, rows=6, qr_mm=30, pad=3, gap=3,
+        pt_code=12, pt_brand=9.5, pt_spec=8, pt_owner=8,
+        line_offsets=(0, 7, 12.5, 17),
+        line_heights=(5, 4.2, 4, 4),
+        label_w=66, label_h=47, gap_x=2, gap_y=2,
     ),
 }
 
@@ -173,8 +201,27 @@ def render_labels_pdf(
 ) -> bytes:
     """Render labels using one of the named layouts in `LAYOUTS`."""
     layout = LAYOUTS.get(layout_id) or LAYOUTS[DEFAULT_LAYOUT]
-    cell_w = (_PAGE_W - 2 * _MARGIN) / layout.cols
-    cell_h = (_PAGE_H - 2 * _MARGIN) / layout.rows
+    if layout.label_w is not None and layout.label_h is not None:
+        # Physical die-cut sheet: fixed label size + gaps, so the print lands
+        # on each pre-cut label. Pitch (label + gap) is what the page must be
+        # stepped by — dividing the page evenly instead is exactly what makes
+        # the outer columns/rows drift inward.
+        cell_w, cell_h = layout.label_w, layout.label_h
+        pitch_x, pitch_y = cell_w + layout.gap_x, cell_h + layout.gap_y
+        margin_x = (
+            layout.margin_x if layout.margin_x is not None
+            else (_PAGE_W - layout.cols * cell_w - (layout.cols - 1) * layout.gap_x) / 2
+        )
+        margin_y = (
+            layout.margin_y if layout.margin_y is not None
+            else (_PAGE_H - layout.rows * cell_h - (layout.rows - 1) * layout.gap_y) / 2
+        )
+    else:
+        # Generic full-sheet preset: divide the printable area evenly.
+        cell_w = (_PAGE_W - 2 * _MARGIN) / layout.cols
+        cell_h = (_PAGE_H - 2 * _MARGIN) / layout.rows
+        pitch_x, pitch_y = cell_w, cell_h
+        margin_x = margin_y = _MARGIN
     text_x_offset = layout.pad + layout.qr_mm + layout.gap
     text_w = cell_w - text_x_offset - layout.pad
 
@@ -188,8 +235,8 @@ def render_labels_pdf(
         if slot == 0:
             pdf.add_page()
         col, r = slot % layout.cols, slot // layout.cols
-        x = _MARGIN + col * cell_w
-        y = _MARGIN + r * cell_h
+        x = margin_x + col * pitch_x
+        y = margin_y + r * pitch_y
 
         # QR — left side, vertically centered in the cell.
         qr_x = x + layout.pad
