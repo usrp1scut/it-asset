@@ -25,6 +25,7 @@ export default function LabelsPrintModal({
   codes: string[]
 }) {
   const [layoutId, setLayoutId] = useState<string>('compact')
+  const [startOffset, setStartOffset] = useState(0)
   const [previewUrl, setPreviewUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [previewError, setPreviewError] = useState<string | null>(null)
@@ -40,9 +41,16 @@ export default function LabelsPrintModal({
     () => (layouts ?? []).find((l) => l.id === layoutId),
     [layouts, layoutId],
   )
+  const perPage = layout?.per_page ?? 0
+  // Clamp the start slot to one page so it always fits the chosen grid.
+  const offset = perPage ? Math.min(startOffset, perPage - 1) : 0
   const pages = layout && codes.length
-    ? Math.ceil(codes.length / layout.per_page)
+    ? Math.ceil((offset + codes.length) / layout.per_page)
     : 0
+  // Reset the start slot whenever the layout (grid shape) changes.
+  useEffect(() => {
+    setStartOffset(0)
+  }, [layoutId])
 
   // Whenever the modal is open and the layout/codes change, re-render
   // the preview PDF server-side and swap the blob URL.
@@ -55,7 +63,7 @@ export default function LabelsPrintModal({
     api
       .post(
         '/assets/labels',
-        { codes, layout: layoutId },
+        { codes, layout: layoutId, start_offset: offset },
         { responseType: 'blob' },
       )
       .then((res) => {
@@ -74,7 +82,7 @@ export default function LabelsPrintModal({
       cancelled = true
       if (currentUrl) URL.revokeObjectURL(currentUrl)
     }
-  }, [open, codes, layoutId])
+  }, [open, codes, layoutId, offset])
 
   // Drop the in-memory blob when the modal closes so the URL doesn't
   // outlive its DOM consumer.
@@ -129,6 +137,70 @@ export default function LabelsPrintModal({
             </Typography.Text>
           )}
         </Space>
+
+        {layout && (
+          <div>
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}
+            >
+              <span style={{ color: 'var(--text-3)', fontSize: 13 }}>
+                起始位置(复用余纸)· 第 {offset + 1} 格起
+              </span>
+              {offset > 0 && (
+                <Button type="link" size="small" style={{ padding: 0 }} onClick={() => setStartOffset(0)}>
+                  重置 · 从第 1 格
+                </Button>
+              )}
+            </div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: `repeat(${layout.cols}, 1fr)`,
+                gap: 4,
+                maxWidth: layout.cols <= 2 ? 220 : layout.cols === 3 ? 300 : 380,
+              }}
+            >
+              {Array.from({ length: layout.per_page }, (_, idx) => {
+                const printing = idx >= offset && idx < offset + codes.length
+                const skipped = idx < offset
+                return (
+                  <div
+                    key={idx}
+                    onClick={() => setStartOffset(idx)}
+                    title={`第 ${idx + 1} 格${skipped ? ' · 跳过(留空)' : ''}`}
+                    style={{
+                      height: 28,
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      display: 'grid',
+                      placeItems: 'center',
+                      fontSize: 11,
+                      userSelect: 'none',
+                      border: '1px solid',
+                      borderStyle: skipped ? 'dashed' : 'solid',
+                      borderColor: printing ? 'var(--lark-blue)' : 'var(--border)',
+                      background: printing ? 'var(--lark-blue)' : skipped ? '#F2F3F5' : '#fff',
+                      color: printing ? '#fff' : '#C9CDD4',
+                    }}
+                  >
+                    {printing ? idx - offset + 1 : ''}
+                  </div>
+                )
+              })}
+            </div>
+            <Typography.Text
+              type="secondary"
+              style={{ fontSize: 12, display: 'block', marginTop: 6 }}
+            >
+              点选起始格,跳过左上角已撕掉的位置(虚线灰格留空不打印),复用余下的标签纸。
+            </Typography.Text>
+          </div>
+        )}
 
         {previewError ? (
           <Alert type="error" message={previewError} showIcon />
