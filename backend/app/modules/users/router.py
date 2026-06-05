@@ -4,8 +4,6 @@ import secrets
 import time
 
 from fastapi import APIRouter, Depends, HTTPException, status
-
-logger = logging.getLogger(__name__)
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -16,6 +14,8 @@ from app.lark.client import LarkNotConfigured, get_lark_client
 from app.modules.users.models import Role, User
 from app.modules.users.schemas import LoginResult, MeResult, UserOut
 from app.modules.users.service import upsert_user_from_lark
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 

@@ -25,7 +25,9 @@ def _type_id(h: dict, prefix: str) -> int:
 
 def _make_in_use_asset(h: dict, pc: int, owner_id: int, price: float) -> str:
     code = client.post(
-        "/api/assets", json={"asset_type_id": pc, "brand_model": "Off Laptop", "purchase_price": price}, headers=h
+        "/api/assets",
+        json={"asset_type_id": pc, "brand_model": "Off Laptop", "purchase_price": price},
+        headers=h,
     ).json()["asset_code"]
     client.post(f"/api/assets/{code}/assign", json={"user_id": owner_id}, headers=h)
     return code
@@ -42,7 +44,11 @@ def test_offboarding_full_flow():
     code_b = _make_in_use_asset(h, pc, emp_id, 3000)
 
     # create a case → snapshots the employee's two in-use assets
-    case = client.post("/api/offboarding", json={"user_id": emp_id, "last_day": "2026-06-30", "reason": "离职"}, headers=h)
+    case = client.post(
+        "/api/offboarding",
+        json={"user_id": emp_id, "last_day": "2026-06-30", "reason": "离职"},
+        headers=h,
+    )
     assert case.status_code == 201, case.text
     cd = case.json()
     cid = cd["id"]
@@ -56,14 +62,22 @@ def test_offboarding_full_flow():
     assert client.post(f"/api/offboarding/{cid}/close", headers=h).status_code == 409
 
     # return A → asset back to idle, owner cleared
-    r = client.post(f"/api/offboarding/{cid}/items/{code_a}/return", json={"condition": "good"}, headers=h)
+    r = client.post(
+        f"/api/offboarding/{cid}/items/{code_a}/return",
+        json={"condition": "good"},
+        headers=h,
+    )
     assert r.status_code == 200
     asset_a = client.get(f"/api/assets/{code_a}", headers=h).json()["asset"]
     assert asset_a["status"] == "idle" and asset_a["owner_user_id"] is None
     assert r.json()["returned_items"] == 1 and r.json()["pending_items"] == 1
 
     # register B as lost → raises a scrap request (finance write-off)
-    lost = client.post(f"/api/offboarding/{cid}/items/{code_b}/lost", json={"remark": "找不到了"}, headers=h)
+    lost = client.post(
+        f"/api/offboarding/{cid}/items/{code_b}/lost",
+        json={"remark": "找不到了"},
+        headers=h,
+    )
     assert lost.status_code == 200
     assert lost.json()["lost_items"] == 1 and lost.json()["pending_items"] == 0
     scraps = client.get("/api/scrap-requests?status_=pending", headers=h).json()

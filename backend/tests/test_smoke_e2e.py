@@ -83,7 +83,9 @@ def test_full_lifecycle_smoke():
     assert order.status_code in (200, 201), order.text
     oid = order.json()["id"]
     assert _status(h, code) == "maintenance"
-    done = client.post(f"/api/repair-orders/{oid}/complete", json={"resolution": "冒烟修复"}, headers=h)
+    done = client.post(
+        f"/api/repair-orders/{oid}/complete", json={"resolution": "冒烟修复"}, headers=h
+    )
     assert done.status_code == 200, done.text
     assert _status(h, code) == "idle"
 
@@ -91,7 +93,12 @@ def test_full_lifecycle_smoke():
     sr = client.post(f"/api/assets/{code}/scrap-request", json={"reason": "冒烟报废"}, headers=h)
     assert sr.status_code in (200, 201), sr.text
     sid = sr.json()["id"]
-    assert client.post(f"/api/scrap-requests/{sid}/approve", json={"remark": "同意"}, headers=h2).status_code == 200
+    assert (
+        client.post(
+            f"/api/scrap-requests/{sid}/approve", json={"remark": "同意"}, headers=h2
+        ).status_code
+        == 200
+    )
     disposed = client.post(
         f"/api/scrap-requests/{sid}/dispose",
         json={"disposition_method": "recycle", "residual_value": 100},
@@ -104,17 +111,33 @@ def test_full_lifecycle_smoke():
     infra = client.post("/api/assets", json={"asset_type_id": net_type}, headers=h).json()
     icode = infra["asset_code"]
     assert infra["status"] == "idle"
-    assert client.post(f"/api/assets/{icode}/status", json={"status": "in_use"}, headers=h).json()["status"] == "in_use"
-    assert client.post(f"/api/assets/{icode}/status", json={"status": "idle"}, headers=h).json()["status"] == "idle"
+    assert (
+        client.post(
+            f"/api/assets/{icode}/status", json={"status": "in_use"}, headers=h
+        ).json()["status"]
+        == "in_use"
+    )
+    assert (
+        client.post(
+            f"/api/assets/{icode}/status", json={"status": "idle"}, headers=h
+        ).json()["status"]
+        == "idle"
+    )
 
     # 7) inventory + consumable request → approve → fulfill (stock deducted)
     loc = client.post(
-        "/api/inventory/locations", json={"name": f"冒烟仓{uuid.uuid4().hex[:4]}", "type": "warehouse"}, headers=h
+        "/api/inventory/locations",
+        json={"name": f"冒烟仓{uuid.uuid4().hex[:4]}", "type": "warehouse"},
+        headers=h,
     ).json()
     loc_id = loc["id"]
     cat = client.post(
         "/api/item-categories",
-        json={"name": f"冒烟耗材{uuid.uuid4().hex[:4]}", "code": f"SK{uuid.uuid4().hex[:3].upper()}", "management_mode": "consumable"},
+        json={
+            "name": f"冒烟耗材{uuid.uuid4().hex[:4]}",
+            "code": f"SK{uuid.uuid4().hex[:3].upper()}",
+            "management_mode": "consumable",
+        },
         headers=h,
     )
     assert cat.status_code in (200, 201), cat.text
@@ -134,7 +157,9 @@ def test_full_lifecycle_smoke():
     assert sku.status_code == 201, sku.text
     sku_id = sku.json()["id"]
     assert client.post(
-        "/api/inventory/receive", json={"sku_id": sku_id, "quantity": 20, "location_id": loc_id}, headers=h
+        "/api/inventory/receive",
+        json={"sku_id": sku_id, "quantity": 20, "location_id": loc_id},
+        headers=h,
     ).status_code == 200
 
     req = client.post(
