@@ -39,7 +39,10 @@ def _on_user_deleted(data) -> None:
             case = offboarding_service.create_from_lark(
                 db, lark_open_id=open_id, lark_user_id=user_id
             )
-            log.info("offboarding auto-create from user.deleted: %s", case.case_no if case else None)
+            log.info(
+                "offboarding auto-create from user.deleted: %s",
+                case.case_no if case else None,
+            )
         finally:
             db.close()
     except Exception:  # noqa: BLE001 — a bad event must not kill the connection

@@ -41,7 +41,8 @@ class OffboardingCase(Base):
     department_name: Mapped[str | None] = mapped_column(String(255))  # 快照
     last_day: Mapped[date | None] = mapped_column(Date)
     reason: Mapped[str | None] = mapped_column(Text)
-    hr_channel: Mapped[str] = mapped_column(String(64), default="manual")  # manual | lark_event:user.left
+    # manual | lark_event:user.left
+    hr_channel: Mapped[str] = mapped_column(String(64), default="manual")
     status: Mapped[OffboardingStatus] = mapped_column(
         Enum(OffboardingStatus, name="offboarding_status"),
         default=OffboardingStatus.in_progress,

@@ -35,7 +35,11 @@ def _summary(items: list[OffboardingItem]) -> dict:
     pending = sum(1 for i in items if i.status == OffboardingItemStatus.return_pending)
     total_value = sum((i.snapshot_value or Decimal(0) for i in items), Decimal(0))
     pending_value = sum(
-        (i.snapshot_value or Decimal(0) for i in items if i.status == OffboardingItemStatus.return_pending),
+        (
+            i.snapshot_value or Decimal(0)
+            for i in items
+            if i.status == OffboardingItemStatus.return_pending
+        ),
         Decimal(0),
     )
     return {
@@ -100,7 +104,10 @@ def return_item(
     if case is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "工单不存在")
     try:
-        service.return_item(db, case, code, condition=body.condition.value, remark=body.remark, operator_id=user.id)
+        service.return_item(
+            db, case, code,
+            condition=body.condition.value, remark=body.remark, operator_id=user.id,
+        )
     except service.OffboardingError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
     write_audit(db, actor_user_id=user.id, action="offboarding.return",

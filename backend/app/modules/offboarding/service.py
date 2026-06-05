@@ -170,7 +170,8 @@ def notify_leaver(db: Session, case: OffboardingCase, operator_id: int | None) -
             if mgr is not None:
                 _dm(
                     mgr.lark_open_id,
-                    f"你的下属 {user.name} 离职,名下还有 {pending} 件 IT 资产待归还,请协助督促(工单 {case.case_no})。",
+                    f"你的下属 {user.name} 离职,名下还有 {pending} 件 IT 资产待归还,"
+                    f"请协助督促(工单 {case.case_no})。",
                 )
     case.notified_at = func.now()
     db.commit()
