@@ -42,6 +42,26 @@ const CONFIRM_META: Record<ConfirmStatus, { label: string; color: string; bg: st
   mismatch: { label: '差异', color: '#F53F3F', bg: '#FFECE8' },
 }
 
+const ASSET_STATUS_CN: Record<string, string> = {
+  in_use: '在用',
+  idle: '闲置',
+  maintenance: '维修中',
+  scrapped: '已报废',
+}
+
+const sheetBtnBase: React.CSSProperties = {
+  flex: 1,
+  height: 46,
+  borderRadius: 10,
+  border: 'none',
+  fontSize: 15,
+  fontWeight: 600,
+  cursor: 'pointer',
+}
+const sheetBtnPrimary: React.CSSProperties = { ...sheetBtnBase, background: '#00B42A', color: '#fff' }
+const sheetBtnGhost: React.CSSProperties = { ...sheetBtnBase, background: '#F2F3F5', color: '#4E5969' }
+const sheetBtnWarn: React.CSSProperties = { ...sheetBtnBase, background: '#FFECE8', color: '#F53F3F' }
+
 const wrap: React.CSSProperties = {
   maxWidth: 480,
   margin: '0 auto',
@@ -104,6 +124,9 @@ export default function MobileAdminInspectionTask() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'pending' | 'ok' | 'mismatch'>('pending')
   const [scanOpen, setScanOpen] = useState(false)
+  // A scanned asset awaiting manual review — show its detail and let the
+  // operator confirm, instead of auto-confirming the moment the QR decodes.
+  const [scanned, setScanned] = useState<ItemRow | null>(null)
   // True = keep reopening scanner after each confirm (rapid mode).
   const [sequential, setSequential] = useState(true)
   // Inline feedback after a scan-confirm cycle. Clears after a short delay.
@@ -145,55 +168,56 @@ export default function MobileAdminInspectionTask() {
     bannerTimerRef.current = window.setTimeout(() => setBanner(null), ms)
   }
 
-  // Run a scan-driven confirm against the task. Looks up the item locally
-  // first (so we can distinguish "not in this task" from "API error" without
-  // a roundtrip), then POSTs.
-  const handleScannedCode = async (code: string, raw: string) => {
-    if (!data) return
+  // Resolve a scanned code against the task. Looks up the item locally so we
+  // can distinguish "not in this task" from an API error. Does NOT write —
+  // it opens the detail sheet so the operator can eyeball the asset (型号/
+  // 责任人/地点/状态) and confirm by hand. Returns whether it matched.
+  const resolveScannedCode = (code: string, raw: string): boolean => {
+    if (!data) return false
     const normCode = code.toUpperCase().trim()
     const item = data.items.find((i) => i.asset_code.toUpperCase() === normCode)
     if (!item) {
-      showBanner({
-        kind: 'err',
-        code: code || raw,
-        text: '不在本次盘点范围',
-      })
-      return
+      showBanner({ kind: 'err', code: code || raw, text: '不在本次盘点范围' })
+      return false
     }
-    if (item.confirm_status === 'ok') {
-      showBanner({
-        kind: 'info',
-        code: item.asset_code,
-        text: `${item.brand_model ?? ''} · 之前已确认`,
-      })
-      return
-    }
+    setScanned(item)
+    return true
+  }
+
+  // In sequential mode, reopen the scanner shortly after the operator acts (or
+  // after an out-of-scope scan) so they can keep going hands-free. Never fires
+  // before they've reviewed the scanned asset.
+  const maybeReopenScanner = () => {
+    if (!sequential) return
+    if (reopenTimerRef.current) window.clearTimeout(reopenTimerRef.current)
+    reopenTimerRef.current = window.setTimeout(() => setScanOpen(true), 700)
+  }
+
+  // Manual confirm / mark-mismatch from the scanned-detail sheet.
+  const confirmScanned = async (status: ConfirmStatus, remark?: string | null) => {
+    if (!scanned) return
+    const code = scanned.asset_code
     try {
-      await confirmMut.mutateAsync({ code: item.asset_code, status: 'ok' })
+      await confirmMut.mutateAsync({ code, status, remark: remark ?? null })
       showBanner({
-        kind: 'ok',
-        code: item.asset_code,
-        text: `${item.brand_model ?? ''} ${item.owner_name ? '· ' + item.owner_name : ''}`,
+        kind: status === 'mismatch' ? 'info' : 'ok',
+        code,
+        text: status === 'mismatch' ? '已标记差异' : `${scanned.brand_model ?? ''} · 已确认`,
       })
       qc.invalidateQueries({ queryKey: ['m-admin-inspection', taskId] })
     } catch (e) {
       const msg =
         (e as { response?: { data?: { detail?: string } } }).response?.data?.detail ??
         '确认失败'
-      showBanner({ kind: 'err', code: item.asset_code, text: msg })
+      showBanner({ kind: 'err', code, text: msg })
     }
+    setScanned(null)
+    maybeReopenScanner()
   }
 
-  // After a successful scan in sequential mode, briefly close the scanner
-  // so the banner is visible, then re-open it for the next asset.
-  const closeAndMaybeReopen = () => {
-    setScanOpen(false)
-    if (!sequential) return
-    if (reopenTimerRef.current) window.clearTimeout(reopenTimerRef.current)
-    reopenTimerRef.current = window.setTimeout(() => {
-      // Only reopen if user hasn't navigated away or toggled off sequential.
-      setScanOpen(true)
-    }, 900)
+  const dismissScanned = () => {
+    setScanned(null)
+    maybeReopenScanner()
   }
 
   useEffect(() => {
@@ -545,7 +569,7 @@ export default function MobileAdminInspectionTask() {
               onChange={(e) => setSequential(e.target.checked)}
               style={{ accentColor: '#3370FF' }}
             />
-            扫一次自动开下一次(连续模式)
+            确认后自动开下一次扫描(连续模式)
           </label>
         </div>
       )}
@@ -614,6 +638,114 @@ export default function MobileAdminInspectionTask() {
         </div>
       )}
 
+      {/* Scanned-asset detail — review then confirm by hand (no auto-confirm) */}
+      {scanned && (
+        <>
+          <div
+            onClick={dismissScanned}
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 50 }}
+          />
+          <div
+            style={{
+              position: 'fixed',
+              left: 0,
+              right: 0,
+              bottom: 0,
+              maxWidth: 480,
+              margin: '0 auto',
+              background: '#fff',
+              borderTopLeftRadius: 16,
+              borderTopRightRadius: 16,
+              padding: '18px 16px calc(env(safe-area-inset-bottom, 0px) + 16px)',
+              zIndex: 51,
+              boxShadow: '0 -8px 30px rgba(0,0,0,0.18)',
+            }}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+              <span style={{ fontFamily: 'ui-monospace, monospace', fontSize: 15, fontWeight: 700 }}>
+                {scanned.asset_code}
+              </span>
+              <span
+                style={{
+                  fontSize: 11,
+                  padding: '2px 8px',
+                  borderRadius: 4,
+                  color: CONFIRM_META[scanned.confirm_status].color,
+                  background: CONFIRM_META[scanned.confirm_status].bg,
+                }}
+              >
+                {CONFIRM_META[scanned.confirm_status].label}
+              </span>
+            </div>
+            <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 12 }}>
+              {scanned.brand_model ?? '—'}
+            </div>
+            <div style={{ background: '#F7F8FA', borderRadius: 10, padding: '2px 14px', marginBottom: 14 }}>
+              {(
+                [
+                  ['责任人', scanned.owner_name ?? '未分配'],
+                  ['存放地点', scanned.location ?? '—'],
+                  ['台账状态', ASSET_STATUS_CN[scanned.asset_status ?? ''] ?? scanned.asset_status ?? '—'],
+                  ...(scanned.remark ? [['备注', scanned.remark]] : []),
+                ] as [string, string][]
+              ).map(([k, v], i, arr) => (
+                <div
+                  key={k}
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 12,
+                    padding: '9px 0',
+                    borderBottom: i < arr.length - 1 ? '0.5px solid #ECECEC' : 'none',
+                  }}
+                >
+                  <span style={{ fontSize: 12, color: '#86909C', whiteSpace: 'nowrap' }}>{k}</span>
+                  <span style={{ fontSize: 13, color: '#1F2329', textAlign: 'right', minWidth: 0 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            {scanned.confirm_status === 'ok' ? (
+              <>
+                <div style={{ fontSize: 12, color: '#00863C', marginBottom: 12 }}>
+                  该资产此前已确认,如需保持核对结果无需再次操作。
+                </div>
+                <button onClick={dismissScanned} style={{ ...sheetBtnGhost, width: '100%' }}>
+                  继续扫描
+                </button>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize: 12, color: '#86909C', marginBottom: 12 }}>
+                  请核对实物与上述信息一致后再确认。
+                </div>
+                <button
+                  onClick={() => confirmScanned('ok')}
+                  disabled={confirmMut.isPending}
+                  style={{ ...sheetBtnPrimary, width: '100%', marginBottom: 10 }}
+                >
+                  ✓ 确认核对一致
+                </button>
+                <div style={{ display: 'flex', gap: 10 }}>
+                  <button onClick={dismissScanned} disabled={confirmMut.isPending} style={sheetBtnGhost}>
+                    取消
+                  </button>
+                  <button
+                    onClick={() => {
+                      const reason = window.prompt('标记差异,请填写原因(必填):')
+                      if (reason && reason.trim()) confirmScanned('mismatch', reason.trim())
+                    }}
+                    disabled={confirmMut.isPending}
+                    style={sheetBtnWarn}
+                  >
+                    标记差异
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </>
+      )}
+
       {/* Scanner */}
       <CameraScanner
         open={scanOpen}
@@ -622,9 +754,11 @@ export default function MobileAdminInspectionTask() {
           // User dismissed scanner manually — cancel any pending re-open.
           if (reopenTimerRef.current) window.clearTimeout(reopenTimerRef.current)
         }}
-        onCode={async (code, raw) => {
-          await handleScannedCode(code, raw)
-          closeAndMaybeReopen()
+        onCode={(code, raw) => {
+          setScanOpen(false)
+          // Matched → open the detail sheet for manual confirm (don't reopen
+          // the scanner until the operator acts). Out of scope → keep scanning.
+          if (!resolveScannedCode(code, raw)) maybeReopenScanner()
         }}
       />
     </div>
