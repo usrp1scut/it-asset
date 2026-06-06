@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from fastapi.responses import Response, StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy import select
+from sqlalchemy.exc import DataError
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
@@ -94,16 +95,25 @@ def list_assets(
     type_id: int | None = None,
     department_id: int | None = None,
     q: str | None = None,
+    regex: bool = False,
     needs_review: bool | None = None,
     scrap_candidate: bool | None = None,
     page: int = 1,
     size: int = 20,
 ):
-    total, rows = service.list_assets(
-        db, status=status_, asset_class=asset_class, type_id=type_id,
-        department_id=department_id, q=q, needs_review=needs_review,
-        scrap_candidate=scrap_candidate, page=page, size=size,
-    )
+    try:
+        total, rows = service.list_assets(
+            db, status=status_, asset_class=asset_class, type_id=type_id,
+            department_id=department_id, q=q, regex=regex, needs_review=needs_review,
+            scrap_candidate=scrap_candidate, page=page, size=size,
+        )
+    except DataError as e:
+        # Invalid user-supplied regex → POSIX engine errors. Roll back the
+        # aborted transaction and answer 400 instead of leaking a 500.
+        db.rollback()
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "正则表达式无效,请检查语法"
+        ) from e
     return AssetListResponse(total=total, items=_to_outs(db, rows))
 
 

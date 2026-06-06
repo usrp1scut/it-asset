@@ -52,6 +52,9 @@ export default function Assets() {
     }
   }, [params, setParams])
   const [needsReview, setNeedsReview] = useState(false)
+  // Treat the search box as a POSIX regex (case-insensitive) instead of a
+  // plain substring match.
+  const [regex, setRegex] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [labelsOpen, setLabelsOpen] = useState(false)
@@ -108,14 +111,16 @@ export default function Assets() {
       message.error(e.response?.data?.detail ?? '创建失败'),
   })
 
-  const { data, isLoading } = useQuery<AssetListResponse>({
-    queryKey: ['assets', status, q, page, needsReview],
+  const { data, isLoading, error } = useQuery<AssetListResponse>({
+    queryKey: ['assets', status, q, regex, page, needsReview],
+    retry: false, // an invalid regex is a 400 — don't hammer it
     queryFn: async () =>
       (
         await api.get('/assets', {
           params: {
             status: status || undefined,
             q: q || undefined,
+            regex: regex || undefined,
             needs_review: needsReview || undefined,
             page,
             size,
@@ -248,9 +253,13 @@ export default function Assets() {
         }}
         items={STATUS_TABS.map((t) => ({ key: t.key, label: t.label }))}
       />
-      <Space style={{ marginBottom: 16 }}>
+      <Space style={{ marginBottom: error ? 4 : 16 }}>
         <Input.Search
-          placeholder="搜索编号 / 型号 / 序列号 / 责任人"
+          placeholder={
+            regex
+              ? '正则匹配 编号/型号/序列号/责任人(如 ^PC-00\\d{2}$)'
+              : '搜索编号 / 型号 / 序列号 / 责任人'
+          }
           allowClear
           style={{ width: 360 }}
           onSearch={(v) => {
@@ -258,6 +267,20 @@ export default function Assets() {
             setPage(1)
           }}
         />
+        <Tag.CheckableTag
+          checked={regex}
+          onChange={(c) => {
+            setRegex(c)
+            setPage(1)
+          }}
+          style={{
+            border: '1px solid var(--border)',
+            padding: '4px 10px',
+            fontSize: 13,
+          }}
+        >
+          正则
+        </Tag.CheckableTag>
         <Tag.CheckableTag
           checked={needsReview}
           onChange={(c) => {
@@ -273,6 +296,12 @@ export default function Assets() {
           仅看待核
         </Tag.CheckableTag>
       </Space>
+      {error && (
+        <div style={{ color: '#F53F3F', fontSize: 12, marginBottom: 12 }}>
+          {(error as { response?: { data?: { detail?: string } } }).response?.data?.detail ??
+            '搜索失败'}
+        </div>
+      )}
       <Table<Asset>
         rowKey="asset_code"
         loading={isLoading}
