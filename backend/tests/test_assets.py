@@ -31,6 +31,33 @@ def test_create_generates_code_and_lists():
     assert any(i["asset_code"] == code for i in lst.json()["items"])
 
 
+def test_list_assets_regex_search():
+    admin = _login()
+    tag = uuid.uuid4().hex[:6].upper()  # unique so only our two assets match
+    a = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC", "serial_number": f"RX-{tag}-A1"},
+        headers=_h(admin),
+    ).json()["asset_code"]
+    b = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC", "serial_number": f"RX-{tag}-B2"},
+        headers=_h(admin),
+    ).json()["asset_code"]
+
+    # Regex matches only the "A<digit>" serial — substring search couldn't.
+    r = client.get(
+        "/api/assets", params={"regex": "true", "q": f"RX-{tag}-A[0-9]"}, headers=_h(admin)
+    )
+    assert r.status_code == 200
+    codes = {i["asset_code"] for i in r.json()["items"]}
+    assert a in codes and b not in codes
+
+    # Invalid regex (unclosed class) → clean 400, never a 500.
+    bad = client.get("/api/assets", params={"regex": "true", "q": "PC-["}, headers=_h(admin))
+    assert bad.status_code == 400
+
+
 def test_asset_type_crud_and_create_via_type():
     admin = _login()
 

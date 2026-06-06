@@ -183,6 +183,7 @@ def list_assets(
     type_id: int | None = None,
     department_id: int | None = None,
     q: str | None = None,
+    regex: bool = False,
     needs_review: bool | None = None,
     scrap_candidate: bool | None = None,
     page: int = 1,
@@ -202,13 +203,25 @@ def list_assets(
     if scrap_candidate is not None:
         stmt = stmt.where(Asset.scrap_candidate.is_(scrap_candidate))
     if q:
-        like = f"%{q}%"
-        stmt = stmt.where(
-            Asset.asset_code.ilike(like)
-            | Asset.brand_model.ilike(like)
-            | Asset.serial_number.ilike(like)
-            | Asset.owner_name.ilike(like)
+        cols = (
+            Asset.asset_code,
+            Asset.brand_model,
+            Asset.serial_number,
+            Asset.owner_name,
         )
+        if regex:
+            # POSIX case-insensitive regex (`~*`) across the same columns.
+            # NULL columns simply don't match. An invalid pattern raises a
+            # DataError at execution, which the router turns into a 400.
+            cond = cols[0].op("~*")(q)
+            for c in cols[1:]:
+                cond = cond | c.op("~*")(q)
+        else:
+            like = f"%{q}%"
+            cond = cols[0].ilike(like)
+            for c in cols[1:]:
+                cond = cond | c.ilike(like)
+        stmt = stmt.where(cond)
     total = db.scalar(select(func.count()).select_from(stmt.subquery())) or 0
     rows = db.scalars(
         stmt.order_by(Asset.id.desc()).offset((page - 1) * size).limit(size)
