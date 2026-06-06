@@ -4,10 +4,22 @@ import { message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
+import AssetTypeIcon from '../../../components/AssetTypeIcon'
+import Icon from '../../../components/Icon'
 import { MobileFormShell, FormCard, Field, TextInput, TextArea, ScanSuffix } from './mobileFormKit'
+
+interface AssetTypeOption {
+  id: number
+  name: string
+  code_prefix: string
+  asset_class: 'personal' | 'infrastructure'
+  icon: string | null
+  color: string | null
+}
 
 interface AssetOut {
   asset_code: string
+  asset_type_id: number | null
   asset_class: 'personal' | 'infrastructure'
   brand_model: string | null
   spec: string | null
@@ -45,18 +57,28 @@ export default function MobileAdminAssetEdit() {
   const qc = useQueryClient()
   const [form, setForm] = useState<FormState | null>(null)
   const [scanOpen, setScanOpen] = useState(false)
+  // Asset-type change is tracked separately from the text form: changing it
+  // hits a dedicated endpoint (and may re-code the asset).
+  const [typeId, setTypeId] = useState<number | null>(null)
+  const [typeSheet, setTypeSheet] = useState(false)
 
   const { data, isLoading } = useQuery<AssetDetail>({
     queryKey: ['m-admin-asset', code],
     queryFn: async () => (await api.get(`/assets/${encodeURIComponent(code)}`)).data,
     enabled: !!code,
   })
+  const { data: types } = useQuery<AssetTypeOption[]>({
+    queryKey: ['asset-types'],
+    queryFn: async () => (await api.get('/asset-types')).data,
+  })
   const asset = data?.asset
   const isInfra = asset?.asset_class === 'infrastructure'
+  const selectedType = types?.find((t) => t.id === typeId) ?? null
 
   // Seed the form once the asset loads.
   useEffect(() => {
     if (asset && form === null) {
+      setTypeId(asset.asset_type_id)
       setForm({
         brand_model: asset.brand_model ?? '',
         spec: asset.spec ?? '',
@@ -77,8 +99,8 @@ export default function MobileAdminAssetEdit() {
     setForm((f) => (f ? { ...f, [k]: v } : f))
 
   const saveMut = useMutation({
-    mutationFn: async () => {
-      if (!form) return
+    mutationFn: async (): Promise<string> => {
+      if (!form) return code
       const body: Record<string, unknown> = {}
       const textKeys: (keyof FormState)[] = [
         'brand_model', 'spec', 'serial_number', 'location', 'supplier',
@@ -97,18 +119,47 @@ export default function MobileAdminAssetEdit() {
         body.owner_name = form.owner_name.trim() || null
         body.department_name = form.department_name.trim() || null
       }
-      return (await api.put(`/assets/${encodeURIComponent(code)}`, body)).data
+      await api.put(`/assets/${encodeURIComponent(code)}`, body)
+      // Type change goes through its own endpoint and may re-code the asset
+      // (new prefix → new sequence number). Do it after the field PUT, which
+      // still uses the old code.
+      let finalCode = code
+      if (typeId != null && typeId !== asset?.asset_type_id) {
+        const updated = (
+          await api.post(`/assets/${encodeURIComponent(code)}/change-type`, {
+            asset_type_id: typeId,
+          })
+        ).data as { asset_code: string }
+        finalCode = updated.asset_code
+      }
+      return finalCode
     },
-    onSuccess: () => {
-      message.success('已保存')
+    onSuccess: (finalCode: string) => {
+      message.success(finalCode !== code ? `已保存,编号更新为 ${finalCode}` : '已保存')
       qc.invalidateQueries({ queryKey: ['m-admin-asset', code] })
       qc.invalidateQueries({ queryKey: ['m-admin-assets'] })
       qc.invalidateQueries({ queryKey: ['assets'] })
-      navigate(`/m/admin/asset/${encodeURIComponent(code)}`, { replace: true })
+      navigate(`/m/admin/asset/${encodeURIComponent(finalCode)}`, { replace: true })
     },
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '保存失败'),
   })
+
+  // Warn before a re-code (changing to a type with a different code prefix).
+  const onSave = () => {
+    if (typeId != null && asset && typeId !== asset.asset_type_id) {
+      const newType = types?.find((t) => t.id === typeId)
+      const oldPrefix = code.split('-')[0].toUpperCase()
+      const willRecode = !!newType && newType.code_prefix.toUpperCase() !== oldPrefix
+      const ok = window.confirm(
+        willRecode
+          ? `编号将按新类型前缀重新生成(${code} → ${newType!.code_prefix}-…),原实物标签作废、需重新打印。确认更改?`
+          : '确认更改资产类型?',
+      )
+      if (!ok) return
+    }
+    saveMut.mutate()
+  }
 
   if (isLoading || !form) {
     return (
@@ -129,9 +180,50 @@ export default function MobileAdminAssetEdit() {
     <MobileFormShell
       title={`编辑 · ${code}`}
       onBack={() => navigate(-1)}
-      onSave={() => saveMut.mutate()}
+      onSave={onSave}
       saving={saveMut.isPending}
     >
+      <FormCard>
+        <Field
+          label="资产类型"
+          hint="改类型会同步 个人/基础设施 类别;换前缀会重新生成编号"
+          last
+        >
+          <button
+            type="button"
+            onClick={() => setTypeSheet(true)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 10,
+              width: '100%',
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+            }}
+          >
+            {selectedType ? (
+              <>
+                <AssetTypeIcon icon={selectedType.icon} color={selectedType.color} size={32} />
+                <span style={{ fontSize: 15, color: '#1F2329' }}>
+                  {selectedType.name}
+                  <span style={{ color: '#86909C', fontSize: 12, marginLeft: 6 }}>
+                    {selectedType.code_prefix} ·{' '}
+                    {selectedType.asset_class === 'personal' ? '个人发放' : '基础设施'}
+                  </span>
+                </span>
+              </>
+            ) : (
+              <span style={{ fontSize: 15, color: '#C9CDD4' }}>选择资产类型</span>
+            )}
+            <span style={{ marginLeft: 'auto' }}>
+              <Icon name="chevronRight" size={16} color="#C9CDD4" />
+            </span>
+          </button>
+        </Field>
+      </FormCard>
+
       <FormCard>
         <Field label="品牌型号">
           <TextInput value={form.brand_model} onChange={(v) => set('brand_model', v)} />
@@ -207,6 +299,71 @@ export default function MobileAdminAssetEdit() {
           <TextArea value={form.remark} onChange={(v) => set('remark', v)} />
         </Field>
       </FormCard>
+
+      {/* Type picker bottom sheet */}
+      {typeSheet && (
+        <div
+          onClick={() => setTypeSheet(false)}
+          style={{
+            position: 'fixed',
+            inset: 0,
+            background: 'rgba(31,35,41,0.45)',
+            zIndex: 50,
+            display: 'flex',
+            alignItems: 'flex-end',
+            justifyContent: 'center',
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              width: '100%',
+              maxWidth: 480,
+              maxHeight: '70dvh',
+              background: '#fff',
+              borderRadius: '16px 16px 0 0',
+              overflowY: 'auto',
+              paddingBottom: 16,
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+              <div style={{ width: 36, height: 4, borderRadius: 2, background: '#E5E6EB' }} />
+            </div>
+            <div style={{ padding: '4px 16px 8px', fontSize: 14, fontWeight: 600 }}>
+              选择资产类型
+            </div>
+            {(types ?? []).map((t) => (
+              <button
+                key={t.id}
+                onClick={() => {
+                  setTypeId(t.id)
+                  setTypeSheet(false)
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 12,
+                  width: '100%',
+                  padding: '10px 16px',
+                  border: 'none',
+                  background: t.id === typeId ? '#F2F7FF' : 'transparent',
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                }}
+              >
+                <AssetTypeIcon icon={t.icon} color={t.color} size={36} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, color: '#1F2329' }}>{t.name}</div>
+                  <div style={{ fontSize: 12, color: '#86909C' }}>
+                    {t.code_prefix} · {t.asset_class === 'personal' ? '个人发放' : '基础设施'}
+                  </div>
+                </div>
+                {t.id === typeId && <Icon name="check" size={16} color="#3370FF" />}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <CameraScanner
         open={scanOpen}
