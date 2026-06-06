@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { message } from 'antd'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
 import Icon from '../../../components/Icon'
@@ -58,6 +59,26 @@ const ACTION_CN: Record<string, string> = {
   inspect_ok: '盘点确认',
   inspect_lost: '盘点遗失',
 }
+
+const actGhost: React.CSSProperties = {
+  height: 44,
+  borderRadius: 22,
+  background: '#fff',
+  border: '1px solid #E5E6EB',
+  color: '#1F2329',
+  fontSize: 14,
+  fontWeight: 500,
+  cursor: 'pointer',
+  width: '100%',
+}
+const actPrimary: React.CSSProperties = {
+  ...actGhost,
+  background: 'linear-gradient(135deg, #3370FF, #5B92FF)',
+  color: '#fff',
+  border: 'none',
+  boxShadow: '0 4px 14px rgba(51,112,255,0.3)',
+}
+const actDanger: React.CSSProperties = { ...actGhost, color: '#F53F3F', borderColor: '#FFD8C8' }
 
 const wrap: React.CSSProperties = {
   maxWidth: 480,
@@ -182,12 +203,45 @@ export default function MobileAdminScanResult() {
   const fromScan = raw !== null
   const [scanOpen, setScanOpen] = useState(false)
 
+  const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<AssetDetail>({
     queryKey: ['m-admin-asset', code],
     queryFn: async () => (await api.get(`/assets/${encodeURIComponent(code)}`)).data,
     enabled: !!code,
     retry: false,
   })
+
+  // Lifecycle actions: status (infra), return (personal), 报修, 申请报废.
+  // Assign / transfer need an employee picker (desktop-only for now).
+  const act = useMutation({
+    mutationFn: async (p: { path: string; body?: object; successMsg?: string }) =>
+      (await api.post(`/assets/${encodeURIComponent(code)}/${p.path}`, p.body ?? {})).data,
+    onSuccess: (_d, p) => {
+      message.success(p.successMsg ?? '操作成功')
+      qc.invalidateQueries({ queryKey: ['m-admin-asset', code] })
+      qc.invalidateQueries({ queryKey: ['m-admin-assets'] })
+      qc.invalidateQueries({ queryKey: ['assets'] })
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '操作失败'),
+  })
+
+  const onRepair = () => {
+    const reason = window.prompt('报修原因(必填):')
+    if (reason && reason.trim()) {
+      act.mutate({ path: 'repair-order', body: { reason: reason.trim(), repair_type: 'in_house' } })
+    }
+  }
+  const onScrap = () => {
+    const reason = window.prompt('报废原因(必填,提交后需另一管理员审批):')
+    if (reason && reason.trim()) {
+      act.mutate({
+        path: 'scrap-request',
+        body: { reason: reason.trim() },
+        successMsg: '已提交报废申请,待另一管理员审批',
+      })
+    }
+  }
 
   const notFound =
     (error as { response?: { status?: number } } | undefined)?.response?.status === 404
@@ -499,6 +553,77 @@ export default function MobileAdminScanResult() {
                     </span>
                   </div>
                 ))}
+              </div>
+            )}
+
+            {/* Lifecycle actions (status / return / 报修 / 报废) */}
+            {data.asset.status !== 'scrapped' && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 16 }}>
+                {data.asset.asset_class === 'infrastructure' ? (
+                  <>
+                    {data.asset.status === 'idle' && (
+                      <button
+                        style={actPrimary}
+                        disabled={act.isPending}
+                        onClick={() => act.mutate({ path: 'status', body: { status: 'in_use' } })}
+                      >
+                        启用
+                      </button>
+                    )}
+                    {data.asset.status === 'in_use' && (
+                      <button
+                        style={actGhost}
+                        disabled={act.isPending}
+                        onClick={() => act.mutate({ path: 'status', body: { status: 'idle' } })}
+                      >
+                        停用
+                      </button>
+                    )}
+                    {data.asset.status === 'maintenance' && (
+                      <button
+                        style={actPrimary}
+                        disabled={act.isPending}
+                        onClick={() => act.mutate({ path: 'status', body: { status: 'idle' } })}
+                      >
+                        修复完成
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    {data.asset.status === 'in_use' && (
+                      <button
+                        style={actGhost}
+                        disabled={act.isPending}
+                        onClick={() => act.mutate({ path: 'return' })}
+                      >
+                        归还入库
+                      </button>
+                    )}
+                    {data.asset.status === 'maintenance' && (
+                      <button
+                        style={actPrimary}
+                        disabled={act.isPending}
+                        onClick={() => act.mutate({ path: 'return' })}
+                      >
+                        维修完成 · 归还入库
+                      </button>
+                    )}
+                    {data.asset.status === 'idle' && (
+                      <div style={{ fontSize: 12, color: '#86909C', textAlign: 'center' }}>
+                        分配给员工需选人,请在桌面端操作
+                      </div>
+                    )}
+                  </>
+                )}
+                {(data.asset.status === 'in_use' || data.asset.status === 'idle') && (
+                  <button style={actGhost} disabled={act.isPending} onClick={onRepair}>
+                    报修
+                  </button>
+                )}
+                <button style={actDanger} disabled={act.isPending} onClick={onScrap}>
+                  申请报废
+                </button>
               </div>
             )}
 
