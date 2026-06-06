@@ -267,7 +267,11 @@ export default function MobileApp() {
     <div style={wrap}>
       {me.user.role !== 'employee' && (
         <div
-          onClick={() => navigate('/')}
+          onClick={() =>
+            navigate(
+              me.user.role === 'it_admin' || me.user.role === 'sys_admin' ? '/m/admin' : '/',
+            )
+          }
           style={{
             background: '#fff',
             padding: '8px 16px',

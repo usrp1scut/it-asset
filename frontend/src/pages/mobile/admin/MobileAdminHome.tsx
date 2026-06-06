@@ -237,8 +237,8 @@ interface TabBarProps {
   onNav: (id: 'home' | 'scan') => void
 }
 /** Bottom tab bar with center "floating" scan FAB.
- * 首页 / 扫码 / 审批 / 库存 stay inside the mobile cockpit; only 我的 hops to
- * the desktop (no mobile profile screen yet). */
+ * 首页 / 扫码 / 审批 / 库存 stay inside the mobile cockpit; 我的 goes to the
+ * employee H5 self-view (`/m`) which has a "返回管理端" link back. */
 function TabBar({ active, onNav }: TabBarProps) {
   const navigate = useNavigate()
   type Tab = {
@@ -263,7 +263,7 @@ function TabBar({ active, onNav }: TabBarProps) {
       label: '库存',
       onClick: () => navigate('/m/admin/inventory'),
     },
-    { id: 'me', icon: 'user', label: '我的', onClick: () => navigate('/') },
+    { id: 'me', icon: 'user', label: '我的', onClick: () => navigate('/m') },
   ]
 
   return (
