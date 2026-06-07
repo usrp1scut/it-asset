@@ -345,6 +345,32 @@ export default function Inspections() {
     },
   })
 
+  const remindMut = useMutation({
+    mutationFn: async (id: number) => (await api.post(`/inspections/${id}/remind`)).data,
+    onSuccess: (r: {
+      reminded: number
+      assets: number
+      targets: number
+      not_sent: number
+      ownerless_pending: number
+      lark_configured: boolean
+    }) => {
+      if (!r.lark_configured) {
+        message.warning(`Lark 未配置,未实际发送(待提醒 ${r.targets} 位责任人)`)
+      } else {
+        const extra = [
+          r.not_sent ? `${r.not_sent} 人无 Lark 账号未送` : '',
+          r.ownerless_pending ? `${r.ownerless_pending} 件无责任人` : '',
+        ].filter(Boolean)
+        message.success(
+          `已催办 ${r.reminded} 位 · ${r.assets} 件${extra.length ? ' · ' + extra.join(' · ') : ''}`,
+        )
+      }
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '催办失败'),
+  })
+
   const taskCols: ColumnsType<TaskListRow> = [
     { title: '名称', dataIndex: 'name' },
     {
@@ -427,14 +453,23 @@ export default function Inspections() {
               </span>
             </div>
             {detail.status === 'open' && (
-              <Popconfirm
-                title="关闭该盘点任务?"
-                onConfirm={() => closeMut.mutate(detail.id)}
-                okText="关闭"
-                cancelText="取消"
-              >
-                <Button>关闭任务</Button>
-              </Popconfirm>
+              <Space>
+                <Button
+                  loading={remindMut.isPending}
+                  disabled={detail.progress.pending === 0}
+                  onClick={() => remindMut.mutate(detail.id)}
+                >
+                  催办待核{detail.progress.pending ? ` (${detail.progress.pending})` : ''}
+                </Button>
+                <Popconfirm
+                  title="关闭该盘点任务?"
+                  onConfirm={() => closeMut.mutate(detail.id)}
+                  okText="关闭"
+                  cancelText="取消"
+                >
+                  <Button>关闭任务</Button>
+                </Popconfirm>
+              </Space>
             )}
           </div>
 

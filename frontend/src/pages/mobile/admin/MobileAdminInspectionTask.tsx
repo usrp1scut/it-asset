@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
+import { message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
@@ -160,6 +161,26 @@ export default function MobileAdminInspectionTask() {
       qc.invalidateQueries({ queryKey: ['m-admin-inspection', taskId] })
       qc.invalidateQueries({ queryKey: ['m-admin-inspections'] })
     },
+  })
+
+  const remindMut = useMutation({
+    mutationFn: async () => (await api.post(`/inspections/${taskId}/remind`)).data,
+    onSuccess: (r: {
+      reminded: number
+      assets: number
+      targets: number
+      not_sent: number
+      ownerless_pending: number
+      lark_configured: boolean
+    }) => {
+      message.success(
+        r.lark_configured
+          ? `已催办 ${r.reminded} 位 · ${r.assets} 件`
+          : `Lark 未配置,未实际发送(待提醒 ${r.targets} 位)`,
+      )
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '催办失败'),
   })
 
   const showBanner = (state: BannerState, ms = 1800) => {
@@ -486,9 +507,31 @@ export default function MobileAdminInspectionTask() {
         </div>
       </div>
 
-      {/* Close-task button (admin only logic on backend; UI is everywhere) */}
-      {isOpen && (
+      {/* Remind + close (admin only logic on backend; UI is everywhere) */}
+      {isOpen && data.progress.pending > 0 && (
         <div style={{ padding: '20px 16px 0' }}>
+          <button
+            onClick={() => remindMut.mutate()}
+            disabled={remindMut.isPending}
+            style={{
+              width: '100%',
+              height: 44,
+              borderRadius: 22,
+              background: 'linear-gradient(135deg, #3370FF, #5B92FF)',
+              border: 'none',
+              color: '#fff',
+              fontSize: 14,
+              fontWeight: 600,
+              cursor: 'pointer',
+              boxShadow: '0 4px 14px rgba(51,112,255,0.3)',
+            }}
+          >
+            催办待核责任人 ({data.progress.pending})
+          </button>
+        </div>
+      )}
+      {isOpen && (
+        <div style={{ padding: '12px 16px 0' }}>
           <button
             onClick={() => {
               if (window.confirm(`关闭任务「${data.name}」?关闭后不能再继续核对。`)) {

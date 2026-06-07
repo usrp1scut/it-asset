@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy import func, select
@@ -7,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.deps import get_current_user, get_db, require_roles
+from app.lark.client import get_lark_client
 from app.modules.assets.models import Asset, AssetClass, AssetStatus
 from app.modules.inspections.models import (
     ConfirmStatus,
@@ -213,3 +215,77 @@ def close_task(task_id: int, db: Session = Depends(get_db), user: User = Depends
     write_audit(db, actor_user_id=user.id, action="inspection.close",
                 resource_type="inspection", resource_id=str(task.id))
     return {"id": task.id, "status": task.status.value}
+
+
+def _dm(open_id: str | None, text: str) -> bool:
+    """Best-effort Lark DM. Returns whether a send was actually attempted
+    (Lark configured + open_id present). Never raises."""
+    client = get_lark_client()
+    if not client.configured or not open_id:
+        return False
+    try:
+        anyio.run(client.send_user, open_id, text)
+    except Exception:  # noqa: BLE001 — a reminder must never break the request
+        return False
+    return True
+
+
+@router.post("/{task_id}/remind")
+def remind_task(task_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """DM the responsible person of each still-pending (待核) item, asking them
+    to present their asset for the stocktake. Personal assets only — infra has
+    no owner. No-op-safe before Lark is configured (counts still返回)."""
+    task = db.get(InspectionTask, task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found")
+    if task.status != InspectionStatus.open:
+        raise HTTPException(status.HTTP_409_CONFLICT, "任务已关闭,无需催办")
+
+    rows = db.execute(
+        select(Asset.owner_user_id, Asset.asset_code, Asset.brand_model)
+        .join(InspectionItem, InspectionItem.asset_id == Asset.id)
+        .where(
+            InspectionItem.task_id == task_id,
+            InspectionItem.confirm_status == ConfirmStatus.pending,
+        )
+    ).all()
+
+    by_owner: dict[int, list[str]] = {}
+    ownerless = 0
+    for owner_id, code, brand in rows:
+        if owner_id is None:
+            ownerless += 1  # infra / unassigned — no one to DM
+            continue
+        by_owner.setdefault(owner_id, []).append(f"{code}{f' {brand}' if brand else ''}")
+
+    users = (
+        {u.id: u for u in db.scalars(select(User).where(User.id.in_(by_owner)))}
+        if by_owner else {}
+    )
+    reminded = sent_assets = not_sent = 0
+    for owner_id, assets in by_owner.items():
+        u = users.get(owner_id)
+        text = (
+            f"【资产盘点提醒】盘点任务「{task.name}」尚有 {len(assets)} 件你名下的资产待核对:\n"
+            + "\n".join(assets)
+            + "\n请配合 IT 现场核对,谢谢。"
+        )
+        if _dm(u.lark_open_id if u else None, text):
+            reminded += 1
+            sent_assets += len(assets)
+        else:
+            not_sent += 1  # no open_id, or Lark not configured
+
+    write_audit(
+        db, actor_user_id=user.id, action="inspection.remind",
+        resource_type="inspection", resource_id=str(task.id),
+        payload={"reminded": reminded, "targets": len(by_owner), "ownerless": ownerless},
+    )
+    return {
+        "reminded": reminded,
+        "assets": sent_assets,
+        "targets": len(by_owner),
+        "not_sent": not_sent,
+        "ownerless_pending": ownerless,
+        "lark_configured": get_lark_client().configured,
+    }
