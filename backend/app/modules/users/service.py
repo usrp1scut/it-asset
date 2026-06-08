@@ -108,6 +108,35 @@ def upsert_department(db: Session, item: dict) -> Department:
     return dept
 
 
+def reconcile_user_status(
+    db: Session, present_open_ids: set[str], resigned_open_ids: set[str] | None = None
+) -> int:
+    """Mark Lark-sourced active users as inactive (离职) when the directory says
+    they left: no longer present in the synced scope, or flagged resigned/exited.
+
+    Safety:
+    - A transient empty sync (nobody returned) is a no-op, so an API hiccup can
+      never deactivate the whole company.
+    - Only users with a Lark open_id are touched — locally-created accounts
+      (e.g. the bootstrap admin) are never deactivated.
+    - Deactivate-only: a deliberate local 停用 or a re-joined employee is left
+      to manual control (we never auto-reactivate here).
+    """
+    if not present_open_ids:
+        return 0
+    resigned = resigned_open_ids or set()
+    n = 0
+    for u in db.scalars(
+        select(User).where(User.lark_open_id.is_not(None), User.status == UserStatus.active)
+    ):
+        if u.lark_open_id not in present_open_ids or u.lark_open_id in resigned:
+            u.status = UserStatus.inactive
+            n += 1
+    if n:
+        db.commit()
+    return n
+
+
 async def sync_directory(db: Session) -> dict:
     """Pull departments + users from Lark and idempotently upsert them.
 
@@ -158,6 +187,8 @@ async def sync_directory(db: Session) -> dict:
         users_with_nickname = 0
         diag_fields: list[str] = []
         diag_department_ids = None
+        present_open_ids: set[str] = set()
+        resigned_open_ids: set[str] = set()
         for batch in _chunks(user_ids, 50):
             data = await client.get_json(
                 "/open-apis/contact/v3/users/batch",
@@ -179,10 +210,19 @@ async def sync_directory(db: Session) -> dict:
             for u in items:
                 if (u.get("nickname") or "").strip():
                     users_with_nickname += 1
+                oid = u.get("open_id")
+                if oid:
+                    present_open_ids.add(oid)
+                    st = u.get("status") or {}
+                    if st.get("is_resigned") or st.get("is_exited"):
+                        resigned_open_ids.add(oid)
                 synced = upsert_user_from_lark(db, u)
                 users_synced += 1
                 if synced.department_id is not None:
                     users_with_dept += 1
+
+        # mark departed employees inactive (gone from the directory or resigned)
+        deactivated = reconcile_user_status(db, present_open_ids, resigned_open_ids)
 
         # reconcile assets with the directory: auto-link unlinked owners by
         # fuzzy name match, and refresh owner_name / department snapshots
@@ -199,6 +239,7 @@ async def sync_directory(db: Session) -> dict:
         "users": users_synced,
         "users_with_department": users_with_dept,
         "users_with_nickname": users_with_nickname,
+        "deactivated": deactivated,
         "assets_linked": asset_recon["linked"],
         "assets_refreshed": asset_recon["refreshed"],
         "diag_user_fields": diag_fields,

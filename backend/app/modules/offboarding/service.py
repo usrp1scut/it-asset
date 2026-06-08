@@ -18,7 +18,7 @@ from app.modules.offboarding.models import (
     OffboardingItemStatus,
     OffboardingStatus,
 )
-from app.modules.users.models import Department, User
+from app.modules.users.models import Department, User, UserStatus
 
 
 class OffboardingError(ValueError):
@@ -195,6 +195,8 @@ def create_from_lark(
     user = db.scalar(stmt)
     if user is None:
         return None
+    # The deletion event is authoritative — flip the user to 离职 (inactive).
+    user.status = UserStatus.inactive
     try:
         return create_case(
             db,
@@ -206,7 +208,8 @@ def create_from_lark(
             alert_it=True,
         )
     except OffboardingError:
-        return None  # already has an open case
+        db.commit()  # persist the status flip even if a case already exists
+        return None
 
 
 def _item_or_err(db: Session, case_id: int, code: str) -> OffboardingItem:
