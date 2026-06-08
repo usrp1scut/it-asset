@@ -624,3 +624,18 @@ def test_change_type_to_infrastructure_blocked_while_assigned():
     assert ok.status_code == 200
     assert ok.json()["asset_class"] == "infrastructure"
     assert ok.json()["asset_code"].startswith("NET-")
+
+
+def test_audit_log_captures_ip_and_ua():
+    admin = _login()
+    code = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC"},
+        headers={**_h(admin), "User-Agent": "pytest-ua/1.0"},
+    ).json()["asset_code"]
+    logs = client.get("/api/audit-logs?size=50", headers=_h(admin)).json()["items"]
+    entry = next(
+        x for x in logs if x["resource_id"] == code and x["action"] == "asset.create"
+    )
+    assert entry["ip"]  # captured from the request (TestClient sets a client)
+    assert entry["ua"] == "pytest-ua/1.0"
