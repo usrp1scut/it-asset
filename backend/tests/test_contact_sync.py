@@ -2,12 +2,15 @@ import uuid
 
 from app.db import SessionLocal
 from app.lark import client as client_mod
+from app.modules.users.models import User, UserStatus
 from app.modules.users.service import (
+    reconcile_user_status,
     sync_directory,
     upsert_department,
     upsert_user_from_lark,
 )
 from app.worker import celery_app
+from sqlalchemy import select
 
 
 def test_task_registered():
@@ -117,4 +120,50 @@ def test_user_sync_links_primary_department():
         )
         assert user.department_id == dept.id
     finally:
+        db.close()
+
+
+def test_reconcile_deactivates_departed_users():
+    """Sync reconcile: a Lark user no longer in the directory → inactive (离职);
+    one still present stays active; a resigned-but-present one → inactive."""
+    db = SessionLocal()
+    departing = staying = resigned = None
+    try:
+        oa = f"ou-{uuid.uuid4().hex[:10]}"
+        ob = f"ou-{uuid.uuid4().hex[:10]}"
+        oc = f"ou-{uuid.uuid4().hex[:10]}"
+        departing = upsert_user_from_lark(db, {"open_id": oa, "name": "Departing"})
+        staying = upsert_user_from_lark(db, {"open_id": ob, "name": "Staying"})
+        resigned = upsert_user_from_lark(db, {"open_id": oc, "name": "Resigned"})
+
+        # everyone currently active in the directory — used as the "present" set
+        # so reconcile only touches the ones we deliberately drop/flag.
+        all_active = set(
+            db.scalars(
+                select(User.lark_open_id).where(
+                    User.lark_open_id.is_not(None), User.status == UserStatus.active
+                )
+            )
+        )
+        present = all_active - {oa}  # A dropped out of the directory
+        n = reconcile_user_status(db, present, resigned_open_ids={oc})
+        assert n >= 2  # at least A (gone) + C (resigned)
+
+        for u in (departing, staying, resigned):
+            db.refresh(u)
+        assert departing.status == UserStatus.inactive   # gone → 离职
+        assert resigned.status == UserStatus.inactive     # resigned flag → 离职
+        assert staying.status == UserStatus.active        # still present → unchanged
+
+        # Safety: an empty sync (nobody returned) must never deactivate anyone.
+        staying.status = UserStatus.active
+        db.commit()
+        assert reconcile_user_status(db, set()) == 0
+        db.refresh(staying)
+        assert staying.status == UserStatus.active
+    finally:
+        for u in (departing, staying, resigned):
+            if u is not None:
+                db.delete(db.get(User, u.id))
+        db.commit()
         db.close()

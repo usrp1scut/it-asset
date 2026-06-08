@@ -168,3 +168,22 @@ def test_offboarding_overdue_scan():
     flipped = client.post("/api/offboarding/scan-overdue", headers=h).json()["flipped"]
     assert flipped >= 1
     assert client.get(f"/api/offboarding/{cid}", headers=h).json()["status"] == "overdue"
+
+
+def test_create_from_lark_marks_user_inactive():
+    """A Lark deletion event flips the user to 离职 (inactive), authoritative."""
+    from app.db import SessionLocal
+    from app.modules.offboarding.service import create_from_lark
+    from app.modules.users.models import UserStatus
+    from app.modules.users.service import upsert_user_from_lark
+
+    db = SessionLocal()
+    try:
+        oid = f"ou-{uuid.uuid4().hex[:10]}"
+        u = upsert_user_from_lark(db, {"open_id": oid, "name": "离职者"})
+        assert u.status == UserStatus.active
+        create_from_lark(db, lark_open_id=oid)
+        db.refresh(u)
+        assert u.status == UserStatus.inactive
+    finally:
+        db.close()
