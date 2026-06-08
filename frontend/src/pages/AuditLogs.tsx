@@ -11,6 +11,8 @@ interface AuditItem {
   action: string
   resource_type: string
   resource_id: string | null
+  ip: string | null
+  ua: string | null
   created_at: string
 }
 
@@ -195,6 +197,22 @@ export default function AuditLogs() {
                         {it.resource_id}
                       </span>
                     )}
+                  </span>
+                  <span
+                    className="text-mono"
+                    title={it.ua ?? undefined}
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--text-3)',
+                      width: 116,
+                      textAlign: 'right',
+                      flexShrink: 0,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                  >
+                    {it.ip ?? '—'}
                   </span>
                 </div>
               )

@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from app.config import get_settings
+from app.core.request_context import RequestMetaMiddleware
 from app.db import SessionLocal, engine
 from app.modules.approvals.router import router as approvals_router
 from app.modules.assets.repair_router import router as repair_router
@@ -46,6 +47,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Capture client IP / UA for the audit trail (must wrap the routes).
+app.add_middleware(RequestMetaMiddleware)
 
 
 app.include_router(auth_router)

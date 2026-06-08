@@ -49,6 +49,8 @@ def audit_logs(
                 "resource_type": r.resource_type,
                 "resource_id": r.resource_id,
                 "payload": r.payload,
+                "ip": r.ip,
+                "ua": r.ua,
                 "created_at": r.created_at.isoformat(),
             }
             for r in rows
