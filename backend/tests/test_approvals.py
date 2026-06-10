@@ -279,3 +279,54 @@ def test_auto_approval_respects_sku_flag_and_amount():
         assert _submit(emp_h, sid, 1)["status"] == "approved"
     finally:
         client.put("/api/approvals/auto-rule", json={"enabled": False}, headers=admin)
+
+
+def test_approvals_scope_visibility_gate():
+    """Employees may only list their own requests; browsing scopes are gated."""
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    mgr_h, _ = _login("manager")
+    assert client.get("/api/approvals?scope=all", headers=emp_h).status_code == 403
+    assert client.get("/api/approvals", headers=emp_h).status_code == 403  # default for_me
+    assert client.get("/api/approvals?scope=mine", headers=emp_h).status_code == 200
+    assert client.get("/api/approvals?scope=all", headers=mgr_h).status_code == 200
+    assert client.get("/api/approvals?scope=all", headers=admin).status_code == 200
+
+
+def test_card_decision_attributes_operator():
+    """A Lark card decision is attributed to the real operator (by open_id)."""
+    from app.db import SessionLocal
+    from app.modules.approvals import service
+    from app.modules.users.models import User
+
+    admin, _ = _login("it_admin")
+    emp_h, _ = _login("employee")
+    mgr_h, mgr = _login("manager")
+    sid = _stocked_sku(admin, 5)
+    # shared dev DB: make sure the auto-approval rule can't eat the request
+    client.put("/api/approvals/auto-rule", json={"enabled": False}, headers=admin)
+    rid = client.post(
+        "/api/m/requests",
+        json={"request_type": "consumable", "items": [{"sku_id": sid, "qty": 1}],
+              "reason": "归属测试"},
+        headers=emp_h,
+    ).json()["id"]
+
+    open_id = f"ou_{uuid.uuid4().hex[:10]}"
+    db = SessionLocal()
+    try:
+        u = db.get(User, mgr["id"])
+        u.lark_open_id = open_id
+        db.commit()
+        assert service.apply_card_decision(db, rid, "approve", operator_open_id=open_id)
+    finally:
+        db.close()
+
+    row = next(
+        r for r in client.get("/api/approvals?scope=all", headers=admin).json()
+        if r["id"] == rid
+    )
+    assert row["status"] == "approved"
+    assert row["approver_name"] == mgr["name"]  # the real operator, not "first user"
+    assert "Lark 卡片操作" in (row["decision_note"] or "")
+    assert "未识别" not in row["decision_note"]

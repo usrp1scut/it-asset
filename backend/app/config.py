@@ -97,3 +97,29 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
+
+
+# Known placeholder secrets that must never reach production: the Settings
+# default and the .env.prod.example scaffold value.
+_PLACEHOLDER_SECRETS = {
+    "",
+    "change-me-in-production",
+    "CHANGE-ME-regenerate-do-not-leave-default",
+}
+
+
+def validate_prod_settings(s: Settings) -> None:
+    """Fail fast on a mis-configured production boot (APP_DEBUG=false).
+
+    A placeholder/weak JWT_SECRET means anyone who has read the repo can forge
+    an it_admin token offline — refusing to start is strictly better than
+    serving with it. Debug mode (local dev) is exempt.
+    """
+    if s.app_debug:
+        return
+    if s.jwt_secret in _PLACEHOLDER_SECRETS or len(s.jwt_secret) < 16:
+        raise RuntimeError(
+            "JWT_SECRET 仍是占位值/过短,拒绝以生产模式启动。"
+            "请在 .env 设置强随机值(python3 -c \"import secrets;"
+            "print(secrets.token_urlsafe(48))\")后重启。"
+        )

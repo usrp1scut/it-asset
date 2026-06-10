@@ -52,15 +52,18 @@ def _on_user_deleted(data) -> None:
 def _on_card_action(data) -> None:
     """P2 card-action callback → apply the embedded approve/reject."""
     try:
-        action = getattr(getattr(data, "event", None), "action", None)
+        event = getattr(data, "event", None)
+        action = getattr(event, "action", None)
         value = getattr(action, "value", None)
         if isinstance(value, str):
             value = json.loads(value)
         value = value or {}
+        op_open_id = getattr(getattr(event, "operator", None), "open_id", None)
         db = SessionLocal()
         try:
             ok = service.apply_card_decision(
-                db, value.get("approval_id"), value.get("decision")
+                db, value.get("approval_id"), value.get("decision"),
+                operator_open_id=op_open_id,
             )
             log.info("card decision applied=%s value=%s", ok, value)
         finally:
