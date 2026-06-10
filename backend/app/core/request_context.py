@@ -9,7 +9,7 @@ whose context is copied from here).
 
 from contextvars import ContextVar
 
-_meta: ContextVar[dict[str, str | None]] = ContextVar("request_meta", default={})
+_meta: ContextVar[dict[str, str | None] | None] = ContextVar("request_meta", default=None)
 
 
 def set_request_meta(ip: str | None, ua: str | None) -> None:
@@ -17,7 +17,7 @@ def set_request_meta(ip: str | None, ua: str | None) -> None:
 
 
 def get_request_meta() -> dict[str, str | None]:
-    return _meta.get()
+    return _meta.get() or {}
 
 
 class RequestMetaMiddleware:

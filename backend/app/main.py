@@ -1,10 +1,11 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
-from app.config import get_settings
+from app.config import get_settings, validate_prod_settings
 from app.core.request_context import RequestMetaMiddleware
 from app.db import SessionLocal, engine
 from app.modules.approvals.router import router as approvals_router
@@ -25,6 +26,12 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
+    # Refuse to boot prod with a placeholder JWT secret (forgeable tokens).
+    validate_prod_settings(settings)
+    if not settings.app_debug and not settings.lark_verification_token:
+        logging.getLogger(__name__).warning(
+            "LARK_VERIFICATION_TOKEN 为空 — /api/lark/webhook 将接受无签名请求"
+        )
     # First-run admin bootstrap from env (idempotent).
     db = SessionLocal()
     try:

@@ -14,7 +14,7 @@ from app.modules.approvals.models import (
 )
 from app.modules.inventory.models import Sku
 from app.modules.inventory.service import InsufficientStock, issue
-from app.modules.users.models import User
+from app.modules.users.models import Role, User
 
 
 class ApprovalError(ValueError):
@@ -199,11 +199,18 @@ def list_mine(db: Session, user: User) -> list[ApprovalRequest]:
     )
 
 
-def apply_card_decision(db: Session, approval_id, decision: str) -> bool:
+def apply_card_decision(
+    db: Session, approval_id, decision: str, operator_open_id: str | None = None
+) -> bool:
     """Apply an approve/reject from a Lark interactive card.
 
     Shared by the HTTP webhook and the WebSocket long-connection client.
     Idempotent: returns False (no-op) for unknown or already-decided requests.
+
+    The card callback carries the operator's open_id — resolve it so the
+    decision is attributed to the real approver. Falls back to the first
+    admin (then any user) so an unmatched operator still doesn't drop the
+    decision, with the uncertainty recorded in decision_note.
     """
     if decision not in ("approve", "reject"):
         return False
@@ -213,10 +220,23 @@ def apply_card_decision(db: Session, approval_id, decision: str) -> bool:
         return False
     if req is None or req.status != ApprovalStatus.pending:
         return False
-    sys_user = db.scalar(select(User).limit(1))
-    if sys_user is None:
+    operator = (
+        db.scalar(select(User).where(User.lark_open_id == operator_open_id))
+        if operator_open_id
+        else None
+    )
+    note = "Lark 卡片操作"
+    if operator is None:
+        operator = db.scalar(
+            select(User)
+            .where(User.role.in_([Role.it_admin, Role.sys_admin]))
+            .order_by(User.id)
+            .limit(1)
+        ) or db.scalar(select(User).order_by(User.id).limit(1))
+        note = "Lark 卡片操作(操作人未识别,记为系统管理员)"
+    if operator is None:
         return False
-    (approve if decision == "approve" else reject)(db, req.id, sys_user)
+    (approve if decision == "approve" else reject)(db, req.id, operator, note=note)
     return True
 
 

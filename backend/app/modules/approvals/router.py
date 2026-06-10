@@ -159,6 +159,12 @@ def submit_request(
 # ── Approval centre (admin) ──────────────────────────────────────────────────
 
 
+# Roles allowed to browse other people's requests (approval centre). Plain
+# employees may only ever list their own (scope=mine) — without this gate any
+# logged-in employee could read the whole company's request history.
+_APPROVAL_VIEWERS = {Role.manager, Role.it_admin, Role.procurement, Role.finance, Role.sys_admin}
+
+
 @router.get("/api/approvals", response_model=list[ApprovalOut])
 def list_approvals(
     scope: str = "for_me",
@@ -167,10 +173,15 @@ def list_approvals(
 ):
     if scope == "mine":
         rows = service.list_mine(db, user)
-    elif scope == "all":
-        rows = service.list_all(db)  # approval centre — every status
     else:
-        rows = service.list_for_approver(db, user)
+        if user.role not in _APPROVAL_VIEWERS:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "无权查看他人申请(仅可用 scope=mine)"
+            )
+        if scope == "all":
+            rows = service.list_all(db)  # approval centre — every status
+        else:
+            rows = service.list_for_approver(db, user)
     return _outs(db, rows)
 
 
@@ -255,5 +266,14 @@ async def lark_webhook(request: Request, db: Session = Depends(get_db)):
         return {"challenge": body.get("challenge")}
 
     action = (body.get("action") or {}).get("value") or {}
-    service.apply_card_decision(db, action.get("approval_id"), action.get("decision"))
+    # Operator open_id: legacy card callbacks carry it top-level; the newer
+    # event schema nests it under event.operator.
+    operator_open_id = (
+        body.get("open_id")
+        or ((body.get("event") or {}).get("operator") or {}).get("open_id")
+    )
+    service.apply_card_decision(
+        db, action.get("approval_id"), action.get("decision"),
+        operator_open_id=operator_open_id,
+    )
     return {"ok": True}
