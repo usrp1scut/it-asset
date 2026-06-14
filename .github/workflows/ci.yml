@@ -8,19 +8,25 @@ on:
 jobs:
   backend:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: backend
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - run: pip install -e ".[dev]"
+      # The compose backend reads env_file: .env (gitignored); the example
+      # ships APP_DEBUG=true + db/redis/minio hosts, which is exactly what the
+      # tests need. Run ruff + pytest inside compose so the runtime matches
+      # local (host=db/redis/minio resolve on the compose network).
+      - name: Prepare .env
+        run: cp .env.example .env
+      - name: Start data services
+        run: docker compose up -d --wait db redis minio
+      - name: Migrate (fresh schema)
+        run: docker compose run --rm backend alembic upgrade head
       - name: Ruff
-        run: ruff check .
+        run: docker compose run --rm backend ruff check .
       - name: Pytest
-        run: pytest -q
+        run: docker compose run --rm backend pytest -q
+      - name: Compose logs on failure
+        if: failure()
+        run: docker compose logs --tail 100 db redis minio
 
   frontend:
     runs-on: ubuntu-latest
