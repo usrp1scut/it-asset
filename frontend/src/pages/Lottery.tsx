@@ -71,9 +71,11 @@ export default function Lottery() {
       <Card style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 220px' }}>
-            <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>活动名称</div>
+            <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>
+              活动名称(同名只能抽一次,防重抽)
+            </div>
             <Input
-              placeholder="如 年会一等奖"
+              placeholder="如 2026 年会一等奖"
               value={name}
               onChange={(e) => setName(e.target.value)}
             />
@@ -112,7 +114,7 @@ export default function Lottery() {
             type="primary"
             size="large"
             loading={drawMut.isPending}
-            disabled={pool === 0}
+            disabled={pool === 0 || !name.trim()}
             onClick={() => drawMut.mutate()}
           >
             🎲 开始抽奖
