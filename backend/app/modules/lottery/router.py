@@ -11,7 +11,8 @@ from app.modules.lottery.schemas import DrawIn
 from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/api/lottery", tags=["lottery"])
-it_admin = require_roles(Role.it_admin)
+# Everyone except plain employees (sys_admin auto-passes via require_roles).
+lottery_user = require_roles(Role.manager, Role.it_admin, Role.procurement, Role.finance)
 
 
 def _draw_out(db: Session, draw: LotteryDraw) -> dict:
@@ -34,12 +35,12 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
 
 
 @router.get("/eligible-count")
-def eligible_count(db: Session = Depends(get_db), _: User = Depends(it_admin)) -> dict:
+def eligible_count(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> dict:
     return {"count": len(service.eligible_user_ids(db))}
 
 
 @router.post("/draws", status_code=status.HTTP_201_CREATED)
-def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depends(lottery_user)):
     try:
         draw = service.run_draw(
             db,
@@ -59,7 +60,7 @@ def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.get("/draws")
-def list_draws(db: Session = Depends(get_db), _: User = Depends(it_admin)):
+def list_draws(db: Session = Depends(get_db), _: User = Depends(lottery_user)):
     rows = db.scalars(
         select(LotteryDraw).order_by(LotteryDraw.id.desc()).limit(50)
     ).all()
@@ -67,7 +68,7 @@ def list_draws(db: Session = Depends(get_db), _: User = Depends(it_admin)):
 
 
 @router.get("/draws/{draw_id}")
-def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)):
+def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(lottery_user)):
     draw = db.get(LotteryDraw, draw_id)
     if draw is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在")

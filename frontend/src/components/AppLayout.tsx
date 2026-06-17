@@ -27,7 +27,7 @@ const ITEMS: MenuItemDef[] = [
   { key: '/offboarding', label: '离职归还', icon: 'user', adminOnly: true },
   // Tools / system group
   { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '工具与系统' },
-  { key: '/lottery', label: '抽奖', icon: 'box', adminOnly: true },
+  { key: '/lottery', label: '抽奖', icon: 'box' },
   { key: '/logs', label: '操作日志', icon: 'clock' },
   { key: '/m', label: '员工视图', icon: 'phone', adminOnly: true },
   { key: '/m/admin', label: '移动管理台', icon: 'qr', adminOnly: true },

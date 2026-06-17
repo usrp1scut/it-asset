@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { Button, Card, Empty, Input, InputNumber, Select, Tag, message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
@@ -26,6 +27,7 @@ const CHIP_COLORS = ['#3370FF', '#00B42A', '#FF8800', '#7E5EE5', '#F53F3F', '#00
 
 export default function Lottery() {
   const qc = useQueryClient()
+  const navigate = useNavigate()
   const [name, setName] = useState('')
   const [count, setCount] = useState(1)
   const [prize, setPrize] = useState<number | undefined>(undefined)
@@ -65,9 +67,26 @@ export default function Lottery() {
   })
 
   return (
-    <div style={{ padding: 24, maxWidth: 920 }}>
-      <h2 style={{ marginTop: 0 }}>抽奖</h2>
+    <div style={{ minHeight: '100vh', background: 'var(--bg-2, #F4F5F7)' }}>
+      {/* Standalone header — this page renders without the AppLayout sidebar. */}
+      <div
+        style={{
+          height: 56,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '0 24px',
+          background: '#fff',
+          borderBottom: '1px solid var(--border)',
+        }}
+      >
+        <span style={{ fontSize: 18, fontWeight: 700 }}>🎲 抽奖</span>
+        <Button type="link" size="small" onClick={() => navigate('/')}>
+          返回管理台
+        </Button>
+      </div>
 
+      <div style={{ padding: 24, maxWidth: 920, margin: '0 auto' }}>
       <Card style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <div style={{ flex: '1 1 220px' }}>
@@ -195,6 +214,7 @@ export default function Lottery() {
           ))
         )}
       </Card>
+      </div>
     </div>
   )
 }

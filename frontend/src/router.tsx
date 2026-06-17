@@ -42,6 +42,9 @@ export const router = createBrowserRouter([
       { path: '/m/admin/asset/:code/edit', element: <MobileAdminAssetEdit /> },
       { path: '/m/admin/inspections', element: <MobileAdminInspections /> },
       { path: '/m/admin/inspections/:id', element: <MobileAdminInspectionTask /> },
+      // Standalone full-screen page — no AppLayout sidebar (for projecting at
+      // an event); open to everyone except plain employees (gated on the API).
+      { path: '/lottery', element: <Lottery /> },
       {
         element: <AppLayout />,
         children: [
