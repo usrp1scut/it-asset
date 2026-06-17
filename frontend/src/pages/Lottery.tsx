@@ -80,7 +80,7 @@ export default function Lottery() {
           </div>
           <div>
             <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 4 }}>
-              中奖人数(当前在职 {pool} 人)
+              中奖人数(可抽在职 Lark 员工 {pool} 人)
             </div>
             <InputNumber
               min={1}
@@ -120,7 +120,7 @@ export default function Lottery() {
         </div>
         {pool === 0 && (
           <div style={{ marginTop: 10, fontSize: 12, color: 'var(--lark-red, #F53F3F)' }}>
-            当前没有在职用户,无法抽奖。
+            当前没有可抽的在职 Lark 员工(本地 / 密码账号不参与抽奖)。
           </div>
         )}
       </Card>

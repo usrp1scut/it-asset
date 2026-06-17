@@ -13,11 +13,17 @@ class LotteryError(ValueError):
 
 
 def eligible_user_ids(db: Session) -> list[int]:
-    """Active (在职), non-deleted users — the draw pool."""
+    """The draw pool: active (在职), non-deleted, **Lark** users.
+
+    Requiring a lark_open_id excludes locally-created / password-only accounts
+    (the bootstrap admin, service accounts) so only real Lark employees can win.
+    """
     return list(
         db.scalars(
             select(User.id).where(
-                User.status == UserStatus.active, User.deleted_at.is_(None)
+                User.status == UserStatus.active,
+                User.deleted_at.is_(None),
+                User.lark_open_id.is_not(None),
             )
         )
     )

@@ -14,12 +14,47 @@ def _login(role: str = "it_admin"):
     return {"Authorization": f"Bearer {j['token']}"}, j["user"]
 
 
-def test_lottery_draw_picks_distinct_active_winners():
+def _make_lark_users(n: int) -> list[int]:
+    """Create n active users with a lark_open_id (the directory-sourced kind)."""
+    from app.db import SessionLocal
+    from app.modules.users.service import upsert_user_from_lark
+
+    db = SessionLocal()
+    try:
+        ids = [
+            upsert_user_from_lark(
+                db, {"open_id": f"ou-{uuid.uuid4().hex[:10]}", "name": f"Lark用户{i}"}
+            ).id
+            for i in range(n)
+        ]
+        return ids
+    finally:
+        db.close()
+
+
+def test_lottery_pool_is_lark_users_only():
+    from app.db import SessionLocal
+    from app.modules.lottery.service import eligible_user_ids
+
+    lark_ids = _make_lark_users(3)
+    non_lark = _login("employee")[1]["id"]  # dev-login → no lark_open_id
+
+    db = SessionLocal()
+    try:
+        pool = set(eligible_user_ids(db))
+    finally:
+        db.close()
+    assert all(lid in pool for lid in lark_ids)  # Lark users are eligible
+    assert non_lark not in pool  # password / local account excluded
+
+
+def test_lottery_draw_picks_distinct_lark_winners():
     admin, _ = _login("it_admin")
-    for _ in range(4):  # make sure the active pool is big enough
-        _login("employee")
-    elig = client.get("/api/lottery/eligible-count", headers=admin).json()["count"]
-    assert elig >= 4
+    _make_lark_users(4)  # ensure the Lark pool is big enough
+    _login("employee")  # a non-Lark user that must never be drawn
+
+    from app.db import SessionLocal
+    from app.modules.lottery.service import eligible_user_ids
 
     r = client.post(
         "/api/lottery/draws", json={"name": "测试抽奖", "winner_count": 2}, headers=admin
@@ -27,10 +62,16 @@ def test_lottery_draw_picks_distinct_active_winners():
     assert r.status_code == 201, r.text
     d = r.json()
     assert d["winner_count"] == 2
-    assert len(d["winners"]) == 2
     ids = [w["user_id"] for w in d["winners"]]
     assert len(set(ids)) == 2  # distinct
     assert all(w["name"] for w in d["winners"])  # enriched names
+
+    db = SessionLocal()
+    try:
+        pool = set(eligible_user_ids(db))
+    finally:
+        db.close()
+    assert all(i in pool for i in ids)  # every winner is a Lark user
 
     hist = client.get("/api/lottery/draws", headers=admin).json()
     assert any(x["id"] == d["id"] for x in hist)
