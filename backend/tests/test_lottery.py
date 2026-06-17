@@ -127,9 +127,21 @@ def test_lottery_rejects_duplicate_name():
     assert "已抽过奖" in again.json()["detail"]
 
 
-def test_lottery_admin_only():
+def test_lottery_access_excludes_only_employees():
+    # plain employees are blocked…
     emp, _ = _login("employee")
     assert client.post(
-        "/api/lottery/draws", json={"winner_count": 1}, headers=emp
+        "/api/lottery/draws", json={"name": "x", "winner_count": 1}, headers=emp
     ).status_code == 403
     assert client.get("/api/lottery/draws", headers=emp).status_code == 403
+
+    # …but any other role (e.g. finance, neither admin nor employee) may use it
+    fin, _ = _login("finance")
+    _make_lark_users(2)
+    assert client.get("/api/lottery/eligible-count", headers=fin).status_code == 200
+    r = client.post(
+        "/api/lottery/draws",
+        json={"name": f"财务抽{uuid.uuid4().hex[:6]}", "winner_count": 1},
+        headers=fin,
+    )
+    assert r.status_code == 201
