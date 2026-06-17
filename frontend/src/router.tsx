@@ -13,6 +13,7 @@ import Inspections from './pages/Inspections'
 import ScrapApprovals from './pages/ScrapApprovals'
 import RepairOrders from './pages/RepairOrders'
 import Offboarding from './pages/Offboarding'
+import Lottery from './pages/Lottery'
 import MobileApp from './pages/mobile/MobileApp'
 import MobileAdminHome from './pages/mobile/admin/MobileAdminHome'
 import MobileAdminScanResult from './pages/mobile/admin/MobileAdminScanResult'
@@ -53,6 +54,7 @@ export const router = createBrowserRouter([
           { path: '/scrap', element: <ScrapApprovals /> },
           { path: '/repair', element: <RepairOrders /> },
           { path: '/offboarding', element: <Offboarding /> },
+          { path: '/lottery', element: <Lottery /> },
           { path: '/users', element: <Users /> },
           { path: '/logs', element: <AuditLogs /> },
         ],

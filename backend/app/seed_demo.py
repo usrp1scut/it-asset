@@ -23,6 +23,7 @@ from app.modules.inventory.models import (
 from app.modules.users.models import Department, Role, User, UserStatus
 
 _TABLES = [
+    "lottery_winners", "lottery_draws",
     "asset_accessories", "asset_assignments", "asset_change_logs",
     "inspection_items", "inspection_tasks", "approval_requests",
     "employee_item_issues", "inventory_order_items", "inventory_orders",
