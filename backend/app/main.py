@@ -16,6 +16,7 @@ from app.modules.assets.types_router import router as asset_types_router
 from app.modules.dashboard.router import router as dashboard_router
 from app.modules.inspections.router import router as inspections_router
 from app.modules.inventory.router import router as inventory_router
+from app.modules.lottery.router import router as lottery_router
 from app.modules.offboarding.router import router as offboarding_router
 from app.modules.users.people_router import router as users_router
 from app.modules.users.router import router as auth_router
@@ -69,6 +70,7 @@ app.include_router(dashboard_router)
 app.include_router(inspections_router)
 app.include_router(approvals_router)
 app.include_router(offboarding_router)
+app.include_router(lottery_router)
 
 
 @app.get("/health", tags=["meta"])
