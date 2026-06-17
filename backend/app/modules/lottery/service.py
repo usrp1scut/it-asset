@@ -38,8 +38,17 @@ def run_draw(
     operator_id: int | None,
 ) -> LotteryDraw:
     """Pick `winner_count` distinct winners uniformly at random from active
-    employees. Uses a system-RNG so the draw isn't trivially predictable."""
-    name = (name or "").strip() or "抽奖"
+    employees. Uses a system-RNG so the draw isn't trivially predictable.
+
+    防重抽: the activity name is the event key — a name that has already been
+    drawn is rejected, so the same event can't be quietly re-rolled. Re-drawing
+    requires a different (visible, audited) name.
+    """
+    name = (name or "").strip()
+    if not name:
+        raise LotteryError("请填写活动名称")
+    if db.scalar(select(LotteryDraw.id).where(LotteryDraw.name == name)):
+        raise LotteryError(f"活动「{name}」已抽过奖,不能重复抽奖;如需重抽请换一个活动名称")
     if winner_count < 1:
         raise LotteryError("中奖人数至少为 1")
     if prize_sku_id is not None and db.get(Sku, prize_sku_id) is None:

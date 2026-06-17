@@ -57,7 +57,9 @@ def test_lottery_draw_picks_distinct_lark_winners():
     from app.modules.lottery.service import eligible_user_ids
 
     r = client.post(
-        "/api/lottery/draws", json={"name": "测试抽奖", "winner_count": 2}, headers=admin
+        "/api/lottery/draws",
+        json={"name": f"测试抽奖{uuid.uuid4().hex[:6]}", "winner_count": 2},
+        headers=admin,
     )
     assert r.status_code == 201, r.text
     d = r.json()
@@ -79,26 +81,50 @@ def test_lottery_draw_picks_distinct_lark_winners():
 
 def test_lottery_validation():
     admin, _ = _login("it_admin")
+    _make_lark_users(2)  # keep the pool non-empty so over-pool is the failure
+    tag = uuid.uuid4().hex[:6]
     elig = client.get("/api/lottery/eligible-count", headers=admin).json()["count"]
 
     # more winners than the active pool → 400
     over = client.post(
-        "/api/lottery/draws", json={"winner_count": elig + 1}, headers=admin
+        "/api/lottery/draws",
+        json={"name": f"超额{tag}", "winner_count": elig + 1},
+        headers=admin,
     )
     assert over.status_code == 400
 
+    # blank name → 400 (the 防重抽 event key is required)
+    blank = client.post("/api/lottery/draws", json={"winner_count": 1}, headers=admin)
+    assert blank.status_code == 400
+
     # < 1 winner is rejected by the schema (422)
     assert client.post(
-        "/api/lottery/draws", json={"winner_count": 0}, headers=admin
+        "/api/lottery/draws", json={"name": f"零{tag}", "winner_count": 0}, headers=admin
     ).status_code == 422
 
     # unknown prize SKU → 400
     bad = client.post(
         "/api/lottery/draws",
-        json={"winner_count": 1, "prize_sku_id": 999999999},
+        json={"name": f"坏SKU{tag}", "winner_count": 1, "prize_sku_id": 999999999},
         headers=admin,
     )
     assert bad.status_code == 400
+
+
+def test_lottery_rejects_duplicate_name():
+    admin, _ = _login("it_admin")
+    _make_lark_users(3)
+    name = f"年会一等奖{uuid.uuid4().hex[:6]}"
+    first = client.post(
+        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
+    )
+    assert first.status_code == 201
+    # same name → rejected (防重抽)
+    again = client.post(
+        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
+    )
+    assert again.status_code == 400
+    assert "已抽过奖" in again.json()["detail"]
 
 
 def test_lottery_admin_only():
