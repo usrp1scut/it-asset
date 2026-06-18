@@ -26,6 +26,7 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
     return {
         "id": draw.id,
         "name": draw.name,
+        "tier": draw.tier,
         "winner_count": draw.winner_count,
         "prize_sku_id": draw.prize_sku_id,
         "prize_name": prize.name if prize else None,
@@ -39,12 +40,20 @@ def eligible_count(db: Session = Depends(get_db), _: User = Depends(lottery_user
     return {"count": len(service.eligible_user_ids(db))}
 
 
+@router.get("/pool")
+def pool_names(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> dict:
+    """Display names of the eligible pool — drives the big-screen rolling
+    (slot-machine) animation so it flashes real candidate names."""
+    return {"names": service.eligible_names(db)}
+
+
 @router.post("/draws", status_code=status.HTTP_201_CREATED)
 def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depends(lottery_user)):
     try:
         draw = service.run_draw(
             db,
             name=body.name,
+            tier=body.tier,
             winner_count=body.winner_count,
             prize_sku_id=body.prize_sku_id,
             operator_id=user.id,
@@ -54,7 +63,11 @@ def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depend
     write_audit(
         db, actor_user_id=user.id, action="lottery.draw",
         resource_type="lottery", resource_id=str(draw.id),
-        payload={"winner_count": draw.winner_count, "prize_sku_id": draw.prize_sku_id},
+        payload={
+            "tier": draw.tier,
+            "winner_count": draw.winner_count,
+            "prize_sku_id": draw.prize_sku_id,
+        },
     )
     return _draw_out(db, draw)
 

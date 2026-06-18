@@ -12,27 +12,37 @@ class LotteryError(ValueError):
     pass
 
 
-def eligible_user_ids(db: Session) -> list[int]:
-    """The draw pool: active (在职), non-deleted, **Lark** users.
+# Prize tiers the stage theme understands; None is also allowed (untiered draw).
+ALLOWED_TIERS = {"special", "first", "second", "third"}
 
-    Requiring a lark_open_id excludes locally-created / password-only accounts
-    (the bootstrap admin, service accounts) so only real Lark employees can win.
-    """
-    return list(
-        db.scalars(
-            select(User.id).where(
-                User.status == UserStatus.active,
-                User.deleted_at.is_(None),
-                User.lark_open_id.is_not(None),
-            )
-        )
+
+def _eligible_where():
+    """Shared predicate for the draw pool: active (在职), non-deleted, **Lark**
+    users. Requiring a lark_open_id excludes locally-created / password-only
+    accounts (the bootstrap admin, service accounts) so only real Lark
+    employees can win."""
+    return (
+        User.status == UserStatus.active,
+        User.deleted_at.is_(None),
+        User.lark_open_id.is_not(None),
     )
+
+
+def eligible_user_ids(db: Session) -> list[int]:
+    return list(db.scalars(select(User.id).where(*_eligible_where())))
+
+
+def eligible_names(db: Session) -> list[str]:
+    """Display names of the draw pool — feeds the big-screen rolling animation
+    (the slot-machine effect flashes real candidate names)."""
+    return list(db.scalars(select(User.name).where(*_eligible_where())))
 
 
 def run_draw(
     db: Session,
     *,
     name: str,
+    tier: str | None,
     winner_count: int,
     prize_sku_id: int | None,
     operator_id: int | None,
@@ -47,6 +57,8 @@ def run_draw(
     name = (name or "").strip()
     if not name:
         raise LotteryError("请填写活动名称")
+    if tier is not None and tier not in ALLOWED_TIERS:
+        raise LotteryError("无效的奖项等级")
     if db.scalar(select(LotteryDraw.id).where(LotteryDraw.name == name)):
         raise LotteryError(f"活动「{name}」已抽过奖,不能重复抽奖;如需重抽请换一个活动名称")
     if winner_count < 1:
@@ -62,6 +74,7 @@ def run_draw(
     winner_ids = secrets.SystemRandom().sample(pool, winner_count)
     draw = LotteryDraw(
         name=name,
+        tier=tier,
         winner_count=winner_count,
         prize_sku_id=prize_sku_id,
         created_by=operator_id,

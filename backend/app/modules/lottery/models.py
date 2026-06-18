@@ -14,6 +14,9 @@ class LotteryDraw(Base):
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(String(255))
+    # Prize tier (special/first/second/third) — display-only, drives the
+    # big-screen stage theme color. Nullable: older draws have no tier.
+    tier: Mapped[str | None] = mapped_column(String(16))
     prize_sku_id: Mapped[int | None] = mapped_column(ForeignKey("skus.id"))
     winner_count: Mapped[int] = mapped_column(Integer)
     created_by: Mapped[int | None] = mapped_column(BigInteger)

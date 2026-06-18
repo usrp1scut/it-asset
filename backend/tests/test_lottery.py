@@ -58,12 +58,13 @@ def test_lottery_draw_picks_distinct_lark_winners():
 
     r = client.post(
         "/api/lottery/draws",
-        json={"name": f"测试抽奖{uuid.uuid4().hex[:6]}", "winner_count": 2},
+        json={"name": f"测试抽奖{uuid.uuid4().hex[:6]}", "winner_count": 2, "tier": "first"},
         headers=admin,
     )
     assert r.status_code == 201, r.text
     d = r.json()
     assert d["winner_count"] == 2
+    assert d["tier"] == "first"  # tier round-trips
     ids = [w["user_id"] for w in d["winners"]]
     assert len(set(ids)) == 2  # distinct
     assert all(w["name"] for w in d["winners"])  # enriched names
@@ -109,6 +110,14 @@ def test_lottery_validation():
         headers=admin,
     )
     assert bad.status_code == 400
+
+    # invalid tier → 400
+    bad_tier = client.post(
+        "/api/lottery/draws",
+        json={"name": f"坏档{tag}", "winner_count": 1, "tier": "platinum"},
+        headers=admin,
+    )
+    assert bad_tier.status_code == 400
 
 
 def test_lottery_rejects_duplicate_name():
