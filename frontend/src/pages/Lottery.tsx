@@ -527,7 +527,7 @@ export default function Lottery() {
                 ✨ 再抽一轮
               </button>
             ) : (
-              <button onClick={startDraw} disabled={!canDraw && phase !== 'rolling'} style={bigBtn(tier.color, phase === 'rolling' || !canDraw)}>
+              <button onClick={startDraw} disabled={!canDraw} style={bigBtn(tier.color, !canDraw)}>
                 {phase === 'rolling' ? '🎲 正在抽取…' : '🎲 开 始 抽 奖'}
               </button>
             )}
