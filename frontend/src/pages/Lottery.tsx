@@ -72,7 +72,11 @@ function Confetti() {
               height: size * (Math.random() > 0.5 ? 1 : 0.5),
               background: c,
               borderRadius: Math.random() > 0.6 ? '50%' : 2,
-              animation: `confettiFall ${dur}s linear ${delay}s infinite`,
+              // Play ONCE (forwards), not infinitely — a perpetual animation
+              // behind the glass cards melts down weak-GPU / webview compositors
+              // and freezes the page until refresh. The host also unmounts this
+              // component a few seconds after reveal so nothing keeps animating.
+              animation: `confettiFall ${dur}s linear ${delay}s forwards`,
             }}
           />
         )
@@ -211,11 +215,14 @@ function RevealStage({
 
 // ── styled helpers ──
 const glassCard: React.CSSProperties = {
-  background: 'rgba(255,255,255,0.05)',
+  // Solid-ish dark fill instead of a translucent layer + backdrop-filter:blur.
+  // backdrop-filter forces the compositor to re-rasterize everything behind the
+  // card every frame while the stage animates — on weak-GPU / Lark webviews
+  // that pegs the GPU and freezes input until refresh.
+  background: 'rgba(22, 30, 58, 0.78)',
   border: '1px solid rgba(255,255,255,0.1)',
   borderRadius: 16,
   padding: 18,
-  backdropFilter: 'blur(8px)',
 }
 const cardTitle: React.CSSProperties = {
   fontSize: 14,
@@ -284,6 +291,8 @@ export default function Lottery() {
   const [prize, setPrize] = useState<number | undefined>(undefined)
   const [rollNames, setRollNames] = useState<string[]>([])
   const [result, setResult] = useState<Draw | null>(null)
+  const [showConfetti, setShowConfetti] = useState(false)
+  const confettiTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: elig } = useQuery<{ count: number }>({
     queryKey: ['lottery-eligible'],
@@ -308,7 +317,13 @@ export default function Lottery() {
   const alreadyDrawn = (history ?? []).some((h) => h.name === name.trim())
   const rollPool = poolNames?.names?.length ? poolNames.names : ['幸运儿', '小伙伴']
 
-  useEffect(() => () => { if (rollTimer.current) clearInterval(rollTimer.current) }, [])
+  useEffect(
+    () => () => {
+      if (rollTimer.current) clearInterval(rollTimer.current)
+      if (confettiTimer.current) clearTimeout(confettiTimer.current)
+    },
+    [],
+  )
 
   const canDraw = phase === 'idle' && !!name.trim() && !alreadyDrawn && pool > 0 && count >= 1
 
@@ -341,6 +356,11 @@ export default function Lottery() {
         if (rollTimer.current) clearInterval(rollTimer.current)
         setResult(draw)
         setPhase('reveal')
+        // Confetti plays once, then we unmount it so the reveal becomes a
+        // static (cheap) screen — no perpetual animation to choke the GPU.
+        setShowConfetti(true)
+        if (confettiTimer.current) clearTimeout(confettiTimer.current)
+        confettiTimer.current = setTimeout(() => setShowConfetti(false), 5000)
         message.success(`🎉 抽出 ${draw.winners.length} 位中奖者`)
         qc.invalidateQueries({ queryKey: ['lottery-draws'] })
         qc.invalidateQueries({ queryKey: ['lottery-eligible'] })
@@ -357,6 +377,8 @@ export default function Lottery() {
     setPhase('idle')
     setResult(null)
     setRollNames([])
+    setShowConfetti(false)
+    if (confettiTimer.current) clearTimeout(confettiTimer.current)
     // Clear the activity name (the 防重抽 key) so the next round starts clean —
     // otherwise the just-drawn name collides with history and leaves the draw
     // button disabled until the user changes it (previously required a refresh).
@@ -425,7 +447,9 @@ export default function Lottery() {
           borderRadius: '50%',
           background: `radial-gradient(circle, ${tier.glow} 0%, transparent 70%)`,
           filter: 'blur(40px)',
-          animation: 'lotteryGlow 4s ease-in-out infinite',
+          // Static (no infinite opacity pulse): animating opacity on a large
+          // blurred layer re-rasterizes the blur every frame on weak GPUs.
+          opacity: 0.8,
           pointerEvents: 'none',
         }}
       />
@@ -443,7 +467,7 @@ export default function Lottery() {
         }}
       />
 
-      {phase === 'reveal' && <Confetti />}
+      {phase === 'reveal' && showConfetti && <Confetti />}
 
       {/* Header */}
       <div
