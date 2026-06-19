@@ -357,6 +357,11 @@ export default function Lottery() {
     setPhase('idle')
     setResult(null)
     setRollNames([])
+    // Clear the activity name (the 防重抽 key) so the next round starts clean —
+    // otherwise the just-drawn name collides with history and leaves the draw
+    // button disabled until the user changes it (previously required a refresh).
+    setName('')
+    setPrize(undefined)
   }
 
   const refreshHistory = () => {
