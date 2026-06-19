@@ -80,6 +80,30 @@ def eligible_names(db: Session) -> list[str]:
     return list(db.scalars(select(User.name).where(*_eligible_where())))
 
 
+def event_winner_ids(db: Session, name: str) -> set[int]:
+    """User ids that already won under this activity name (across its draws)."""
+    name = (name or "").strip()
+    if not name:
+        return set()
+    return set(
+        db.scalars(
+            select(LotteryWinner.user_id)
+            .join(LotteryDraw, LotteryDraw.id == LotteryWinner.draw_id)
+            .where(LotteryDraw.name == name)
+        )
+    )
+
+
+def available_pool(db: Session, *, name: str | None, exclude_winners: bool) -> list[int]:
+    """The drawable pool. When `exclude_winners`, drop anyone who already won
+    under the same activity `name` so a person can't win twice in one event."""
+    pool = eligible_user_ids(db)
+    if exclude_winners and name:
+        won = event_winner_ids(db, name)
+        pool = [uid for uid in pool if uid not in won]
+    return pool
+
+
 def run_draw(
     db: Session,
     *,
@@ -88,12 +112,14 @@ def run_draw(
     winner_count: int,
     prize_sku_id: int | None,
     operator_id: int | None,
+    exclude_winners: bool = True,
 ) -> LotteryDraw:
     """Pick `winner_count` distinct winners uniformly at random from active
     employees. Uses a system-RNG so the draw isn't trivially predictable.
 
-    Re-drawing is unrestricted: the same name+tier may be drawn repeatedly, each
-    recorded as its own (audited) draw.
+    Re-drawing is unrestricted. `exclude_winners` drops people who already won
+    under the same activity name, so multiple rounds of one event don't let the
+    same person win twice.
     """
     name = (name or "").strip()
     if not name:
@@ -104,11 +130,13 @@ def run_draw(
         raise LotteryError("中奖人数至少为 1")
     if prize_sku_id is not None:
         _validate_prize(db, prize_sku_id)
-    pool = eligible_user_ids(db)
+    pool = available_pool(db, name=name, exclude_winners=exclude_winners)
     if not pool:
+        if exclude_winners:
+            raise LotteryError("可抽人数为 0:在职 Lark 员工都已在本活动中过奖")
         raise LotteryError("当前没有在职用户可抽")
     if winner_count > len(pool):
-        raise LotteryError(f"中奖人数({winner_count})不能超过在职用户数({len(pool)})")
+        raise LotteryError(f"中奖人数({winner_count})不能超过可抽人数({len(pool)})")
 
     winner_ids = secrets.SystemRandom().sample(pool, winner_count)
     draw = LotteryDraw(

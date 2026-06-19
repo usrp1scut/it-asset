@@ -292,14 +292,20 @@ export default function Lottery() {
   const [tierId, setTierId] = useState('first')
   const [count, setCount] = useState(1)
   const [prize, setPrize] = useState<number | undefined>(undefined)
+  const [excludeWinners, setExcludeWinners] = useState(true)
   const [rollNames, setRollNames] = useState<string[]>([])
   const [result, setResult] = useState<Draw | null>(null)
   const [showConfetti, setShowConfetti] = useState(false)
   const confettiTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const { data: elig } = useQuery<{ count: number }>({
-    queryKey: ['lottery-eligible'],
-    queryFn: async () => (await api.get('/lottery/eligible-count')).data,
+    queryKey: ['lottery-eligible', name.trim(), excludeWinners],
+    queryFn: async () =>
+      (
+        await api.get('/lottery/eligible-count', {
+          params: { name: name.trim() || undefined, exclude_winners: excludeWinners },
+        })
+      ).data,
   })
   const { data: poolNames } = useQuery<{ names: string[] }>({
     queryKey: ['lottery-pool'],
@@ -350,6 +356,7 @@ export default function Lottery() {
           tier: tierId,
           winner_count: count,
           prize_sku_id: prize ?? null,
+          exclude_winners: excludeWinners,
         })
       ).data as Draw
       // Hold the suspense for at least ROLL_MS even if the API is instant.
@@ -699,6 +706,25 @@ export default function Lottery() {
                 </div>
               )}
             </Field>
+            <label
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                cursor: phase === 'idle' ? 'pointer' : 'default',
+                fontSize: 12,
+                color: 'rgba(255,255,255,0.75)',
+              }}
+            >
+              <input
+                type="checkbox"
+                checked={excludeWinners}
+                disabled={phase !== 'idle'}
+                onChange={(e) => setExcludeWinners(e.target.checked)}
+                style={{ width: 14, height: 14, accentColor: tier.color, cursor: 'inherit' }}
+              />
+              排除本活动已中奖的人(同名多轮不重复中奖)
+            </label>
           </div>
 
           {/* History */}

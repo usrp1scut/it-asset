@@ -39,8 +39,17 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
 
 
 @router.get("/eligible-count")
-def eligible_count(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> dict:
-    return {"count": len(service.eligible_user_ids(db))}
+def eligible_count(
+    name: str | None = None,
+    exclude_winners: bool = False,
+    db: Session = Depends(get_db),
+    _: User = Depends(lottery_user),
+) -> dict:
+    """Drawable count. With name + exclude_winners, excludes prior winners of
+    that activity so the UI shows the real remaining pool."""
+    return {
+        "count": len(service.available_pool(db, name=name, exclude_winners=exclude_winners))
+    }
 
 
 @router.get("/prizes")
@@ -75,6 +84,7 @@ def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depend
             winner_count=body.winner_count,
             prize_sku_id=body.prize_sku_id,
             operator_id=user.id,
+            exclude_winners=body.exclude_winners,
         )
     except service.LotteryError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
@@ -85,6 +95,7 @@ def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depend
             "tier": draw.tier,
             "winner_count": draw.winner_count,
             "prize_sku_id": draw.prize_sku_id,
+            "exclude_winners": body.exclude_winners,
         },
     )
     return _draw_out(db, draw)
