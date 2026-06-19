@@ -481,9 +481,7 @@ export default function Lottery() {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 22 }}>🎲</span>
           <div>
-            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '0.02em' }}>
-              IT 资产管理 · 年会抽奖
-            </div>
+            <div style={{ fontSize: 15, fontWeight: 600, letterSpacing: '0.02em' }}>抽奖</div>
             <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)' }}>
               奖池来自在职 Lark 员工 · {pool} 人
             </div>
