@@ -336,3 +336,59 @@ def test_lottery_confirm_stock_out_guards():
         client.post("/api/lottery/draws/999999999/confirm-stock-out", headers=admin).status_code
         == 404
     )
+
+
+def test_lottery_exclude_previous_winners():
+    admin, _ = _login("it_admin")
+    _make_lark_users(6)
+    name = f"排除{uuid.uuid4().hex[:6]}"
+
+    r1 = client.post(
+        "/api/lottery/draws",
+        json={"name": name, "winner_count": 2, "exclude_winners": True},
+        headers=admin,
+    ).json()
+    won1 = {w["user_id"] for w in r1["winners"]}
+    assert len(won1) == 2
+
+    # round 2 under the same name + exclude → winners must not overlap round 1
+    r2 = client.post(
+        "/api/lottery/draws",
+        json={"name": name, "winner_count": 2, "exclude_winners": True},
+        headers=admin,
+    ).json()
+    won2 = {w["user_id"] for w in r2["winners"]}
+    assert won1.isdisjoint(won2)
+
+    # eligible-count with name+exclude reflects the shrunken pool (4 excluded)
+    base = client.get("/api/lottery/eligible-count", headers=admin).json()["count"]
+    after = client.get(
+        "/api/lottery/eligible-count",
+        params={"name": name, "exclude_winners": True},
+        headers=admin,
+    ).json()["count"]
+    assert after == base - 4
+
+
+def test_lottery_available_pool_on_off():
+    from app.db import SessionLocal
+    from app.modules.lottery.service import available_pool, eligible_user_ids
+
+    admin, _ = _login("it_admin")
+    _make_lark_users(4)
+    name = f"svc{uuid.uuid4().hex[:6]}"
+    r = client.post(
+        "/api/lottery/draws", json={"name": name, "winner_count": 2}, headers=admin
+    ).json()
+    won = {w["user_id"] for w in r["winners"]}
+
+    db = SessionLocal()
+    try:
+        full = set(eligible_user_ids(db))
+        with_excl = set(available_pool(db, name=name, exclude_winners=True))
+        without = set(available_pool(db, name=name, exclude_winners=False))
+    finally:
+        db.close()
+    assert won <= full
+    assert won.isdisjoint(with_excl)  # excluded when on
+    assert won <= without  # still present when off
