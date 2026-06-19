@@ -1,9 +1,15 @@
 import secrets
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
-from app.modules.inventory.models import Sku
+from app.modules.inventory import service as inv
+from app.modules.inventory.models import (
+    InventoryStock,
+    ItemCategory,
+    Sku,
+    TransactionType,
+)
 from app.modules.lottery.models import LotteryDraw, LotteryWinner
 from app.modules.users.models import User, UserStatus
 
@@ -14,6 +20,42 @@ class LotteryError(ValueError):
 
 # Prize tiers the stage theme understands; None is also allowed (untiered draw).
 ALLOWED_TIERS = {"special", "first", "second", "third"}
+
+# The default 奖品 (prize) category — seeded + ensured by migration. Lottery
+# prizes must be SKUs under this category. Matched by the stable `code`, not the
+# (renameable) name.
+PRIZE_CATEGORY_CODE = "JP"
+
+
+def prize_category(db: Session) -> ItemCategory | None:
+    return db.scalar(select(ItemCategory).where(ItemCategory.code == PRIZE_CATEGORY_CODE))
+
+
+def list_prize_skus(db: Session) -> list[tuple[Sku, int]]:
+    """In-stock prize SKUs: (sku, available) for active 奖品-category SKUs with
+    available > 0 — the only items a draw may link to."""
+    cat = prize_category(db)
+    if cat is None:
+        return []
+    out: list[tuple[Sku, int]] = []
+    for sku in db.scalars(
+        select(Sku).where(Sku.category_id == cat.id, Sku.status == "active").order_by(Sku.name)
+    ):
+        avail = inv.total_available(db, sku.id)
+        if avail > 0:
+            out.append((sku, avail))
+    return out
+
+
+def _validate_prize(db: Session, prize_sku_id: int) -> None:
+    sku = db.get(Sku, prize_sku_id)
+    if sku is None:
+        raise LotteryError("关联的库存物品不存在")
+    cat = prize_category(db)
+    if cat is None or sku.category_id != cat.id:
+        raise LotteryError("只能关联「奖品」分类下的物品")
+    if inv.total_available(db, prize_sku_id) <= 0:
+        raise LotteryError("该奖品暂无库存,不能关联")
 
 
 def _eligible_where():
@@ -60,8 +102,8 @@ def run_draw(
         raise LotteryError("无效的奖项等级")
     if winner_count < 1:
         raise LotteryError("中奖人数至少为 1")
-    if prize_sku_id is not None and db.get(Sku, prize_sku_id) is None:
-        raise LotteryError("关联的库存物品不存在")
+    if prize_sku_id is not None:
+        _validate_prize(db, prize_sku_id)
     pool = eligible_user_ids(db)
     if not pool:
         raise LotteryError("当前没有在职用户可抽")
@@ -105,3 +147,62 @@ def clear_draws(db: Session) -> int:
         db.execute(delete(LotteryDraw))
         db.commit()
     return len(ids)
+
+
+class _DrawMissing(Exception):
+    """Internal sentinel: the draw id doesn't exist (router → 404)."""
+
+
+def confirm_stock_out(db: Session, *, draw_id: int, operator_id: int | None) -> LotteryDraw:
+    """Deliver the prize: deduct `winner_count` units of the linked prize SKU
+    from stock (one prize per winner) and stamp `stock_out_at`. Idempotent guard
+    rejects a second confirm. Drawing never touches stock — only this does.
+
+    Deducts across locations (most-stocked first) through the locked ledger, so
+    it can't oversell or go negative.
+    """
+    draw = db.get(LotteryDraw, draw_id)
+    if draw is None:
+        raise _DrawMissing
+    if draw.prize_sku_id is None:
+        raise LotteryError("该抽奖未关联奖品,无需出库")
+    if draw.stock_out_at is not None:
+        raise LotteryError("该奖品已确认出库,请勿重复操作")
+
+    qty = draw.winner_count
+    rows = db.execute(
+        select(InventoryStock.location_id, InventoryStock.quantity_available)
+        .where(
+            InventoryStock.sku_id == draw.prize_sku_id,
+            InventoryStock.quantity_available > 0,
+        )
+        .order_by(InventoryStock.quantity_available.desc())
+    ).all()
+    if sum(avail for _, avail in rows) < qty:
+        total = sum(avail for _, avail in rows)
+        raise LotteryError(f"库存不足:奖品可用 {total},需出库 {qty}")
+
+    try:
+        remaining = qty
+        for loc_id, avail in rows:
+            if remaining <= 0:
+                break
+            take = min(remaining, avail)
+            inv.apply_movement(
+                db,
+                sku_id=draw.prize_sku_id,
+                location_id=loc_id,
+                delta=-take,
+                txn_type=TransactionType.issue_out,
+                operator_id=operator_id,
+                remark=f"抽奖出库:{draw.name}",
+            )
+            remaining -= take
+    except inv.InsufficientStock as e:
+        db.rollback()
+        raise LotteryError(f"库存不足:{e}") from e
+
+    draw.stock_out_at = func.now()
+    db.commit()
+    db.refresh(draw)
+    return draw

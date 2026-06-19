@@ -32,6 +32,7 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
         "winner_count": draw.winner_count,
         "prize_sku_id": draw.prize_sku_id,
         "prize_name": prize.name if prize else None,
+        "stock_out_at": draw.stock_out_at.isoformat() if draw.stock_out_at else None,
         "created_at": draw.created_at.isoformat(),
         "winners": [{"user_id": uid, "name": nm} for uid, nm in winners],
     }
@@ -40,6 +41,21 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
 @router.get("/eligible-count")
 def eligible_count(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> dict:
     return {"count": len(service.eligible_user_ids(db))}
+
+
+@router.get("/prizes")
+def list_prizes(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> list[dict]:
+    """In-stock 奖品-category SKUs — the only items a draw may link to."""
+    return [
+        {
+            "id": s.id,
+            "name": s.name,
+            "sku_code": s.sku_code,
+            "unit": s.unit,
+            "available": avail,
+        }
+        for s, avail in service.list_prize_skus(db)
+    ]
 
 
 @router.get("/pool")
@@ -110,3 +126,22 @@ def remove_draw(draw_id: int, db: Session = Depends(get_db), user: User = Depend
         db, actor_user_id=user.id, action="lottery.delete",
         resource_type="lottery", resource_id=str(draw_id),
     )
+
+
+@router.post("/draws/{draw_id}/confirm-stock-out")
+def confirm_stock_out(
+    draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)
+):
+    """Deliver the prize: deduct winner_count units from stock (one per winner)."""
+    try:
+        draw = service.confirm_stock_out(db, draw_id=draw_id, operator_id=user.id)
+    except service._DrawMissing as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在") from e
+    except service.LotteryError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    write_audit(
+        db, actor_user_id=user.id, action="lottery.stock_out",
+        resource_type="lottery", resource_id=str(draw.id),
+        payload={"prize_sku_id": draw.prize_sku_id, "qty": draw.winner_count},
+    )
+    return _draw_out(db, draw)

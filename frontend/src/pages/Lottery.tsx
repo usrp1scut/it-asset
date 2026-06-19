@@ -21,13 +21,16 @@ interface Draw {
   winner_count: number
   prize_sku_id: number | null
   prize_name: string | null
+  stock_out_at: string | null
   created_at: string
   winners: Winner[]
 }
-interface SkuOpt {
+interface PrizeOpt {
   id: number
   name: string
   sku_code: string
+  unit: string
+  available: number
 }
 
 interface Tier {
@@ -302,9 +305,9 @@ export default function Lottery() {
     queryKey: ['lottery-pool'],
     queryFn: async () => (await api.get('/lottery/pool')).data,
   })
-  const { data: skus } = useQuery<{ items: SkuOpt[] }>({
-    queryKey: ['skus-lottery'],
-    queryFn: async () => (await api.get('/skus')).data,
+  const { data: prizes } = useQuery<PrizeOpt[]>({
+    queryKey: ['lottery-prizes'],
+    queryFn: async () => (await api.get('/lottery/prizes')).data,
   })
   const { data: history } = useQuery<Draw[]>({
     queryKey: ['lottery-draws'],
@@ -313,7 +316,7 @@ export default function Lottery() {
 
   const pool = elig?.count ?? 0
   const tier = TIERS.find((t) => t.id === tierId) ?? TIERS[1]
-  const prizeMeta = skus?.items.find((s) => s.id === prize)
+  const prizeMeta = prizes?.find((s) => s.id === prize)
   const rollPool = poolNames?.names?.length ? poolNames.names : ['幸运儿', '小伙伴']
 
   useEffect(
@@ -386,6 +389,21 @@ export default function Lottery() {
 
   const refreshHistory = () => {
     qc.invalidateQueries({ queryKey: ['lottery-draws'] })
+  }
+
+  const confirmStockOut = async (id: number, prizeName: string, qty: number) => {
+    if (!window.confirm(`确认出库奖品「${prizeName}」× ${qty}?确认后将从库存中扣减,不可撤销。`)) {
+      return
+    }
+    try {
+      await api.post(`/lottery/draws/${id}/confirm-stock-out`)
+      message.success('已确认出库,库存已扣减')
+      refreshHistory()
+      qc.invalidateQueries({ queryKey: ['lottery-prizes'] })
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      message.error(detail ?? '出库失败')
+    }
   }
 
   const clearHistory = async () => {
@@ -661,7 +679,7 @@ export default function Lottery() {
                 </button>
               </div>
             </Field>
-            <Field label="关联奖品(库存物品,可选)">
+            <Field label="关联奖品(仅「奖品」分类中有库存的物品,可选)">
               <select
                 value={prize ?? ''}
                 onChange={(e) => setPrize(e.target.value ? +e.target.value : undefined)}
@@ -669,12 +687,17 @@ export default function Lottery() {
                 style={glassInput}
               >
                 <option value="">无</option>
-                {(skus?.items ?? []).map((s) => (
+                {(prizes ?? []).map((s) => (
                   <option key={s.id} value={s.id} style={{ color: '#000' }}>
-                    {s.name} · {s.sku_code}
+                    {s.name} · 库存 {s.available} {s.unit}
                   </option>
                 ))}
               </select>
+              {(prizes?.length ?? 0) === 0 && (
+                <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>
+                  「奖品」分类下暂无有库存的物品 —— 先在「库存物品」里入库
+                </div>
+              )}
             </Field>
           </div>
 
@@ -748,8 +771,29 @@ export default function Lottery() {
                         </button>
                       </div>
                       {h.prize_name && (
-                        <div style={{ fontSize: 11, color: hm.color, marginBottom: 4 }}>
-                          奖品 · {h.prize_name}
+                        <div
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            marginBottom: 4,
+                          }}
+                        >
+                          <span style={{ fontSize: 11, color: hm.color, flex: 1, minWidth: 0 }}>
+                            奖品 · {h.prize_name}
+                          </span>
+                          {h.stock_out_at ? (
+                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+                              ✓ 已出库
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => confirmStockOut(h.id, h.prize_name!, h.winner_count)}
+                              style={stockOutBtn}
+                            >
+                              确认出库
+                            </button>
+                          )}
                         </div>
                       )}
                       <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
@@ -809,4 +853,14 @@ const rowDelBtn: React.CSSProperties = {
   border: 'none',
   cursor: 'pointer',
   flexShrink: 0,
+}
+const stockOutBtn: React.CSSProperties = {
+  flexShrink: 0,
+  fontSize: 10,
+  color: '#FFD08A',
+  padding: '2px 8px',
+  borderRadius: 5,
+  background: 'rgba(255,136,0,0.14)',
+  border: '1px solid rgba(255,136,0,0.4)',
+  cursor: 'pointer',
 }
