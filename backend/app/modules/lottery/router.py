@@ -86,3 +86,25 @@ def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(lott
     if draw is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在")
     return _draw_out(db, draw)
+
+
+@router.delete("/draws", status_code=status.HTTP_200_OK)
+def clear_draws(db: Session = Depends(get_db), user: User = Depends(lottery_user)) -> dict:
+    """Clear all 抽奖 history. Audited (the draws are gone but the act of
+    clearing is recorded in audit_logs)."""
+    deleted = service.clear_draws(db)
+    write_audit(
+        db, actor_user_id=user.id, action="lottery.clear",
+        resource_type="lottery", resource_id="*", payload={"deleted": deleted},
+    )
+    return {"deleted": deleted}
+
+
+@router.delete("/draws/{draw_id}", status_code=status.HTTP_204_NO_CONTENT)
+def remove_draw(draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)):
+    if not service.delete_draw(db, draw_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在")
+    write_audit(
+        db, actor_user_id=user.id, action="lottery.delete",
+        resource_type="lottery", resource_id=str(draw_id),
+    )

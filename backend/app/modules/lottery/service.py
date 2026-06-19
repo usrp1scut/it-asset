@@ -1,6 +1,6 @@
 import secrets
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.modules.inventory.models import Sku
@@ -86,3 +86,30 @@ def run_draw(
     db.commit()
     db.refresh(draw)
     return draw
+
+
+def delete_draw(db: Session, draw_id: int) -> bool:
+    """Remove a single draw and its winners. Returns False if it doesn't exist."""
+    draw = db.get(LotteryDraw, draw_id)
+    if draw is None:
+        return False
+    db.execute(delete(LotteryWinner).where(LotteryWinner.draw_id == draw_id))
+    db.delete(draw)
+    db.commit()
+    return True
+
+
+def clear_draws(db: Session) -> int:
+    """Wipe all draw history (winners first, FK has no cascade). Returns the
+    number of draws removed.
+
+    Note: this also frees previously-used activity names — 防重抽 keys off
+    existing draw names, so a cleared name can be drawn again. That's fine:
+    clearing is a deliberate, audited action.
+    """
+    ids = list(db.scalars(select(LotteryDraw.id)))
+    if ids:
+        db.execute(delete(LotteryWinner))
+        db.execute(delete(LotteryDraw))
+        db.commit()
+    return len(ids)

@@ -136,6 +136,48 @@ def test_lottery_rejects_duplicate_name():
     assert "已抽过奖" in again.json()["detail"]
 
 
+def test_lottery_delete_single_draw():
+    admin, _ = _login("it_admin")
+    _make_lark_users(2)
+    name = f"删除单条{uuid.uuid4().hex[:6]}"
+    d = client.post(
+        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
+    ).json()
+
+    # delete it
+    assert client.delete(f"/api/lottery/draws/{d['id']}", headers=admin).status_code == 204
+    # gone from history + fetch-by-id 404
+    assert client.get(f"/api/lottery/draws/{d['id']}", headers=admin).status_code == 404
+    assert all(x["id"] != d["id"] for x in client.get("/api/lottery/draws", headers=admin).json())
+    # deleting a missing draw → 404
+    assert client.delete(f"/api/lottery/draws/{d['id']}", headers=admin).status_code == 404
+    # the name is free again (防重抽 guard cleared) — re-draw succeeds
+    assert client.post(
+        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
+    ).status_code == 201
+
+
+def test_lottery_clear_history():
+    admin, _ = _login("it_admin")
+    _make_lark_users(2)
+    tag = uuid.uuid4().hex[:6]
+    client.post("/api/lottery/draws", json={"name": f"清A{tag}", "winner_count": 1}, headers=admin)
+    client.post("/api/lottery/draws", json={"name": f"清B{tag}", "winner_count": 1}, headers=admin)
+
+    r = client.delete("/api/lottery/draws", headers=admin)
+    assert r.status_code == 200
+    assert r.json()["deleted"] >= 2
+    # history is now empty
+    assert client.get("/api/lottery/draws", headers=admin).json() == []
+
+
+def test_lottery_delete_requires_role():
+    # plain employees cannot delete / clear history
+    emp, _ = _login("employee")
+    assert client.delete("/api/lottery/draws/1", headers=emp).status_code == 403
+    assert client.delete("/api/lottery/draws", headers=emp).status_code == 403
+
+
 def test_lottery_access_excludes_only_employees():
     # plain employees are blocked…
     emp, _ = _login("employee")
