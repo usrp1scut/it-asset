@@ -13,6 +13,7 @@ class Role(enum.StrEnum):
     it_admin = "it_admin"
     procurement = "procurement"  # 行政/采购
     finance = "finance"
+    hr = "hr"  # 人力资源:可查看离职归还、使用抽奖
     sys_admin = "sys_admin"
 
 

@@ -5,7 +5,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../api/client'
 import { useAuth } from '../stores/auth'
 
-type Role = 'employee' | 'manager' | 'it_admin' | 'finance' | 'procurement' | 'sys_admin'
+type Role = 'employee' | 'manager' | 'it_admin' | 'finance' | 'procurement' | 'hr' | 'sys_admin'
 
 interface UserRow {
   id: number
@@ -22,10 +22,11 @@ const ROLE_META: Record<Role, { label: string; color: string }> = {
   it_admin: { label: 'IT 管理员', color: 'blue' },
   finance: { label: '财务', color: 'gold' },
   procurement: { label: '采购', color: 'green' },
+  hr: { label: '人力资源', color: 'magenta' },
   sys_admin: { label: '系统管理员', color: 'purple' },
 }
 
-const ASSIGNABLE: Role[] = ['employee', 'manager', 'it_admin', 'finance', 'procurement']
+const ASSIGNABLE: Role[] = ['employee', 'manager', 'it_admin', 'finance', 'procurement', 'hr']
 
 export default function Users() {
   const qc = useQueryClient()

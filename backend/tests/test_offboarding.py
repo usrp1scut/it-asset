@@ -187,3 +187,14 @@ def test_create_from_lark_marks_user_inactive():
         assert u.status == UserStatus.inactive
     finally:
         db.close()
+
+
+def test_hr_can_view_but_not_mutate():
+    """HR may view offboarding cases (read-only) but cannot create/mutate them."""
+    hr = _h(_login("hr"))
+    # view: list is allowed
+    assert client.get("/api/offboarding", headers=hr).status_code == 200
+    # mutate: creating a case is it_admin-only → 403 for HR
+    emp_id = _login("employee")["user"]["id"]
+    r = client.post("/api/offboarding", json={"user_id": emp_id}, headers=hr)
+    assert r.status_code == 403

@@ -10,6 +10,7 @@ interface MenuItemDef {
   label: string
   icon: IconName
   adminOnly?: boolean
+  roles?: string[]  // extra roles (beyond admin) that may see an adminOnly item
   section?: string  // group label rendered above this item if set
 }
 
@@ -24,7 +25,7 @@ const ITEMS: MenuItemDef[] = [
   { key: '/inspections', label: '资产盘点', icon: 'inspect', adminOnly: true, section: '流程管理' },
   { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
   { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
-  { key: '/offboarding', label: '离职归还', icon: 'user', adminOnly: true },
+  { key: '/offboarding', label: '离职归还', icon: 'user', adminOnly: true, roles: ['hr'] },
   // Tools / system group
   { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '工具与系统' },
   { key: '/lottery', label: '抽奖', icon: 'box' },
@@ -72,7 +73,9 @@ export default function AppLayout() {
     label: string
     children: LeafItem[]
   }
-  const visible = ITEMS.filter((i) => !i.adminOnly || isAdmin)
+  const visible = ITEMS.filter(
+    (i) => !i.adminOnly || isAdmin || (!!role && !!i.roles?.includes(role)),
+  )
   const items: (LeafItem | GroupItem)[] = []
   let currentGroup: GroupItem | null = null
   for (const it of visible) {
