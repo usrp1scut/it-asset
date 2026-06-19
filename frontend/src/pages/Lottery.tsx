@@ -359,6 +359,34 @@ export default function Lottery() {
     setRollNames([])
   }
 
+  const refreshHistory = () => {
+    qc.invalidateQueries({ queryKey: ['lottery-draws'] })
+  }
+
+  const clearHistory = async () => {
+    if (!window.confirm('确定清空全部抽奖记录?此操作不可撤销;清空后这些活动名称可再次抽奖(清空动作会记入审计)。')) {
+      return
+    }
+    try {
+      const { deleted } = (await api.delete('/lottery/draws')).data as { deleted: number }
+      message.success(`已清空 ${deleted} 条记录`)
+      refreshHistory()
+    } catch {
+      message.error('清空失败')
+    }
+  }
+
+  const deleteOne = async (id: number, drawName: string) => {
+    if (!window.confirm(`删除抽奖记录「${drawName}」?删除后该活动名称可再次抽奖。`)) return
+    try {
+      await api.delete(`/lottery/draws/${id}`)
+      message.success('已删除')
+      refreshHistory()
+    } catch {
+      message.error('删除失败')
+    }
+  }
+
   const toggleFullscreen = () => {
     if (document.fullscreenElement) {
       document.exitFullscreen()
@@ -632,7 +660,21 @@ export default function Lottery() {
 
           {/* History */}
           <div style={{ ...glassCard, display: 'flex', flexDirection: 'column' }}>
-            <div style={cardTitle}>抽奖记录</div>
+            <div
+              style={{
+                ...cardTitle,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+              }}
+            >
+              <span>抽奖记录</span>
+              {(history?.length ?? 0) > 0 && (
+                <button onClick={clearHistory} style={clearBtn}>
+                  清空
+                </button>
+              )}
+            </div>
             <div
               style={{
                 overflow: 'auto',
@@ -677,6 +719,13 @@ export default function Lottery() {
                         <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.4)' }}>
                           {h.winner_count} 人
                         </span>
+                        <button
+                          onClick={() => deleteOne(h.id, h.name)}
+                          style={rowDelBtn}
+                          title="删除此记录"
+                        >
+                          ×
+                        </button>
                       </div>
                       {h.prize_name && (
                         <div style={{ fontSize: 11, color: hm.color, marginBottom: 4 }}>
@@ -716,4 +765,28 @@ const headerBtn: React.CSSProperties = {
   background: 'rgba(255,255,255,0.08)',
   border: '1px solid rgba(255,255,255,0.12)',
   cursor: 'pointer',
+}
+const clearBtn: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 400,
+  color: 'rgba(255,255,255,0.55)',
+  padding: '2px 10px',
+  borderRadius: 6,
+  background: 'rgba(255,255,255,0.08)',
+  border: '1px solid rgba(255,255,255,0.12)',
+  cursor: 'pointer',
+}
+const rowDelBtn: React.CSSProperties = {
+  width: 18,
+  height: 18,
+  padding: 0,
+  marginLeft: 2,
+  lineHeight: '14px',
+  textAlign: 'center',
+  fontSize: 15,
+  color: 'rgba(255,255,255,0.35)',
+  background: 'transparent',
+  border: 'none',
+  cursor: 'pointer',
+  flexShrink: 0,
 }
