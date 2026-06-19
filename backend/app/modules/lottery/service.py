@@ -50,17 +50,14 @@ def run_draw(
     """Pick `winner_count` distinct winners uniformly at random from active
     employees. Uses a system-RNG so the draw isn't trivially predictable.
 
-    防重抽: the activity name is the event key — a name that has already been
-    drawn is rejected, so the same event can't be quietly re-rolled. Re-drawing
-    requires a different (visible, audited) name.
+    Re-drawing is unrestricted: the same name+tier may be drawn repeatedly, each
+    recorded as its own (audited) draw.
     """
     name = (name or "").strip()
     if not name:
         raise LotteryError("请填写活动名称")
     if tier is not None and tier not in ALLOWED_TIERS:
         raise LotteryError("无效的奖项等级")
-    if db.scalar(select(LotteryDraw.id).where(LotteryDraw.name == name)):
-        raise LotteryError(f"活动「{name}」已抽过奖,不能重复抽奖;如需重抽请换一个活动名称")
     if winner_count < 1:
         raise LotteryError("中奖人数至少为 1")
     if prize_sku_id is not None and db.get(Sku, prize_sku_id) is None:
@@ -101,12 +98,7 @@ def delete_draw(db: Session, draw_id: int) -> bool:
 
 def clear_draws(db: Session) -> int:
     """Wipe all draw history (winners first, FK has no cascade). Returns the
-    number of draws removed.
-
-    Note: this also frees previously-used activity names — 防重抽 keys off
-    existing draw names, so a cleared name can be drawn again. That's fine:
-    clearing is a deliberate, audited action.
-    """
+    number of draws removed. A deliberate, audited action."""
     ids = list(db.scalars(select(LotteryDraw.id)))
     if ids:
         db.execute(delete(LotteryWinner))

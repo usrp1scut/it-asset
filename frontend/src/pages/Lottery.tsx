@@ -314,7 +314,6 @@ export default function Lottery() {
   const pool = elig?.count ?? 0
   const tier = TIERS.find((t) => t.id === tierId) ?? TIERS[1]
   const prizeMeta = skus?.items.find((s) => s.id === prize)
-  const alreadyDrawn = (history ?? []).some((h) => h.name === name.trim())
   const rollPool = poolNames?.names?.length ? poolNames.names : ['幸运儿', '小伙伴']
 
   useEffect(
@@ -325,7 +324,7 @@ export default function Lottery() {
     [],
   )
 
-  const canDraw = phase === 'idle' && !!name.trim() && !alreadyDrawn && pool > 0 && count >= 1
+  const canDraw = phase === 'idle' && !!name.trim() && pool > 0 && count >= 1
 
   const startDraw = async () => {
     if (!canDraw) return
@@ -379,10 +378,9 @@ export default function Lottery() {
     setRollNames([])
     setShowConfetti(false)
     if (confettiTimer.current) clearTimeout(confettiTimer.current)
-    // Clear the activity name (the 防重抽 key) so the next round starts clean —
-    // otherwise the just-drawn name collides with history and leaves the draw
-    // button disabled until the user changes it (previously required a refresh).
-    setName('')
+    // Keep the activity name so the year-end-party flow — one event, draw each
+    // tier in turn — just needs a tier switch. Only the prize resets, since each
+    // tier usually has a different prize.
     setPrize(undefined)
   }
 
@@ -589,11 +587,6 @@ export default function Lottery() {
               </button>
             )}
           </div>
-          {alreadyDrawn && phase === 'idle' && (
-            <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: '#FF8F8F' }}>
-              活动「{name.trim()}」已抽过奖 · 防重抽,请换一个活动名称
-            </div>
-          )}
           {pool === 0 && phase === 'idle' && (
             <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: '#FF8F8F' }}>
               当前没有可抽的在职 Lark 员工(本地 / 密码账号不参与抽奖)。
@@ -606,7 +599,7 @@ export default function Lottery() {
           {/* Config card */}
           <div style={glassCard}>
             <div style={cardTitle}>抽奖配置</div>
-            <Field label="活动名称(防重抽)">
+            <Field label="活动名称">
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
