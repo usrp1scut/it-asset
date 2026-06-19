@@ -8,6 +8,7 @@ const ROLE_LABEL: Record<string, string> = {
   it_admin: 'IT 管理员',
   procurement: '行政/采购',
   finance: '财务',
+  hr: '人力资源',
   sys_admin: '系统管理员',
 }
 

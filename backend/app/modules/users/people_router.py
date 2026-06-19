@@ -14,7 +14,14 @@ staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procuremen
 admin = require_roles(Role.it_admin)  # sys_admin passes implicitly
 
 # Promotable role surface: sys_admin is bootstrap-only, not mintable from UI.
-_ASSIGNABLE = {Role.employee, Role.manager, Role.it_admin, Role.finance, Role.procurement}
+_ASSIGNABLE = {
+    Role.employee,
+    Role.manager,
+    Role.it_admin,
+    Role.finance,
+    Role.procurement,
+    Role.hr,
+}
 
 
 @router.get("", response_model=list[UserPickOut])

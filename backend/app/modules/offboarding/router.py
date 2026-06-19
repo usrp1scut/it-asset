@@ -24,7 +24,8 @@ from app.modules.offboarding.schemas import (
 from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/api/offboarding", tags=["offboarding"])
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
+# View access (list/detail). HR can view but not mutate (mutations use it_admin).
+staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement, Role.hr)
 it_admin = require_roles(Role.it_admin)
 
 

@@ -12,7 +12,9 @@ from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/api/lottery", tags=["lottery"])
 # Everyone except plain employees (sys_admin auto-passes via require_roles).
-lottery_user = require_roles(Role.manager, Role.it_admin, Role.procurement, Role.finance)
+lottery_user = require_roles(
+    Role.manager, Role.it_admin, Role.procurement, Role.finance, Role.hr
+)
 
 
 def _draw_out(db: Session, draw: LotteryDraw) -> dict:

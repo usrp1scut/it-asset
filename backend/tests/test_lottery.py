@@ -192,3 +192,15 @@ def test_lottery_access_excludes_only_employees():
         headers=fin,
     )
     assert r.status_code == 201
+
+
+def test_lottery_hr_can_use():
+    hr, _ = _login("hr")
+    _make_lark_users(2)
+    assert client.get("/api/lottery/eligible-count", headers=hr).status_code == 200
+    r = client.post(
+        "/api/lottery/draws",
+        json={"name": f"HR抽{uuid.uuid4().hex[:6]}", "winner_count": 1},
+        headers=hr,
+    )
+    assert r.status_code == 201
