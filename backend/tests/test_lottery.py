@@ -94,7 +94,7 @@ def test_lottery_validation():
     )
     assert over.status_code == 400
 
-    # blank name → 400 (the 防重抽 event key is required)
+    # blank name → 400 (a name is always required)
     blank = client.post("/api/lottery/draws", json={"winner_count": 1}, headers=admin)
     assert blank.status_code == 400
 
@@ -120,20 +120,20 @@ def test_lottery_validation():
     assert bad_tier.status_code == 400
 
 
-def test_lottery_rejects_duplicate_name():
+def test_lottery_redraw_unrestricted():
+    # Re-drawing the same name+tier is allowed (no 防重抽) — each is its own draw.
     admin, _ = _login("it_admin")
-    _make_lark_users(3)
-    name = f"年会一等奖{uuid.uuid4().hex[:6]}"
-    first = client.post(
-        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
-    )
+    _make_lark_users(4)
+    name = f"年会{uuid.uuid4().hex[:6]}"
+    body = {"name": name, "winner_count": 1, "tier": "first"}
+    first = client.post("/api/lottery/draws", json=body, headers=admin)
+    again = client.post("/api/lottery/draws", json=body, headers=admin)
     assert first.status_code == 201
-    # same name → rejected (防重抽)
-    again = client.post(
-        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
-    )
-    assert again.status_code == 400
-    assert "已抽过奖" in again.json()["detail"]
+    assert again.status_code == 201
+    assert first.json()["id"] != again.json()["id"]
+    # both rounds are recorded
+    hist = client.get("/api/lottery/draws", headers=admin).json()
+    assert sum(1 for d in hist if d["name"] == name) == 2
 
 
 def test_lottery_delete_single_draw():
@@ -151,10 +151,6 @@ def test_lottery_delete_single_draw():
     assert all(x["id"] != d["id"] for x in client.get("/api/lottery/draws", headers=admin).json())
     # deleting a missing draw → 404
     assert client.delete(f"/api/lottery/draws/{d['id']}", headers=admin).status_code == 404
-    # the name is free again (防重抽 guard cleared) — re-draw succeeds
-    assert client.post(
-        "/api/lottery/draws", json={"name": name, "winner_count": 1}, headers=admin
-    ).status_code == 201
 
 
 def test_lottery_clear_history():
