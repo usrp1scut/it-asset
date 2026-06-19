@@ -95,6 +95,7 @@ def seed() -> dict:
             ("转接头", "AD", ManagementMode.inventory),
             ("键盘", "KB", ManagementMode.inventory),
             ("线缆", "CB", ManagementMode.consumable),
+            ("奖品", "JP", ManagementMode.inventory),  # 抽奖奖品默认分类
         ]:
             c = ItemCategory(name=cname, code=ccode, management_mode=cmode)
             db.add(c)
@@ -111,6 +112,8 @@ def seed() -> dict:
              ManagementMode.inventory, 5),
             ("CB", "CAT6 网线", "山泽", "3m", "根",
              ManagementMode.consumable, 20),
+            ("JP", "小米充电宝 10000mAh", "小米", "10000mAh", "个",
+             ManagementMode.inventory, 0),
         ]:
             s = Sku(sku_code=inv.generate_sku_code(db, ccode), name=name,
                     category_id=cats[ccode], brand=brand, spec=spec, unit=unit,
@@ -128,6 +131,8 @@ def seed() -> dict:
         inv.receive(db, sku_id=skus["KB"], quantity=12,
                     location_id=loc.id, operator_id=admin.id)
         inv.receive(db, sku_id=skus["CB"], quantity=45,
+                    location_id=loc.id, operator_id=admin.id)
+        inv.receive(db, sku_id=skus["JP"], quantity=20,
                     location_id=loc.id, operator_id=admin.id)
 
         # ── assets ───────────────────────────────────────────────────
