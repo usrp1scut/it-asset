@@ -13,8 +13,9 @@
 - **资产盘点** —— 按范围建任务,手机**扫码 → 看详情 → 手工确认/标记差异**,进度统计。
 - **维修中心 / 资产报废** —— 维修工单状态机;报废**双人复核**审批链。
 - **离职归还** —— 自动/手工建单回收资产,**通知闸门**(自动化只提醒 IT,IT 确认后才通知员工)。
+- **年会抽奖** —— 全屏大屏三阶段(配置 → 老虎机滚动 → 揭晓 + 彩带);奖池=在职 Lark 员工、系统级随机;奖项等级主题色、关联「奖品」分类**有库存**的物品、抽后在历史里**确认出库**才扣库存、同名多轮可**排除已中奖者**;记录可删/清空。
 - **Lark/飞书集成** —— 免登、通讯录同步、消息卡片、离职事件订阅。
-- **审计日志 / 用户角色** —— 关键操作可追溯;6 种角色细分权限。
+- **审计日志 / 用户角色** —— 关键操作可追溯;**7 种角色**细分权限(含人力资源 HR:可查看离职归还、使用抽奖)。
 
 📖 详细操作见 **[用户手册 · docs/USER_MANUAL.md](docs/USER_MANUAL.md)**。
 
@@ -22,6 +23,7 @@
 > - 业务需求:[`design_handoff_it_asset/PRD.md`](design_handoff_it_asset/PRD.md)
 > - 设计规格 / 屏幕 / Design Tokens:[`design_handoff_it_asset/README.md`](design_handoff_it_asset/README.md)
 > - 开发计划 / Sprint / 技术栈:[`design_handoff_it_asset/DEVELOPMENT_PLAN.md`](design_handoff_it_asset/DEVELOPMENT_PLAN.md)
+> - 年会抽奖大屏设计:[`design_handoff_it_asset/LOTTERY_DESIGN.md`](design_handoff_it_asset/LOTTERY_DESIGN.md)
 > - 高保真原型(仅视觉/交互参考,不进生产):`design_handoff_it_asset/prototype/`
 
 ## 技术栈
@@ -120,7 +122,7 @@ it-asset/
 
 ## 开发状态
 
-> 截至 2026-05-31。计划见 [`DEVELOPMENT_PLAN.md` §5](design_handoff_it_asset/DEVELOPMENT_PLAN.md);Phase 2/3 设计补充见同目录 `PHASE2_DESIGN.md` / `PHASE3_PREVIEW.md` / `MOBILE_ADMIN.md`。
+> 截至 2026-06-19。计划见 [`DEVELOPMENT_PLAN.md` §5](design_handoff_it_asset/DEVELOPMENT_PLAN.md);Phase 2/3 设计补充见同目录 `PHASE2_DESIGN.md` / `PHASE3_PREVIEW.md` / `MOBILE_ADMIN.md`。
 
 **Phase 0 数据迁移** ✅ — 云文档/Excel 导入(容脏入库,脏数据进 `needs_review`)、`legacy_code`、报废候选标记、按类型前缀的编号 sequence。
 
@@ -133,7 +135,10 @@ it-asset/
 
 **Phase 3 高级场景** 🟡 进行中:
 - ✅ 审批中心重做:enrich(真实姓名/SKU 名)、审批意见、批量审批、`scope=all` 历史、**Lark 卡片预览**
+- ✅ 自动审批规则:满足条件(仅耗材、数量/金额不超上限、SKU 未标需审批)的申请自动通过,留「系统自动」标识
 - ✅ 离职归还(offboarding):自动/手工建单 + 确认归还/登记丢失/关闭 + **通知闸门**(自动化只通知 IT,IT 确认后才通知员工)+ Lark `user.deleted` 自动建单 + Celery 逾期扫描
-- ⬜ 自动审批规则;飞书审批中心接入(设计稿见 `LARK_APPROVAL_INTEGRATION.md`)
+- ✅ 年会抽奖:全屏大屏三阶段 + 奖项等级 + 关联「奖品」分类有库存物品(**确认出库**才扣库存)+ 同名多轮可排除已中奖者 + 历史删/清空
+- ✅ 人力资源(HR)角色:可查看离职归还(只读)、使用抽奖
+- ⬜ 飞书审批中心接入(设计稿见 `LARK_APPROVAL_INTEGRATION.md`)
 
 **端到端冒烟**:`tests/test_smoke_e2e.py` 串起 建资产→分配→盘点→报修→报废→基础设施改状态→耗材审批发放→Dashboard 全主路径。
