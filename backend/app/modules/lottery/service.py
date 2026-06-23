@@ -1,7 +1,8 @@
 import secrets
+from datetime import UTC, datetime
 
 import anyio
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.lark.client import get_lark_client
@@ -199,23 +200,39 @@ class _DrawMissing(Exception):
     """Internal sentinel: the draw id doesn't exist (router → 404)."""
 
 
-def confirm_stock_out(db: Session, *, draw_id: int, operator_id: int | None) -> LotteryDraw:
-    """Deliver the prize: deduct `winner_count` units of the linked prize SKU
-    from stock (one prize per winner) and stamp `stock_out_at`. Idempotent guard
-    rejects a second confirm. Drawing never touches stock — only this does.
+def _pick_winners(
+    winners: list[LotteryWinner], winner_ids: list[int] | None
+) -> list[LotteryWinner]:
+    """Chosen subset (winner_ids is None → all)."""
+    if winner_ids is None:
+        return list(winners)
+    wanted = set(winner_ids)
+    return [w for w in winners if w.id in wanted]
+
+
+def confirm_stock_out(
+    db: Session, *, draw_id: int, operator_id: int | None, winner_ids: list[int] | None = None
+) -> tuple[LotteryDraw, int]:
+    """Deliver the prize to the selected winners (winner_ids=None → all): deduct
+    one unit per selected, not-yet-delivered winner and stamp each one's
+    delivered_at. The draw-level stock_out_at is set once every winner is
+    delivered. Drawing never touches stock — only this does.
 
     Deducts across locations (most-stocked first) through the locked ledger, so
-    it can't oversell or go negative.
+    it can't oversell or go negative. Returns (draw, units_deducted).
     """
     draw = db.get(LotteryDraw, draw_id)
     if draw is None:
         raise _DrawMissing
     if draw.prize_sku_id is None:
         raise LotteryError("该抽奖未关联奖品,无需出库")
-    if draw.stock_out_at is not None:
-        raise LotteryError("该奖品已确认出库,请勿重复操作")
 
-    qty = draw.winner_count
+    winners = list(db.scalars(select(LotteryWinner).where(LotteryWinner.draw_id == draw.id)))
+    target = [w for w in _pick_winners(winners, winner_ids) if w.delivered_at is None]
+    if not target:
+        raise LotteryError("没有可发放的中奖者(可能已全部发放,或未选择)")
+
+    qty = len(target)
     rows = db.execute(
         select(InventoryStock.location_id, InventoryStock.quantity_available)
         .where(
@@ -226,7 +243,7 @@ def confirm_stock_out(db: Session, *, draw_id: int, operator_id: int | None) -> 
     ).all()
     if sum(avail for _, avail in rows) < qty:
         total = sum(avail for _, avail in rows)
-        raise LotteryError(f"库存不足:奖品可用 {total},需出库 {qty}")
+        raise LotteryError(f"库存不足:奖品可用 {total},需发放 {qty}")
 
     try:
         remaining = qty
@@ -248,48 +265,60 @@ def confirm_stock_out(db: Session, *, draw_id: int, operator_id: int | None) -> 
         db.rollback()
         raise LotteryError(f"库存不足:{e}") from e
 
-    draw.stock_out_at = func.now()
+    now = datetime.now(UTC)
+    for w in target:
+        w.delivered_at = now
+    if all(w.delivered_at is not None for w in winners):
+        draw.stock_out_at = now
     db.commit()
     db.refresh(draw)
-    return draw
+    return draw, qty
 
 
 def notify_winners(
-    db: Session, *, draw_id: int, operator_id: int | None
+    db: Session, *, draw_id: int, operator_id: int | None, winner_ids: list[int] | None = None
 ) -> tuple[LotteryDraw, int]:
-    """DM each winner on Lark that they won. Manual action (never auto on draw).
-    Idempotent guard rejects a second notify. Returns (draw, dm_attempts).
+    """DM the selected winners (winner_ids=None → all) on Lark. Manual action
+    (never auto on draw). Skips winners already notified; the draw-level
+    notified_at is set once every winner is notified. Returns (draw, dm_count).
 
-    DMs are no-op-safe: if Lark isn't configured, nothing is sent but the draw is
-    still stamped as notified (the act is recorded; re-notify is blocked).
+    DMs are no-op-safe: if Lark isn't configured nothing is sent, but the chosen
+    winners are still stamped notified (the act is recorded; re-notify skips them).
     """
     draw = db.get(LotteryDraw, draw_id)
     if draw is None:
         raise _DrawMissing
-    if draw.notified_at is not None:
-        raise LotteryError("该活动的中奖者已通知过,请勿重复通知")
 
-    winners = db.execute(
-        select(User.lark_open_id, User.name)
-        .join(LotteryWinner, LotteryWinner.user_id == User.id)
+    rows = db.execute(
+        select(LotteryWinner, User.lark_open_id, User.name)
+        .join(User, User.id == LotteryWinner.user_id)
         .where(LotteryWinner.draw_id == draw.id)
     ).all()
-    if not winners:
+    if not rows:
         raise LotteryError("该抽奖没有中奖者")
+
+    all_winners = [w for w, _, _ in rows]
+    chosen_ids = {w.id for w in _pick_winners(all_winners, winner_ids)}
+    target = [(w, oid, nm) for w, oid, nm in rows if w.id in chosen_ids and w.notified_at is None]
+    if not target:
+        raise LotteryError("没有可通知的中奖者(可能已全部通知,或未选择)")
 
     tier_label = _TIER_LABEL.get(draw.tier or "", "")
     prize = db.get(Sku, draw.prize_sku_id) if draw.prize_sku_id else None
     suffix = f",奖品:{prize.name}" if prize else ""
+    now = datetime.now(UTC)
     sent = 0
-    for open_id, name in winners:
+    for w, open_id, name in target:
         text = (
             f"🎉 恭喜 {name}!你在「{draw.name}」{tier_label}抽奖中中奖啦{suffix}。"
             "请留意后续领奖通知~"
         )
         _dm(open_id, text)
+        w.notified_at = now
         sent += 1
 
-    draw.notified_at = func.now()
+    if all(w.notified_at is not None for w in all_winners):
+        draw.notified_at = now
     db.commit()
     db.refresh(draw)
     return draw, sent

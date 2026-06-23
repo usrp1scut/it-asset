@@ -11,8 +11,11 @@ import { api } from '../api/client'
 // names are pure front-end theatre — see LOTTERY_DESIGN.md §3.2.
 
 interface Winner {
+  id: number
   user_id: number
   name: string
+  delivered_at: string | null
+  notified_at: string | null
 }
 interface Draw {
   id: number
@@ -298,6 +301,16 @@ export default function Lottery() {
   const [result, setResult] = useState<Draw | null>(null)
   const [showConfetti, setShowConfetti] = useState(false)
   const confettiTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  // Per-winner selection for deliver/notify — holds the LotteryWinner ids opted
+  // OUT (default: everyone selected, untick the non-real accounts).
+  const [excluded, setExcluded] = useState<Set<number>>(new Set())
+  const toggleWinner = (wid: number) =>
+    setExcluded((prev) => {
+      const next = new Set(prev)
+      if (next.has(wid)) next.delete(wid)
+      else next.add(wid)
+      return next
+    })
 
   const { data: elig } = useQuery<{ count: number }>({
     queryKey: ['lottery-eligible', name.trim(), excludeWinners],
@@ -399,32 +412,42 @@ export default function Lottery() {
     qc.invalidateQueries({ queryKey: ['lottery-draws'] })
   }
 
-  const notifyWinners = async (id: number, drawName: string) => {
-    if (!window.confirm(`给「${drawName}」的中奖者逐个发送 Lark 中奖私信?`)) return
+  // Winners selected (not opted out) and not yet done for the given action.
+  const pendingFor = (d: Draw, key: 'delivered_at' | 'notified_at') =>
+    d.winners.filter((w) => !excluded.has(w.id) && !w[key]).map((w) => w.id)
+
+  const deliverSelected = async (d: Draw) => {
+    const ids = pendingFor(d, 'delivered_at')
+    if (!ids.length) return
+    if (!window.confirm(`给选中的 ${ids.length} 位发放奖品「${d.prize_name}」?将从库存扣减,不可撤销。`)) {
+      return
+    }
     try {
-      const { notified } = (await api.post(`/lottery/draws/${id}/notify`)).data as {
-        notified: number
-      }
+      const { delivered } = (
+        await api.post(`/lottery/draws/${d.id}/confirm-stock-out`, { winner_ids: ids })
+      ).data as { delivered: number }
+      message.success(`已发放 ${delivered} 份,库存已扣减`)
+      refreshHistory()
+      qc.invalidateQueries({ queryKey: ['lottery-prizes'] })
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      message.error(detail ?? '发放失败')
+    }
+  }
+
+  const notifySelected = async (d: Draw) => {
+    const ids = pendingFor(d, 'notified_at')
+    if (!ids.length) return
+    if (!window.confirm(`给选中的 ${ids.length} 位中奖者发送 Lark 中奖私信?`)) return
+    try {
+      const { notified } = (
+        await api.post(`/lottery/draws/${d.id}/notify`, { winner_ids: ids })
+      ).data as { notified: number }
       message.success(`已通知 ${notified} 位中奖者`)
       refreshHistory()
     } catch (e) {
       const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       message.error(detail ?? '通知失败')
-    }
-  }
-
-  const confirmStockOut = async (id: number, prizeName: string, qty: number) => {
-    if (!window.confirm(`确认出库奖品「${prizeName}」× ${qty}?确认后将从库存中扣减,不可撤销。`)) {
-      return
-    }
-    try {
-      await api.post(`/lottery/draws/${id}/confirm-stock-out`)
-      message.success('已确认出库,库存已扣减')
-      refreshHistory()
-      qc.invalidateQueries({ queryKey: ['lottery-prizes'] })
-    } catch (e) {
-      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
-      message.error(detail ?? '出库失败')
     }
   }
 
@@ -775,6 +798,13 @@ export default function Lottery() {
               ) : (
                 (history ?? []).map((h) => {
                   const hm = TIERS.find((t) => t.id === h.tier) ?? TIERS[3]
+                  const deliveredCount = h.winners.filter((w) => w.delivered_at).length
+                  const pendingDeliver = h.winners.filter(
+                    (w) => !excluded.has(w.id) && !w.delivered_at,
+                  ).length
+                  const pendingNotify = h.winners.filter(
+                    (w) => !excluded.has(w.id) && !w.notified_at,
+                  ).length
                   return (
                     <div
                       key={h.id}
@@ -823,51 +853,57 @@ export default function Lottery() {
                           <span style={{ fontSize: 11, color: hm.color, flex: 1, minWidth: 0 }}>
                             奖品 · {h.prize_name}
                           </span>
-                          {h.stock_out_at ? (
-                            <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-                              ✓ 已出库
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => confirmStockOut(h.id, h.prize_name!, h.winner_count)}
-                              style={stockOutBtn}
-                            >
-                              确认出库
-                            </button>
-                          )}
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+                            已发放 {deliveredCount}/{h.winners.length}
+                          </span>
                         </div>
                       )}
-                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.6)', lineHeight: 1.6 }}>
-                        {h.winners.map((w) => w.name).join('、')}
+                      {/* Selectable winners — untick a non-real account to skip it. */}
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, margin: '2px 0 6px' }}>
+                        {h.winners.map((w) => {
+                          const on = !excluded.has(w.id)
+                          return (
+                            <button
+                              key={w.id}
+                              onClick={() => toggleWinner(w.id)}
+                              style={winnerChip(on)}
+                              title={on ? '已选中(点击取消)' : '已排除(点击选中)'}
+                            >
+                              <span style={{ opacity: 0.8 }}>{on ? '☑' : '☐'}</span>
+                              {w.name}
+                              {w.delivered_at && <span title="已发放">🎁</span>}
+                              {w.notified_at && <span title="已通知">📨</span>}
+                            </button>
+                          )
+                        })}
                       </div>
-                      <div
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 8,
-                          marginTop: 4,
-                        }}
-                      >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {h.prize_name && (
+                          <button
+                            onClick={() => deliverSelected(h)}
+                            disabled={pendingDeliver === 0}
+                            style={actionBtn(stockOutBtn, pendingDeliver === 0)}
+                          >
+                            发放奖品{pendingDeliver ? `(${pendingDeliver})` : ''}
+                          </button>
+                        )}
+                        <button
+                          onClick={() => notifySelected(h)}
+                          disabled={pendingNotify === 0}
+                          style={actionBtn(notifyBtn, pendingNotify === 0)}
+                        >
+                          通知{pendingNotify ? `(${pendingNotify})` : ''}
+                        </button>
                         <span
                           style={{
                             fontSize: 10,
                             color: 'rgba(255,255,255,0.35)',
-                            flex: 1,
-                            minWidth: 0,
+                            marginLeft: 'auto',
                             fontFamily: 'var(--font-mono)',
                           }}
                         >
                           {new Date(h.created_at).toLocaleString('zh-CN', { hour12: false })}
                         </span>
-                        {h.notified_at ? (
-                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
-                            ✓ 已通知
-                          </span>
-                        ) : (
-                          <button onClick={() => notifyWinners(h.id, h.name)} style={notifyBtn}>
-                            通知中奖者
-                          </button>
-                        )}
                       </div>
                     </div>
                   )
@@ -933,4 +969,23 @@ const notifyBtn: React.CSSProperties = {
   background: 'rgba(51,112,255,0.16)',
   border: '1px solid rgba(91,146,255,0.45)',
   cursor: 'pointer',
+}
+function actionBtn(base: React.CSSProperties, disabled: boolean): React.CSSProperties {
+  return disabled
+    ? { ...base, opacity: 0.4, cursor: 'not-allowed' }
+    : base
+}
+function winnerChip(on: boolean): React.CSSProperties {
+  return {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 4,
+    fontSize: 11,
+    padding: '2px 8px',
+    borderRadius: 12,
+    cursor: 'pointer',
+    color: on ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)',
+    background: on ? 'rgba(255,255,255,0.08)' : 'transparent',
+    border: `1px solid ${on ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.12)'}`,
+  }
 }

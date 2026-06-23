@@ -35,3 +35,7 @@ class LotteryWinner(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     draw_id: Mapped[int] = mapped_column(ForeignKey("lottery_draws.id"), index=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    # Per-winner state (source of truth). Lets an operator deliver / notify a
+    # subset of winners — e.g. skip a non-real account that got drawn.
+    delivered_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
