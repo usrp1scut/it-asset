@@ -419,3 +419,61 @@ def test_lottery_notify_winners():
     assert (
         client.post("/api/lottery/draws/999999999/notify", headers=admin).status_code == 404
     )
+
+
+def test_lottery_selective_deliver_and_notify():
+    admin, _ = _login("it_admin")
+    _make_lark_users(3)
+    prize = _make_sku(code="JP", available=10)
+    draw = client.post(
+        "/api/lottery/draws",
+        json={"name": f"选择{uuid.uuid4().hex[:6]}", "winner_count": 3, "prize_sku_id": prize},
+        headers=admin,
+    ).json()
+    wids = [w["id"] for w in draw["winners"]]
+    assert len(wids) == 3
+
+    # deliver only the first two → stock -2; draw-level stock_out_at still None
+    r = client.post(
+        f"/api/lottery/draws/{draw['id']}/confirm-stock-out",
+        json={"winner_ids": wids[:2]},
+        headers=admin,
+    )
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["delivered"] == 2
+    assert body["stock_out_at"] is None  # not everyone delivered yet
+    assert _avail(prize) == 8
+    dmap = {w["id"]: w["delivered_at"] for w in body["winners"]}
+    assert dmap[wids[0]] and dmap[wids[1]] and dmap[wids[2]] is None
+
+    # deliver the last → all delivered, stock_out_at set, stock -1 more
+    r2 = client.post(
+        f"/api/lottery/draws/{draw['id']}/confirm-stock-out",
+        json={"winner_ids": [wids[2]]},
+        headers=admin,
+    ).json()
+    assert _avail(prize) == 7
+    assert r2["stock_out_at"] is not None
+
+    # re-deliver an already-delivered winner → nothing to do → 400
+    assert client.post(
+        f"/api/lottery/draws/{draw['id']}/confirm-stock-out",
+        json={"winner_ids": [wids[0]]},
+        headers=admin,
+    ).status_code == 400
+
+    # notify only the first winner → count 1, draw-level notified_at None
+    n = client.post(
+        f"/api/lottery/draws/{draw['id']}/notify",
+        json={"winner_ids": [wids[0]]},
+        headers=admin,
+    ).json()
+    assert n["notified"] == 1
+    assert n["notified_at"] is None
+    nmap = {w["id"]: w["notified_at"] for w in n["winners"]}
+    assert nmap[wids[0]] and nmap[wids[1]] is None
+    # notify the rest (omit winner_ids → all remaining) → all notified, draw stamped
+    n2 = client.post(f"/api/lottery/draws/{draw['id']}/notify", headers=admin).json()
+    assert n2["notified"] == 2
+    assert n2["notified_at"] is not None

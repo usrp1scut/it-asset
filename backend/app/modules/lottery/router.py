@@ -7,7 +7,7 @@ from app.deps import get_db, require_roles
 from app.modules.inventory.models import Sku
 from app.modules.lottery import service
 from app.modules.lottery.models import LotteryDraw, LotteryWinner
-from app.modules.lottery.schemas import DrawIn
+from app.modules.lottery.schemas import DrawIn, WinnerSelection
 from app.modules.users.models import Role, User
 
 router = APIRouter(prefix="/api/lottery", tags=["lottery"])
@@ -19,7 +19,13 @@ lottery_user = require_roles(
 
 def _draw_out(db: Session, draw: LotteryDraw) -> dict:
     winners = db.execute(
-        select(LotteryWinner.user_id, User.name)
+        select(
+            LotteryWinner.id,
+            LotteryWinner.user_id,
+            User.name,
+            LotteryWinner.delivered_at,
+            LotteryWinner.notified_at,
+        )
         .join(User, User.id == LotteryWinner.user_id)
         .where(LotteryWinner.draw_id == draw.id)
         .order_by(LotteryWinner.id)
@@ -35,7 +41,16 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
         "stock_out_at": draw.stock_out_at.isoformat() if draw.stock_out_at else None,
         "notified_at": draw.notified_at.isoformat() if draw.notified_at else None,
         "created_at": draw.created_at.isoformat(),
-        "winners": [{"user_id": uid, "name": nm} for uid, nm in winners],
+        "winners": [
+            {
+                "id": wid,
+                "user_id": uid,
+                "name": nm,
+                "delivered_at": d.isoformat() if d else None,
+                "notified_at": n.isoformat() if n else None,
+            }
+            for wid, uid, nm, d, n in winners
+        ],
     }
 
 
@@ -142,11 +157,18 @@ def remove_draw(draw_id: int, db: Session = Depends(get_db), user: User = Depend
 
 @router.post("/draws/{draw_id}/confirm-stock-out")
 def confirm_stock_out(
-    draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)
+    draw_id: int,
+    body: WinnerSelection | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(lottery_user),
 ):
-    """Deliver the prize: deduct winner_count units from stock (one per winner)."""
+    """Deliver the prize to selected winners (body.winner_ids; omitted = all):
+    deduct one unit per selected, not-yet-delivered winner."""
+    winner_ids = body.winner_ids if body else None
     try:
-        draw = service.confirm_stock_out(db, draw_id=draw_id, operator_id=user.id)
+        draw, qty = service.confirm_stock_out(
+            db, draw_id=draw_id, operator_id=user.id, winner_ids=winner_ids
+        )
     except service._DrawMissing as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在") from e
     except service.LotteryError as e:
@@ -154,18 +176,25 @@ def confirm_stock_out(
     write_audit(
         db, actor_user_id=user.id, action="lottery.stock_out",
         resource_type="lottery", resource_id=str(draw.id),
-        payload={"prize_sku_id": draw.prize_sku_id, "qty": draw.winner_count},
+        payload={"prize_sku_id": draw.prize_sku_id, "qty": qty},
     )
-    return _draw_out(db, draw)
+    return {**_draw_out(db, draw), "delivered": qty}
 
 
 @router.post("/draws/{draw_id}/notify")
 def notify_winners(
-    draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)
+    draw_id: int,
+    body: WinnerSelection | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(lottery_user),
 ):
-    """DM each winner on Lark (manual). Idempotent; no-op-safe if Lark is off."""
+    """DM selected winners on Lark (body.winner_ids; omitted = all). Skips those
+    already notified; no-op-safe if Lark is off."""
+    winner_ids = body.winner_ids if body else None
     try:
-        draw, sent = service.notify_winners(db, draw_id=draw_id, operator_id=user.id)
+        draw, sent = service.notify_winners(
+            db, draw_id=draw_id, operator_id=user.id, winner_ids=winner_ids
+        )
     except service._DrawMissing as e:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在") from e
     except service.LotteryError as e:
@@ -173,6 +202,6 @@ def notify_winners(
     write_audit(
         db, actor_user_id=user.id, action="lottery.notify",
         resource_type="lottery", resource_id=str(draw.id),
-        payload={"winner_count": draw.winner_count},
+        payload={"notified": sent},
     )
     return {**_draw_out(db, draw), "notified": sent}
