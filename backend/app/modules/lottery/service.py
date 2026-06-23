@@ -1,8 +1,10 @@
 import secrets
 
+import anyio
 from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
+from app.lark.client import get_lark_client
 from app.modules.inventory import service as inv
 from app.modules.inventory.models import (
     InventoryStock,
@@ -16,6 +18,22 @@ from app.modules.users.models import User, UserStatus
 
 class LotteryError(ValueError):
     pass
+
+
+# Prize-tier display labels for the winner DM (mirror the frontend TIERS).
+_TIER_LABEL = {"special": "特等奖", "first": "一等奖", "second": "二等奖", "third": "三等奖"}
+
+
+def _dm(open_id: str | None, text: str) -> None:
+    """Send a Lark DM, no-op-safe — never raises into business code (Lark
+    unconfigured, no open_id, or a transient API error all just skip)."""
+    c = get_lark_client()
+    if not c.configured or not open_id:
+        return
+    try:
+        anyio.run(c.send_user, open_id, text)
+    except Exception:  # noqa: BLE001 — notification must not break the flow
+        pass
 
 
 # Prize tiers the stage theme understands; None is also allowed (untiered draw).
@@ -234,3 +252,44 @@ def confirm_stock_out(db: Session, *, draw_id: int, operator_id: int | None) -> 
     db.commit()
     db.refresh(draw)
     return draw
+
+
+def notify_winners(
+    db: Session, *, draw_id: int, operator_id: int | None
+) -> tuple[LotteryDraw, int]:
+    """DM each winner on Lark that they won. Manual action (never auto on draw).
+    Idempotent guard rejects a second notify. Returns (draw, dm_attempts).
+
+    DMs are no-op-safe: if Lark isn't configured, nothing is sent but the draw is
+    still stamped as notified (the act is recorded; re-notify is blocked).
+    """
+    draw = db.get(LotteryDraw, draw_id)
+    if draw is None:
+        raise _DrawMissing
+    if draw.notified_at is not None:
+        raise LotteryError("该活动的中奖者已通知过,请勿重复通知")
+
+    winners = db.execute(
+        select(User.lark_open_id, User.name)
+        .join(LotteryWinner, LotteryWinner.user_id == User.id)
+        .where(LotteryWinner.draw_id == draw.id)
+    ).all()
+    if not winners:
+        raise LotteryError("该抽奖没有中奖者")
+
+    tier_label = _TIER_LABEL.get(draw.tier or "", "")
+    prize = db.get(Sku, draw.prize_sku_id) if draw.prize_sku_id else None
+    suffix = f",奖品:{prize.name}" if prize else ""
+    sent = 0
+    for open_id, name in winners:
+        text = (
+            f"🎉 恭喜 {name}!你在「{draw.name}」{tier_label}抽奖中中奖啦{suffix}。"
+            "请留意后续领奖通知~"
+        )
+        _dm(open_id, text)
+        sent += 1
+
+    draw.notified_at = func.now()
+    db.commit()
+    db.refresh(draw)
+    return draw, sent

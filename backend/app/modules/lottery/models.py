@@ -22,6 +22,9 @@ class LotteryDraw(Base):
     # Set when the linked prize stock is confirmed out (减库存). NULL = not yet
     # delivered; drawing alone never touches inventory.
     stock_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Set when winners have been DM'd on Lark (manual action). NULL = not yet
+    # notified; drawing never auto-DMs anyone.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 

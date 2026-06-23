@@ -33,6 +33,7 @@ def _draw_out(db: Session, draw: LotteryDraw) -> dict:
         "prize_sku_id": draw.prize_sku_id,
         "prize_name": prize.name if prize else None,
         "stock_out_at": draw.stock_out_at.isoformat() if draw.stock_out_at else None,
+        "notified_at": draw.notified_at.isoformat() if draw.notified_at else None,
         "created_at": draw.created_at.isoformat(),
         "winners": [{"user_id": uid, "name": nm} for uid, nm in winners],
     }
@@ -156,3 +157,22 @@ def confirm_stock_out(
         payload={"prize_sku_id": draw.prize_sku_id, "qty": draw.winner_count},
     )
     return _draw_out(db, draw)
+
+
+@router.post("/draws/{draw_id}/notify")
+def notify_winners(
+    draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)
+):
+    """DM each winner on Lark (manual). Idempotent; no-op-safe if Lark is off."""
+    try:
+        draw, sent = service.notify_winners(db, draw_id=draw_id, operator_id=user.id)
+    except service._DrawMissing as e:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在") from e
+    except service.LotteryError as e:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, str(e)) from e
+    write_audit(
+        db, actor_user_id=user.id, action="lottery.notify",
+        resource_type="lottery", resource_id=str(draw.id),
+        payload={"winner_count": draw.winner_count},
+    )
+    return {**_draw_out(db, draw), "notified": sent}
