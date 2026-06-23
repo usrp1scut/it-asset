@@ -392,3 +392,30 @@ def test_lottery_available_pool_on_off():
     assert won <= full
     assert won.isdisjoint(with_excl)  # excluded when on
     assert won <= without  # still present when off
+
+
+def test_lottery_notify_winners():
+    admin, _ = _login("it_admin")
+    _make_lark_users(3)
+    draw = client.post(
+        "/api/lottery/draws",
+        json={"name": f"通知{uuid.uuid4().hex[:6]}", "winner_count": 2},
+        headers=admin,
+    ).json()
+    assert draw["notified_at"] is None
+
+    # notify → stamps notified_at, one DM attempt per winner (no-op-safe if Lark off)
+    r = client.post(f"/api/lottery/draws/{draw['id']}/notify", headers=admin)
+    assert r.status_code == 200, r.text
+    body = r.json()
+    assert body["notified_at"] is not None
+    assert body["notified"] == 2
+
+    # idempotent: second notify → 400
+    assert (
+        client.post(f"/api/lottery/draws/{draw['id']}/notify", headers=admin).status_code == 400
+    )
+    # missing draw → 404
+    assert (
+        client.post("/api/lottery/draws/999999999/notify", headers=admin).status_code == 404
+    )

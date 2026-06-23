@@ -22,6 +22,7 @@ interface Draw {
   prize_sku_id: number | null
   prize_name: string | null
   stock_out_at: string | null
+  notified_at: string | null
   created_at: string
   winners: Winner[]
 }
@@ -396,6 +397,20 @@ export default function Lottery() {
 
   const refreshHistory = () => {
     qc.invalidateQueries({ queryKey: ['lottery-draws'] })
+  }
+
+  const notifyWinners = async (id: number, drawName: string) => {
+    if (!window.confirm(`给「${drawName}」的中奖者逐个发送 Lark 中奖私信?`)) return
+    try {
+      const { notified } = (await api.post(`/lottery/draws/${id}/notify`)).data as {
+        notified: number
+      }
+      message.success(`已通知 ${notified} 位中奖者`)
+      refreshHistory()
+    } catch (e) {
+      const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
+      message.error(detail ?? '通知失败')
+    }
   }
 
   const confirmStockOut = async (id: number, prizeName: string, qty: number) => {
@@ -827,13 +842,32 @@ export default function Lottery() {
                       </div>
                       <div
                         style={{
-                          fontSize: 10,
-                          color: 'rgba(255,255,255,0.35)',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 8,
                           marginTop: 4,
-                          fontFamily: 'var(--font-mono)',
                         }}
                       >
-                        {new Date(h.created_at).toLocaleString('zh-CN', { hour12: false })}
+                        <span
+                          style={{
+                            fontSize: 10,
+                            color: 'rgba(255,255,255,0.35)',
+                            flex: 1,
+                            minWidth: 0,
+                            fontFamily: 'var(--font-mono)',
+                          }}
+                        >
+                          {new Date(h.created_at).toLocaleString('zh-CN', { hour12: false })}
+                        </span>
+                        {h.notified_at ? (
+                          <span style={{ fontSize: 10, color: 'rgba(255,255,255,0.45)' }}>
+                            ✓ 已通知
+                          </span>
+                        ) : (
+                          <button onClick={() => notifyWinners(h.id, h.name)} style={notifyBtn}>
+                            通知中奖者
+                          </button>
+                        )}
                       </div>
                     </div>
                   )
@@ -888,5 +922,15 @@ const stockOutBtn: React.CSSProperties = {
   borderRadius: 5,
   background: 'rgba(255,136,0,0.14)',
   border: '1px solid rgba(255,136,0,0.4)',
+  cursor: 'pointer',
+}
+const notifyBtn: React.CSSProperties = {
+  flexShrink: 0,
+  fontSize: 10,
+  color: '#A9C7FF',
+  padding: '2px 8px',
+  borderRadius: 5,
+  background: 'rgba(51,112,255,0.16)',
+  border: '1px solid rgba(91,146,255,0.45)',
   cursor: 'pointer',
 }
