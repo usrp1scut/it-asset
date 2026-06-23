@@ -42,11 +42,16 @@ def _display_name(profile: dict) -> str:
     return name or alias or "未命名"
 
 
-def upsert_user_from_lark(db: Session, profile: dict) -> User:
+def upsert_user_from_lark(db: Session, profile: dict, *, update_name: bool = True) -> User:
     """Idempotently create/update a user from a Lark profile.
 
     Match priority: union_id (stable across apps) → open_id. Lark is the source
     of truth for identity fields; role/status are managed locally and untouched.
+
+    `update_name=False` keeps an existing user's display name untouched — used on
+    the login path, because the login token (authen/v1/access_token) often returns
+    only the English name and would otherwise clobber the localized (中文) name
+    that contact sync set. The contact directory is the source of truth for names.
     """
     union_id = profile.get("union_id")
     open_id = profile.get("open_id")
@@ -57,6 +62,7 @@ def upsert_user_from_lark(db: Session, profile: dict) -> User:
     if user is None and open_id:
         user = db.scalar(select(User).where(User.lark_open_id == open_id))
 
+    created = user is None
     if user is None:
         user = User(name=_display_name(profile))
         db.add(user)
@@ -64,7 +70,14 @@ def upsert_user_from_lark(db: Session, profile: dict) -> User:
     user.lark_union_id = union_id or user.lark_union_id
     user.lark_open_id = open_id or user.lark_open_id
     user.lark_user_id = profile.get("user_id") or user.lark_user_id
-    if profile.get("name") or profile.get("en_name") or profile.get("nickname"):
+    # Only refresh the name from contact sync (update_name=True). On login we skip
+    # it for existing users so the synced 中文 name isn't overwritten by the
+    # login token's English name. New users still get a name on creation above.
+    if (
+        not created
+        and update_name
+        and (profile.get("name") or profile.get("en_name") or profile.get("nickname"))
+    ):
         user.name = _display_name(profile)
     user.email = profile.get("email") or user.email
     user.mobile = profile.get("mobile") or user.mobile

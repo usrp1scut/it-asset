@@ -191,7 +191,9 @@ async def lark_callback(body: LarkCallbackIn, db: Session = Depends(get_db)) -> 
         profile = await get_lark_client().exchange_login_code(body.code)
     except LarkNotConfigured as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
-    user = upsert_user_from_lark(db, profile)
+    # Don't let the login token's (often English-only) name overwrite the
+    # localized name that contact sync maintains.
+    user = upsert_user_from_lark(db, profile, update_name=False)
     token = create_access_token(str(user.id), {"role": user.role})
     return LoginResult(token=token, user=UserOut.model_validate(user))
 

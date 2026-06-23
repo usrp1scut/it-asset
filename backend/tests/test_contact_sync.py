@@ -167,3 +167,29 @@ def test_reconcile_deactivates_departed_users():
                 db.delete(db.get(User, u.id))
         db.commit()
         db.close()
+
+
+def test_login_does_not_overwrite_synced_name():
+    """Login path (update_name=False) keeps the synced 中文 name even when the
+    login profile carries only an English name; contact sync still updates it;
+    a brand-new login user still gets a name on creation."""
+    db = SessionLocal()
+    try:
+        oid = f"ou-{uuid.uuid4().hex[:10]}"
+        # contact sync sets the localized name
+        u = upsert_user_from_lark(db, {"open_id": oid, "name": "谢博"})
+        assert u.name == "谢博"
+        # login returns only the English name → must NOT overwrite
+        again = upsert_user_from_lark(db, {"open_id": oid, "name": "Jacob"}, update_name=False)
+        assert again.id == u.id
+        assert again.name == "谢博"
+        # a later contact sync still refreshes the name (default update_name=True)
+        synced = upsert_user_from_lark(db, {"open_id": oid, "name": "谢博（PM）"})
+        assert synced.name == "谢博（PM）"
+        # a brand-new user via the login path still gets a name on creation
+        fresh = upsert_user_from_lark(
+            db, {"open_id": f"ou-{uuid.uuid4().hex[:10]}", "name": "NewGuy"}, update_name=False
+        )
+        assert fresh.name == "NewGuy"
+    finally:
+        db.close()
