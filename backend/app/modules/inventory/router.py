@@ -40,6 +40,12 @@ router = APIRouter(tags=["inventory"])
 staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
 it_admin = require_roles(Role.it_admin, Role.procurement)
 
+# Category codes that are system-managed: can't be deleted, and their code can't
+# be changed (the name still can). "GIFT" is the 奖品 (prize) category the lottery
+# links prizes to; deleting it or changing its code would orphan prize SKUs and
+# break prize selection. It's re-created on startup if missing.
+_PROTECTED_CATEGORY_CODES = {"GIFT"}
+
 
 def _level(available: int, safety: int) -> str:
     if safety <= 0:
@@ -123,6 +129,10 @@ def update_category(
         code = body.code.strip().upper()
         if not code:
             raise HTTPException(status.HTTP_400_BAD_REQUEST, "分类简码不能为空")
+        if cat.code in _PROTECTED_CATEGORY_CODES and code != cat.code:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT, "「奖品」是系统内置分类(抽奖关联),简码不可修改"
+            )
         if code != cat.code and db.scalar(
             select(ItemCategory).where(ItemCategory.code == code)
         ):
@@ -142,6 +152,10 @@ def delete_category(
     cat = db.get(ItemCategory, cat_id)
     if cat is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "分类不存在")
+    if cat.code in _PROTECTED_CATEGORY_CODES:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "「奖品」是系统内置分类(抽奖关联),不可删除"
+        )
     n = db.scalar(
         select(func.count()).select_from(Sku)
         .where(Sku.category_id == cat_id, Sku.status != "deleted")

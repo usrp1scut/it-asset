@@ -17,6 +17,7 @@ from app.modules.dashboard.router import router as dashboard_router
 from app.modules.inspections.router import router as inspections_router
 from app.modules.inventory.router import router as inventory_router
 from app.modules.lottery.router import router as lottery_router
+from app.modules.lottery.service import ensure_prize_category
 from app.modules.offboarding.router import router as offboarding_router
 from app.modules.users.people_router import router as users_router
 from app.modules.users.router import router as auth_router
@@ -33,10 +34,12 @@ async def lifespan(_app: FastAPI):
         logging.getLogger(__name__).warning(
             "LARK_VERIFICATION_TOKEN 为空 — /api/lark/webhook 将接受无签名请求"
         )
-    # First-run admin bootstrap from env (idempotent).
+    # First-run admin bootstrap from env (idempotent) + ensure the 奖品 (prize)
+    # category exists (re-created here if it was ever deleted).
     db = SessionLocal()
     try:
         ensure_initial_admin(db)
+        ensure_prize_category(db)
     finally:
         db.close()
     yield
