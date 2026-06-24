@@ -261,8 +261,8 @@ def _avail(sku_id: int) -> int:
 
 def test_lottery_prizes_only_in_stock_prize_category():
     admin, _ = _login("it_admin")
-    in_stock = _make_sku(code="JP", available=5)
-    out_of_stock = _make_sku(code="JP", available=0)
+    in_stock = _make_sku(code="GIFT", available=5)
+    out_of_stock = _make_sku(code="GIFT", available=0)
     non_prize = _make_sku(code="ZZ", available=5)  # different category
     prizes = client.get("/api/lottery/prizes", headers=admin).json()
     ids = {p["id"] for p in prizes}
@@ -278,7 +278,7 @@ def test_lottery_prize_must_be_in_stock_prize():
     non_prize = _make_sku(code="ZZ", available=5)
     body = {"name": f"非奖品{uuid.uuid4().hex[:6]}", "winner_count": 1, "prize_sku_id": non_prize}
     assert client.post("/api/lottery/draws", json=body, headers=admin).status_code == 400
-    zero = _make_sku(code="JP", available=0)
+    zero = _make_sku(code="GIFT", available=0)
     body = {"name": f"零库存{uuid.uuid4().hex[:6]}", "winner_count": 1, "prize_sku_id": zero}
     assert client.post("/api/lottery/draws", json=body, headers=admin).status_code == 400
 
@@ -286,7 +286,7 @@ def test_lottery_prize_must_be_in_stock_prize():
 def test_lottery_confirm_stock_out_deducts():
     admin, _ = _login("it_admin")
     _make_lark_users(3)
-    prize = _make_sku(code="JP", available=10)
+    prize = _make_sku(code="GIFT", available=10)
     draw = client.post(
         "/api/lottery/draws",
         json={"name": f"出库{uuid.uuid4().hex[:6]}", "winner_count": 3, "prize_sku_id": prize},
@@ -320,7 +320,7 @@ def test_lottery_confirm_stock_out_guards():
         == 400
     )
     # insufficient stock (1 in stock, 3 winners) → 400, stock untouched
-    prize = _make_sku(code="JP", available=1)
+    prize = _make_sku(code="GIFT", available=1)
     d2 = client.post(
         "/api/lottery/draws",
         json={"name": f"不够{uuid.uuid4().hex[:6]}", "winner_count": 3, "prize_sku_id": prize},
@@ -424,7 +424,7 @@ def test_lottery_notify_winners():
 def test_lottery_selective_deliver_and_notify():
     admin, _ = _login("it_admin")
     _make_lark_users(3)
-    prize = _make_sku(code="JP", available=10)
+    prize = _make_sku(code="GIFT", available=10)
     draw = client.post(
         "/api/lottery/draws",
         json={"name": f"选择{uuid.uuid4().hex[:6]}", "winner_count": 3, "prize_sku_id": prize},
@@ -477,3 +477,33 @@ def test_lottery_selective_deliver_and_notify():
     n2 = client.post(f"/api/lottery/draws/{draw['id']}/notify", headers=admin).json()
     assert n2["notified"] == 2
     assert n2["notified_at"] is not None
+
+
+def test_ensure_prize_category_recreates_when_missing():
+    """A deleted 奖品 category is recreated by ensure_prize_category (startup)."""
+    from app.db import SessionLocal
+    from app.modules.inventory.models import ItemCategory, Sku
+    from app.modules.lottery.service import (
+        PRIZE_CATEGORY_CODE,
+        ensure_prize_category,
+        prize_category,
+    )
+    from sqlalchemy import delete as sa_delete
+    from sqlalchemy import select as sa_select
+
+    db = SessionLocal()
+    try:
+        cat = ensure_prize_category(db)
+        # detach SKUs then hard-delete the category directly (bypass the API guard)
+        for s in db.scalars(sa_select(Sku).where(Sku.category_id == cat.id)):
+            s.category_id = None
+        db.commit()
+        db.execute(sa_delete(ItemCategory).where(ItemCategory.id == cat.id))
+        db.commit()
+        assert prize_category(db) is None
+        # startup ensure brings it back
+        again = ensure_prize_category(db)
+        assert again.code == PRIZE_CATEGORY_CODE
+        assert prize_category(db) is not None
+    finally:
+        db.close()

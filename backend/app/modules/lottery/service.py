@@ -10,6 +10,7 @@ from app.modules.inventory import service as inv
 from app.modules.inventory.models import (
     InventoryStock,
     ItemCategory,
+    ManagementMode,
     Sku,
     TransactionType,
 )
@@ -40,14 +41,29 @@ def _dm(open_id: str | None, text: str) -> None:
 # Prize tiers the stage theme understands; None is also allowed (untiered draw).
 ALLOWED_TIERS = {"special", "first", "second", "third"}
 
-# The default 奖品 (prize) category — seeded + ensured by migration. Lottery
-# prizes must be SKUs under this category. Matched by the stable `code`, not the
-# (renameable) name.
-PRIZE_CATEGORY_CODE = "JP"
+# The default 奖品 (prize) category. Lottery prizes must be SKUs under it.
+# Matched by the stable `code`, not the (renameable) name. It's delete- and
+# code-edit-protected in the UI, and re-created on startup if missing.
+PRIZE_CATEGORY_CODE = "GIFT"
 
 
 def prize_category(db: Session) -> ItemCategory | None:
     return db.scalar(select(ItemCategory).where(ItemCategory.code == PRIZE_CATEGORY_CODE))
+
+
+def ensure_prize_category(db: Session) -> ItemCategory:
+    """Idempotently (re)create the 奖品 category if it's missing — so even if it
+    was deleted directly in the DB, it comes back on the next startup. Safe to
+    call on every boot."""
+    cat = prize_category(db)
+    if cat is None:
+        cat = ItemCategory(
+            name="奖品", code=PRIZE_CATEGORY_CODE, management_mode=ManagementMode.inventory
+        )
+        db.add(cat)
+        db.commit()
+        db.refresh(cat)
+    return cat
 
 
 def list_prize_skus(db: Session) -> list[tuple[Sku, int]]:

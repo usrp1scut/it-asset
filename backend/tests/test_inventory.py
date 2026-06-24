@@ -280,3 +280,33 @@ def test_delete_category_blocked_when_nonempty():
     blocked = client.delete(f"/api/item-categories/{cid2}", headers=h)
     assert blocked.status_code == 409
     assert "物品" in blocked.json()["detail"]
+
+
+def test_prize_category_is_delete_protected():
+    """The 奖品 (JP) category is system-managed (lottery links prizes to it) and
+    must not be deletable from the UI."""
+    h = _admin()
+    cats = client.get("/api/item-categories", headers=h).json()
+    jp = next((c for c in cats if c["code"] == "GIFT"), None)
+    assert jp is not None  # created by migration
+    r = client.delete(f"/api/item-categories/{jp['id']}", headers=h)
+    assert r.status_code == 409
+    assert "不可删除" in r.json()["detail"]
+    # still present
+    assert any(c["code"] == "GIFT" for c in client.get("/api/item-categories", headers=h).json())
+
+
+def test_prize_category_code_is_edit_locked():
+    """The 奖品 (GIFT) category's code can't be changed (name still can)."""
+    h = _admin()
+    cats = client.get("/api/item-categories", headers=h).json()
+    gift = next((c for c in cats if c["code"] == "GIFT"), None)
+    assert gift is not None
+    # changing the code → 409
+    r = client.put(f"/api/item-categories/{gift['id']}", json={"code": "PRZ"}, headers=h)
+    assert r.status_code == 409
+    assert "不可修改" in r.json()["detail"]
+    # changing the name is fine; code stays GIFT
+    r2 = client.put(f"/api/item-categories/{gift['id']}", json={"name": "奖品池"}, headers=h)
+    assert r2.status_code == 200
+    assert r2.json()["code"] == "GIFT"

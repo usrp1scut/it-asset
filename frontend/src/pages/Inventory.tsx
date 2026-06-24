@@ -362,7 +362,10 @@ export default function Inventory() {
                 >
                   编辑
                 </Button>
-                {cat.sku_count === 0 ? (
+                {cat.code === 'GIFT' ? (
+                  // 奖品 is a system-managed category (lottery links prizes to it).
+                  <Tag color="gold">内置 · 不可删除</Tag>
+                ) : cat.sku_count === 0 ? (
                   <Popconfirm
                     title={`删除分类「${cat.name}」?`}
                     onConfirm={() => catDelMut.mutate(cat.id)}
@@ -424,12 +427,21 @@ export default function Inventory() {
           <Form.Item
             name="code"
             label="分类简码(物品编码前缀,如 MS → MS-001)"
+            extra={
+              catModal !== null && catModal !== 'new' && catModal.code === 'GIFT'
+                ? '「奖品」是系统内置分类,简码不可修改'
+                : undefined
+            }
             rules={[
               { required: true },
               { pattern: /^[A-Za-z0-9]{1,16}$/, message: '1-16 位字母或数字' },
             ]}
           >
-            <Input placeholder="MS" style={{ textTransform: 'uppercase' }} />
+            <Input
+              placeholder="MS"
+              style={{ textTransform: 'uppercase' }}
+              disabled={catModal !== null && catModal !== 'new' && catModal.code === 'GIFT'}
+            />
           </Form.Item>
         </Form>
       </Modal>
