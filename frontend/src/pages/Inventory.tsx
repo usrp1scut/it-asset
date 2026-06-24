@@ -53,7 +53,13 @@ export default function Inventory() {
     null | 'sku' | 'loc' | { kind: 'in' | 'out' | 'adjust'; sku: Sku }
   >(null)
   const [catModal, setCatModal] = useState<null | 'new' | ItemCategory>(null)
-  const [form] = Form.useForm()
+  // One useForm instance per modal. Sharing a single instance across the
+  // new-location / new-SKU / move(入库·出库·调整) modals left AntD's form
+  // disconnected after a create+close cycle, so the next modal's OK no-op'd
+  // until a page refresh remounted it.
+  const [locForm] = Form.useForm()
+  const [skuForm] = Form.useForm()
+  const [moveForm] = Form.useForm()
   const [catForm] = Form.useForm()
   const [txnExportOpen, setTxnExportOpen] = useState(false)
   const [txnRange, setTxnRange] = useState<[Dayjs, Dayjs]>(() => [
@@ -96,8 +102,10 @@ export default function Inventory() {
     onSuccess: () => {
       message.success('操作成功')
       invalidate()
+      // Each modal has destroyOnClose, so closing it unmounts + clears its form.
+      // (Don't resetFields here — it'd run on the other modals' unmounted forms
+      // and warn "useForm not connected".)
       setModal(null)
-      form.resetFields()
     },
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '操作失败'),
@@ -451,11 +459,12 @@ export default function Inventory() {
         open={modal === 'loc'}
         title="新建库位"
         onCancel={() => setModal(null)}
-        onOk={() => form.submit()}
+        onOk={() => locForm.submit()}
         confirmLoading={mut.isPending}
+        destroyOnClose
       >
         <Form
-          form={form}
+          form={locForm}
           layout="vertical"
           onFinish={(v) => mut.mutate({ url: '/inventory/locations', body: v })}
         >
@@ -470,11 +479,11 @@ export default function Inventory() {
         open={modal === 'sku'}
         title="新建物品"
         onCancel={() => setModal(null)}
-        onOk={() => form.submit()}
+        onOk={() => skuForm.submit()}
         confirmLoading={mut.isPending}
         destroyOnClose
       >
-        <Form form={form} layout="vertical" onFinish={(v) => mut.mutate({ url: '/skus', body: v })}>
+        <Form form={skuForm} layout="vertical" onFinish={(v) => mut.mutate({ url: '/skus', body: v })}>
           <Form.Item name="category_id" label="所属分类" rules={[{ required: true }]}>
             <Select
               placeholder="选择分类(物品编码按分类简码自动生成)"
@@ -512,14 +521,14 @@ export default function Inventory() {
         }
         onCancel={() => {
           setModal(null)
-          form.resetFields()
+          moveForm.resetFields()
         }}
-        onOk={() => form.submit()}
+        onOk={() => moveForm.submit()}
         confirmLoading={mut.isPending}
         destroyOnClose
       >
         <Form
-          form={form}
+          form={moveForm}
           layout="vertical"
           onFinish={(v) => {
             if (typeof modal !== 'object' || !modal) return
