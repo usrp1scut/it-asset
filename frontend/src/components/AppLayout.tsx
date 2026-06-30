@@ -101,10 +101,12 @@ export default function AppLayout() {
   }
 
   return (
-    <Layout style={{ minHeight: '100vh' }}>
+    // Lock the shell to the viewport so only the content area scrolls — the
+    // topbar and sidebar stay fixed instead of scrolling away with the content.
+    <Layout style={{ height: '100vh', overflow: 'hidden' }}>
       <Topbar />
-      <Layout>
-        <Layout.Sider theme="light" width={216}>
+      <Layout style={{ overflow: 'hidden' }}>
+        <Layout.Sider theme="light" width={216} style={{ overflow: 'auto' }}>
           <Menu
             mode="inline"
             selectedKeys={[pathname]}
@@ -123,7 +125,7 @@ export default function AppLayout() {
             className="app-sidebar"
           />
         </Layout.Sider>
-        <Layout.Content style={{ background: 'var(--bg-canvas)' }}>
+        <Layout.Content style={{ background: 'var(--bg-canvas)', overflow: 'auto' }}>
           <Outlet />
         </Layout.Content>
       </Layout>
