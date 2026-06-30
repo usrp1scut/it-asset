@@ -3,6 +3,7 @@ import logging
 import secrets
 import time
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -191,9 +192,21 @@ async def lark_callback(body: LarkCallbackIn, db: Session = Depends(get_db)) -> 
         profile = await get_lark_client().exchange_login_code(body.code)
     except LarkNotConfigured as e:
         raise HTTPException(status.HTTP_503_SERVICE_UNAVAILABLE, str(e)) from e
+    except (RuntimeError, httpx.HTTPError) as e:
+        # Lark rejected the code (expired/reused), credential/config issue, or a
+        # network error. Surface a clear 502 + log it instead of an opaque 500.
+        logger.warning("Lark 登录 code 兑换失败: %s", e)
+        raise HTTPException(
+            status.HTTP_502_BAD_GATEWAY, f"Lark 登录校验失败:{e}"
+        ) from e
     # Don't let the login token's (often English-only) name overwrite the
     # localized name that contact sync maintains.
-    user = upsert_user_from_lark(db, profile, update_name=False)
+    try:
+        user = upsert_user_from_lark(db, profile, update_name=False)
+    except Exception:  # noqa: BLE001 — log the real cause, don't leak a bare 500
+        logger.exception("lark_callback: upsert_user_from_lark failed; profile keys=%s",
+                         sorted(profile.keys()))
+        raise
     token = create_access_token(str(user.id), {"role": user.role})
     return LoginResult(token=token, user=UserOut.model_validate(user))
 
