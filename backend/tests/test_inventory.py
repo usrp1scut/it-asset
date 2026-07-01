@@ -310,3 +310,50 @@ def test_prize_category_code_is_edit_locked():
     r2 = client.put(f"/api/item-categories/{gift['id']}", json={"name": "奖品池"}, headers=h)
     assert r2.status_code == 200
     assert r2.json()["code"] == "GIFT"
+
+
+def test_transactions_list_endpoint():
+    """The paginated ledger endpoint returns enriched, filterable rows."""
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc)
+    sid = sku["id"]
+    emp = _emp()
+    client.post("/api/inventory/receive", json={"sku_id": sid, "quantity": 20}, headers=h)
+    client.post(
+        "/api/inventory/issue",
+        json={"sku_id": sid, "quantity": 3, "user_id": emp},
+        headers=h,
+    )
+
+    # filter by this sku so the shared DB's other rows don't interfere
+    body = client.get("/api/inventory/transactions", params={"sku_id": sid}, headers=h).json()
+    assert body["total"] == 2  # one receive + one issue
+    types = {r["type"] for r in body["items"]}
+    assert {"purchase_in", "issue_out"} <= types
+    row = body["items"][0]
+    assert row["sku_code"] == sku["sku_code"]
+    assert {"created_at", "type_label", "quantity", "before_quantity",
+            "after_quantity", "operator", "recipient"} <= row.keys()
+    # the 发放 row shows who it went to; the 入库 row has no recipient
+    by_type = {r["type"]: r for r in body["items"]}
+    assert by_type["issue_out"]["recipient"]  # non-empty (the employee)
+    assert by_type["purchase_in"]["recipient"] == ""
+
+    # pagination: limit=1 → one item but total still 2
+    page = client.get(
+        "/api/inventory/transactions",
+        params={"sku_id": sid, "limit": 1, "offset": 0}, headers=h,
+    ).json()
+    assert len(page["items"]) == 1 and page["total"] == 2
+
+
+def test_transactions_list_requires_role():
+    emp_tok = client.post(
+        "/api/auth/dev-login", json={"email": f"e-{uuid.uuid4().hex[:6]}@c.com"}
+    ).json()["token"]
+    r = client.get(
+        "/api/inventory/transactions",
+        headers={"Authorization": f"Bearer {emp_tok}"},
+    )
+    assert r.status_code == 403

@@ -15,6 +15,7 @@ import {
   Select,
   Space,
   Statistic,
+  Table,
   Tabs,
   Tag,
   message,
@@ -46,6 +47,23 @@ const MOVE_LABEL: Record<'in' | 'out' | 'adjust', string> = {
   adjust: '库存调整',
 }
 
+interface Txn {
+  id: number
+  created_at: string | null
+  sku_code: string
+  sku_name: string
+  type: string
+  type_label: string
+  quantity: number
+  before_quantity: number
+  after_quantity: number
+  location: string
+  operator: string
+  recipient: string
+  remark: string
+}
+const TXN_PAGE_SIZE = 20
+
 export default function Inventory() {
   const qc = useQueryClient()
   const [tab, setTab] = useState('')
@@ -63,6 +81,7 @@ export default function Inventory() {
   const [moveForm] = Form.useForm()
   const [catForm] = Form.useForm()
   const [txnExportOpen, setTxnExportOpen] = useState(false)
+  const [txnPage, setTxnPage] = useState(1)
   const [txnRange, setTxnRange] = useState<[Dayjs, Dayjs]>(() => [
     dayjs().subtract(30, 'day'),
     dayjs(),
@@ -90,6 +109,41 @@ export default function Inventory() {
     queryKey: ['item-categories'],
     queryFn: async () => (await api.get('/item-categories')).data,
   })
+
+  const txnFrom = txnRange[0].format('YYYY-MM-DD')
+  const txnTo = txnRange[1].format('YYYY-MM-DD')
+  const { data: txns, isFetching: txnsLoading } = useQuery<{ items: Txn[]; total: number }>({
+    queryKey: ['inventory-txns', txnFrom, txnTo, txnPage],
+    queryFn: async () =>
+      (
+        await api.get('/inventory/transactions', {
+          params: {
+            date_from: txnFrom,
+            date_to: txnTo,
+            limit: TXN_PAGE_SIZE,
+            offset: (txnPage - 1) * TXN_PAGE_SIZE,
+          },
+        })
+      ).data,
+    enabled: txnExportOpen, // only fetch while the ledger modal is open
+  })
+
+  const exportTxns = async () => {
+    try {
+      const res = await api.get('/inventory/transactions/export', {
+        responseType: 'blob',
+        params: { date_from: txnFrom, date_to: txnTo },
+      })
+      const url = URL.createObjectURL(res.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `inventory-transactions-${txnFrom}-${txnTo}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      message.error('导出失败')
+    }
+  }
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['skus'] })
@@ -290,7 +344,7 @@ export default function Inventory() {
           >
             导出 SKU
           </Button>
-          <Button onClick={() => setTxnExportOpen(true)}>导出流水</Button>
+          <Button onClick={() => setTxnExportOpen(true)}>库存流水</Button>
         </Space>
       </div>
 
@@ -580,42 +634,94 @@ export default function Inventory() {
 
       <Modal
         open={txnExportOpen}
-        title="导出库存流水"
+        title="库存流水"
         onCancel={() => setTxnExportOpen(false)}
-        onOk={async () => {
-          const [from, to] = txnRange
-          try {
-            const res = await api.get('/inventory/transactions/export', {
-              responseType: 'blob',
-              params: {
-                date_from: from.format('YYYY-MM-DD'),
-                date_to: to.format('YYYY-MM-DD'),
-              },
-            })
-            const url = URL.createObjectURL(res.data as Blob)
-            const a = document.createElement('a')
-            a.href = url
-            a.download = `inventory-transactions-${from.format('YYYYMMDD')}-${to.format('YYYYMMDD')}.xlsx`
-            a.click()
-            URL.revokeObjectURL(url)
-            setTxnExportOpen(false)
-          } catch {
-            message.error('导出失败')
-          }
-        }}
-        okText="导出"
-        cancelText="取消"
+        width={960}
+        footer={[
+          <Button key="export" onClick={exportTxns}>
+            导出 Excel
+          </Button>,
+          <Button key="close" type="primary" onClick={() => setTxnExportOpen(false)}>
+            关闭
+          </Button>,
+        ]}
       >
-        <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>
-          选择日期范围(含截止日)
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          <span style={{ color: 'var(--text-2)' }}>日期范围(含截止日)</span>
+          <DatePicker.RangePicker
+            value={txnRange}
+            onChange={(v) => {
+              if (v && v[0] && v[1]) {
+                setTxnRange([v[0], v[1]])
+                setTxnPage(1)
+              }
+            }}
+            allowClear={false}
+          />
         </div>
-        <DatePicker.RangePicker
-          value={txnRange}
-          onChange={(v) => {
-            if (v && v[0] && v[1]) setTxnRange([v[0], v[1]])
+        <Table<Txn>
+          size="small"
+          rowKey="id"
+          loading={txnsLoading}
+          dataSource={txns?.items ?? []}
+          pagination={{
+            current: txnPage,
+            pageSize: TXN_PAGE_SIZE,
+            total: txns?.total ?? 0,
+            onChange: setTxnPage,
+            showSizeChanger: false,
+            showTotal: (t) => `共 ${t} 条`,
           }}
-          style={{ width: '100%' }}
-          allowClear={false}
+          columns={[
+            {
+              title: '时间',
+              dataIndex: 'created_at',
+              width: 150,
+              render: (v: string | null) =>
+                v ? new Date(v).toLocaleString('zh-CN', { hour12: false }) : '—',
+            },
+            {
+              title: '物品',
+              key: 'sku',
+              render: (_: unknown, r: Txn) => (
+                <span>
+                  {r.sku_name}
+                  <span className="text-mono" style={{ color: 'var(--text-3)', marginLeft: 6 }}>
+                    {r.sku_code}
+                  </span>
+                </span>
+              ),
+            },
+            {
+              title: '类型',
+              dataIndex: 'type_label',
+              width: 88,
+              render: (v: string) => <Tag>{v}</Tag>,
+            },
+            {
+              title: '数量',
+              dataIndex: 'quantity',
+              width: 72,
+              align: 'right' as const,
+              render: (v: number) => (
+                <span style={{ color: v < 0 ? 'var(--danger)' : 'var(--success)' }}>
+                  {v > 0 ? `+${v}` : v}
+                </span>
+              ),
+            },
+            { title: '之前', dataIndex: 'before_quantity', width: 60, align: 'right' as const },
+            { title: '之后', dataIndex: 'after_quantity', width: 60, align: 'right' as const },
+            { title: '库位', dataIndex: 'location', width: 120, ellipsis: true },
+            { title: '操作人', dataIndex: 'operator', width: 90, ellipsis: true },
+            {
+              title: '领用人',
+              dataIndex: 'recipient',
+              width: 90,
+              ellipsis: true,
+              render: (v: string) => v || <span style={{ color: 'var(--text-4)' }}>—</span>,
+            },
+            { title: '备注', dataIndex: 'remark', ellipsis: true },
+          ]}
         />
       </Modal>
     </div>

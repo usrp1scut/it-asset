@@ -379,6 +379,24 @@ def export_skus(
     )
 
 
+@router.get("/api/inventory/transactions")
+def list_transactions(
+    db: Session = Depends(get_db),
+    _: User = Depends(staff),
+    date_from: date | None = None,
+    date_to: date | None = None,
+    sku_id: int | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict:
+    """Paginated stock-movement ledger for in-page viewing (date_to inclusive)."""
+    items, total = reports.list_txns(
+        db, date_from=date_from, date_to=date_to, sku_id=sku_id,
+        limit=min(limit, 200), offset=offset,
+    )
+    return {"items": items, "total": total}
+
+
 @router.get("/api/inventory/transactions/export")
 def export_transactions(
     db: Session = Depends(get_db),
