@@ -474,7 +474,10 @@ def assign(
 ):
     asset = _load(db, code)
     try:
-        asset = service.assign(db, asset, body.user_id, user.id, body.note)
+        asset = service.assign(
+            db, asset, body.user_id, user.id, body.note,
+            notify_receipt=body.notify_receipt,
+        )
     except (IllegalTransition, InfrastructureNotAssignable) as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return _to_out(db, asset)

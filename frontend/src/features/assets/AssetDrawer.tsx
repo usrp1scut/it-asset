@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   Button,
+  Checkbox,
   DatePicker,
   Descriptions,
   Drawer,
@@ -46,6 +47,7 @@ export default function AssetDrawer({
   const qc = useQueryClient()
   const [assignOpen, setAssignOpen] = useState(false)
   const [assignUser, setAssignUser] = useState<number | null>(null)
+  const [assignNotify, setAssignNotify] = useState(false)
   const [scrapOpen, setScrapOpen] = useState(false)
   const [scrapReason, setScrapReason] = useState('')
   const [repairOpen, setRepairOpen] = useState(false)
@@ -575,13 +577,23 @@ export default function AssetDrawer({
             onCancel={() => setAssignOpen(false)}
             onOk={() =>
               assignUser
-                ? act.mutate({ path: 'assign', body: { user_id: assignUser } })
+                ? act.mutate({
+                    path: 'assign',
+                    body: { user_id: assignUser, notify_receipt: assignNotify },
+                  })
                 : message.warning('请输入员工 ID')
             }
             confirmLoading={act.isPending}
           >
             <div style={{ marginBottom: 8, color: 'var(--text-2)' }}>选择员工</div>
             <EmployeeSelect value={assignUser} onChange={setAssignUser} />
+            <Checkbox
+              checked={assignNotify}
+              onChange={(e) => setAssignNotify(e.target.checked)}
+              style={{ marginTop: 12 }}
+            >
+              发送 Lark 确认卡片给员工(员工点「确认收到」后回执)
+            </Checkbox>
           </Modal>
 
           <Modal

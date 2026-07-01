@@ -3,6 +3,7 @@ import {
   Alert,
   Button,
   Card,
+  Checkbox,
   Col,
   DatePicker,
   Form,
@@ -563,9 +564,14 @@ export default function Inventory() {
                 <InputNumber min={1} style={{ width: '100%' }} />
               </Form.Item>
               {typeof modal === 'object' && modal?.kind === 'out' && (
-                <Form.Item name="user_id" label="领用人" rules={[{ required: true }]}>
-                  <EmployeeSelect placeholder="搜索姓名 / 邮箱选择领用人" />
-                </Form.Item>
+                <>
+                  <Form.Item name="user_id" label="领用人" rules={[{ required: true }]}>
+                    <EmployeeSelect placeholder="搜索姓名 / 邮箱选择领用人" />
+                  </Form.Item>
+                  <Form.Item name="notify_receipt" valuePropName="checked" initialValue={false}>
+                    <Checkbox>发送 Lark 确认卡片给领用人(点「确认收到」后回执)</Checkbox>
+                  </Form.Item>
+                </>
               )}
             </>
           )}
