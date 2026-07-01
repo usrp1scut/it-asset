@@ -97,12 +97,22 @@ services:
 
   lark-ws:
     <<: *backend-base
+    # Long-connection process that receives Lark card-action callbacks
+    # (领用确认「确认收到」, approval decisions). If it is not running, taps are
+    # silently dropped — keep it up. restart: unless-stopped is inherited.
     command: python -m app.lark.ws_client
     depends_on:
       db:
         condition: service_healthy
       backend:
         condition: service_started
+    healthcheck:
+      # heartbeat file must have been touched in the last 90s (see _start_heartbeat)
+      test: ["CMD-SHELL", "test -f /tmp/lark_ws_alive && [ $$(( $$(date +%s) - $$(cat /tmp/lark_ws_alive) )) -lt 90 ]"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   frontend:
     build:
