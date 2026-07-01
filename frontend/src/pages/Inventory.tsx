@@ -60,6 +60,8 @@ interface Txn {
   location: string
   operator: string
   recipient: string
+  ack: '' | 'pending' | 'acknowledged'
+  ack_at: string | null
   remark: string
 }
 const TXN_PAGE_SIZE = 20
@@ -345,6 +347,7 @@ export default function Inventory() {
             导出 SKU
           </Button>
           <Button onClick={() => setTxnExportOpen(true)}>库存流水</Button>
+          <Button onClick={exportTxns}>导出流水</Button>
         </Space>
       </div>
 
@@ -719,6 +722,21 @@ export default function Inventory() {
               width: 90,
               ellipsis: true,
               render: (v: string) => v || <span style={{ color: 'var(--text-4)' }}>—</span>,
+            },
+            {
+              title: '领用确认',
+              dataIndex: 'ack',
+              width: 92,
+              render: (v: Txn['ack'], r: Txn) =>
+                v === 'acknowledged' ? (
+                  <Tag color="success" title={r.ack_at ? new Date(r.ack_at).toLocaleString('zh-CN', { hour12: false }) : undefined}>
+                    已确认
+                  </Tag>
+                ) : v === 'pending' ? (
+                  <Tag color="warning">待确认</Tag>
+                ) : (
+                  <span style={{ color: 'var(--text-4)' }}>—</span>
+                ),
             },
             { title: '备注', dataIndex: 'remark', ellipsis: true },
           ]}
