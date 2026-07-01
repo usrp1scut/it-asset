@@ -113,6 +113,7 @@ class IssueIn(BaseModel):
     user_id: int
     location_id: int | None = None
     remark: str | None = None
+    notify_receipt: bool = False  # send a Lark 领用确认 card to the employee
 
 
 class ReturnIn(BaseModel):

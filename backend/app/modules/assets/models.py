@@ -105,6 +105,10 @@ class AssetAssignment(Base):
     status: Mapped[str] = mapped_column(String(32), default="active")  # active | returned
     operator_id: Mapped[int | None] = mapped_column(BigInteger)
     remark: Mapped[str | None] = mapped_column(Text)
+    # Lark receipt-confirmation card: message id (to update it in place) + when
+    # the employee tapped 确认收到. NULL = no card sent / not yet acknowledged.
+    receipt_msg_id: Mapped[str | None] = mapped_column(String(128))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class AssetChangeLog(Base):

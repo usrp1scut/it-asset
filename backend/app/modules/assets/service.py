@@ -263,17 +263,24 @@ def accessories(db: Session, asset_id: int) -> list[AssetAccessory]:
 # ── status actions ───────────────────────────────────────────────────────────
 
 
-def assign(db: Session, asset: Asset, user_id: int, operator_id: int, note: str | None) -> Asset:
+def assign(
+    db: Session,
+    asset: Asset,
+    user_id: int,
+    operator_id: int,
+    note: str | None,
+    *,
+    notify_receipt: bool = False,
+) -> Asset:
     assert_assignable(asset.asset_class)
     assert_transition(asset.status, AssetStatus.in_use)
     prev_owner = asset.owner_user_id
     asset.status = AssetStatus.in_use
     _apply_owner(db, asset, user_id)
-    db.add(
-        AssetAssignment(
-            asset_id=asset.id, user_id=user_id, operator_id=operator_id, remark=note
-        )
+    assignment = AssetAssignment(
+        asset_id=asset.id, user_id=user_id, operator_id=operator_id, remark=note
     )
+    db.add(assignment)
     _log(
         db, asset, "assign",
         from_status=AssetStatus.idle, to_status=AssetStatus.in_use,
@@ -281,7 +288,20 @@ def assign(db: Session, asset: Asset, user_id: int, operator_id: int, note: str 
     )
     db.commit()
     db.refresh(asset)
+    if notify_receipt:
+        _send_receipt_card(db, kind="asset", record_id=assignment.id, user_id=user_id)
     return asset
+
+
+def _send_receipt_card(db: Session, *, kind: str, record_id: int, user_id: int) -> None:
+    """Send a Lark 领用确认 card to the recipient (no-op-safe)."""
+    from app.lark import receipts
+    from app.modules.users.models import User
+
+    user = db.get(User, user_id)
+    receipts.send_receipt(
+        db, kind=kind, record_id=record_id, open_id=user.lark_open_id if user else None
+    )
 
 
 def return_asset(db: Session, asset: Asset, operator_id: int, note: str | None) -> Asset:

@@ -206,4 +206,7 @@ class EmployeeItemIssue(Base):
     status: Mapped[IssueStatus] = mapped_column(
         Enum(IssueStatus, name="issue_status"), default=IssueStatus.issued
     )
+    # Lark receipt-confirmation card: message id (to update in place) + ack time.
+    receipt_msg_id: Mapped[str | None] = mapped_column(String(128))
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

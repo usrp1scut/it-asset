@@ -50,7 +50,7 @@ def _on_user_deleted(data) -> None:
 
 
 def _on_card_action(data) -> None:
-    """P2 card-action callback → apply the embedded approve/reject."""
+    """P2 card-action callback → apply an approval decision, or a 领用确认 ack."""
     try:
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
@@ -61,11 +61,19 @@ def _on_card_action(data) -> None:
         op_open_id = getattr(getattr(event, "operator", None), "open_id", None)
         db = SessionLocal()
         try:
-            ok = service.apply_card_decision(
-                db, value.get("approval_id"), value.get("decision"),
-                operator_open_id=op_open_id,
-            )
-            log.info("card decision applied=%s value=%s", ok, value)
+            if value.get("ack"):
+                from app.lark import receipts
+
+                ok = receipts.confirm_receipt(
+                    db, kind=value.get("ack"), record_id=value.get("id")
+                )
+                log.info("receipt ack applied=%s value=%s", ok, value)
+            else:
+                ok = service.apply_card_decision(
+                    db, value.get("approval_id"), value.get("decision"),
+                    operator_open_id=op_open_id,
+                )
+                log.info("card decision applied=%s value=%s", ok, value)
         finally:
             db.close()
     except Exception:  # noqa: BLE001 — a bad callback must not kill the connection

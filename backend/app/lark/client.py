@@ -237,6 +237,35 @@ class LarkClient:
             )
             resp.raise_for_status()
 
+    async def send_user_card(self, open_id: str, card: dict) -> str | None:
+        """Send an interactive card DM to a user; returns the Lark message_id
+        (needed to update the card in place later). No-op-safe callers only."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.post(
+                self._url("/open-apis/im/v1/messages"),
+                params={"receive_id_type": "open_id"},
+                headers={"Authorization": f"Bearer {token}"},
+                json={
+                    "receive_id": open_id,
+                    "msg_type": "interactive",
+                    "content": json.dumps(card),
+                },
+            )
+            resp.raise_for_status()
+            return resp.json().get("data", {}).get("message_id")
+
+    async def update_card(self, message_id: str, card: dict) -> None:
+        """Replace an interactive card's content in place (PATCH the message)."""
+        token = await self.get_tenant_access_token()
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.patch(
+                self._url(f"/open-apis/im/v1/messages/{message_id}"),
+                headers={"Authorization": f"Bearer {token}"},
+                json={"content": json.dumps(card)},
+            )
+            resp.raise_for_status()
+
     async def exchange_login_code(self, code: str) -> dict:
         """Exchange a frontend login `code` for the user's Lark profile.
 

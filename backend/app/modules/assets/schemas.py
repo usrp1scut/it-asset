@@ -256,6 +256,7 @@ class AssetDetailOut(BaseModel):
 class AssignIn(BaseModel):
     user_id: int
     note: str | None = None
+    notify_receipt: bool = False  # send a Lark 领用确认 card to the employee
 
 
 class ReasonIn(BaseModel):

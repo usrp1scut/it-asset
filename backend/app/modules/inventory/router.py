@@ -305,6 +305,7 @@ def issue(body: IssueIn, db: Session = Depends(get_db), user: User = Depends(it_
         order = service.issue(
             db, sku_id=body.sku_id, quantity=body.quantity, user_id=body.user_id,
             location_id=body.location_id, operator_id=user.id, remark=body.remark,
+            notify_receipt=body.notify_receipt,
         )
     except service.InsufficientStock as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e

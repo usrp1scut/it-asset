@@ -180,6 +180,7 @@ def issue(
     location_id: int | None,
     operator_id: int | None,
     remark: str | None = None,
+    notify_receipt: bool = False,
 ) -> InventoryOrder:
     """Issue stock to an employee. Raises InsufficientStock if oversold."""
     if quantity <= 0:
@@ -209,17 +210,25 @@ def issue(
         order_id=order.id,
         remark=remark,
     )
-    db.add(
-        EmployeeItemIssue(
-            user_id=user_id,
-            sku_id=sku_id,
-            quantity=quantity,
-            issue_order_id=order.id,
-            need_return=sku.need_return,
-        )
+    issue_rec = EmployeeItemIssue(
+        user_id=user_id,
+        sku_id=sku_id,
+        quantity=quantity,
+        issue_order_id=order.id,
+        need_return=sku.need_return,
     )
+    db.add(issue_rec)
     db.commit()
     db.refresh(order)
+    if notify_receipt:
+        from app.lark import receipts
+        from app.modules.users.models import User
+
+        user = db.get(User, user_id)
+        receipts.send_receipt(
+            db, kind="issue", record_id=issue_rec.id,
+            open_id=user.lark_open_id if user else None,
+        )
     return order
 
 
