@@ -339,6 +339,10 @@ def test_transactions_list_endpoint():
     by_type = {r["type"]: r for r in body["items"]}
     assert by_type["issue_out"]["recipient"]  # non-empty (the employee)
     assert by_type["purchase_in"]["recipient"] == ""
+    # no 领用确认 card was requested → ack is blank on every row
+    assert "ack" in row
+    assert by_type["issue_out"]["ack"] == ""
+    assert by_type["purchase_in"]["ack"] == ""
 
     # pagination: limit=1 → one item but total still 2
     page = client.get(
@@ -346,6 +350,51 @@ def test_transactions_list_endpoint():
         params={"sku_id": sid, "limit": 1, "offset": 0}, headers=h,
     ).json()
     assert len(page["items"]) == 1 and page["total"] == 2
+
+
+def test_transactions_ledger_reflects_receipt_ack():
+    """A 发放 with a confirmation card shows 待确认, then 已确认 once the employee
+    taps 确认收到 (the WS callback path calls receipts.confirm_receipt)."""
+    from app.db import SessionLocal
+    from app.lark import receipts
+    from app.modules.inventory.models import EmployeeItemIssue
+    from sqlalchemy import select
+
+    h = _admin()
+    loc = _loc(h)
+    sku = _sku(h, loc)
+    sid = sku["id"]
+    emp = _emp()
+    client.post("/api/inventory/receive", json={"sku_id": sid, "quantity": 10}, headers=h)
+    client.post(
+        "/api/inventory/issue",
+        json={"sku_id": sid, "quantity": 2, "user_id": emp},
+        headers=h,
+    )
+
+    def _issue_row():
+        items = client.get(
+            "/api/inventory/transactions", params={"sku_id": sid}, headers=h
+        ).json()["items"]
+        return next(r for r in items if r["type"] == "issue_out")
+
+    db = SessionLocal()
+    try:
+        issue = db.scalar(
+            select(EmployeeItemIssue).where(EmployeeItemIssue.sku_id == sid)
+        )
+        # simulate a card having been sent (send is Lark-only / no-op in tests)
+        issue.receipt_msg_id = "om-test"
+        db.commit()
+        assert _issue_row()["ack"] == "pending"
+        # employee taps 确认收到
+        newly, _card = receipts.confirm_receipt(db, kind="issue", record_id=issue.id)
+        assert newly is True
+        row = _issue_row()
+        assert row["ack"] == "acknowledged"
+        assert row["ack_at"]  # timestamp present
+    finally:
+        db.close()
 
 
 def test_transactions_list_requires_role():

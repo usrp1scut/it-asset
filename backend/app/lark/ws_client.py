@@ -49,8 +49,27 @@ def _on_user_deleted(data) -> None:
         log.exception("failed handling user.deleted")
 
 
-def _on_card_action(data) -> None:
-    """P2 card-action callback → apply an approval decision, or a 领用确认 ack."""
+def _ack_response(content: dict):
+    """Wrap a card-action callback body in the SDK response type, if available.
+    Returning it makes Lark show the toast / swap the card synchronously; if the
+    SDK shape differs we fall back to None (best-effort, never crash)."""
+    try:
+        from lark_oapi.event.callback.model.p2_card_action_trigger import (
+            P2CardActionTriggerResponse,
+        )
+
+        return P2CardActionTriggerResponse(content)
+    except Exception:  # noqa: BLE001 — response is best-effort feedback only
+        log.exception("could not build card-action response")
+        return None
+
+
+def _on_card_action(data):
+    """P2 card-action callback → apply an approval decision, or a 领用确认 ack.
+
+    For the 领用确认 tap we return a response carrying a toast + the acknowledged
+    card, so the employee gets instant feedback and the button flips to 已确认
+    in place (no fragile second API call)."""
     try:
         event = getattr(data, "event", None)
         action = getattr(event, "action", None)
@@ -64,20 +83,33 @@ def _on_card_action(data) -> None:
             if value.get("ack"):
                 from app.lark import receipts
 
-                ok = receipts.confirm_receipt(
+                newly, card = receipts.confirm_receipt(
                     db, kind=value.get("ack"), record_id=value.get("id")
                 )
-                log.info("receipt ack applied=%s value=%s", ok, value)
-            else:
-                ok = service.apply_card_decision(
-                    db, value.get("approval_id"), value.get("decision"),
-                    operator_open_id=op_open_id,
-                )
-                log.info("card decision applied=%s value=%s", ok, value)
+                log.info("receipt ack newly=%s found=%s value=%s",
+                         newly, card is not None, value)
+                if card is None:
+                    return _ack_response(
+                        {"toast": {"type": "error", "content": "未找到该领用记录"}}
+                    )
+                return _ack_response({
+                    "toast": {
+                        "type": "success",
+                        "content": "已确认收到,感谢!" if newly else "已确认过啦",
+                    },
+                    "card": {"type": "raw", "data": card},
+                })
+            ok = service.apply_card_decision(
+                db, value.get("approval_id"), value.get("decision"),
+                operator_open_id=op_open_id,
+            )
+            log.info("card decision applied=%s value=%s", ok, value)
+            return None
         finally:
             db.close()
     except Exception:  # noqa: BLE001 — a bad callback must not kill the connection
         log.exception("failed handling card action")
+        return None
 
 
 def build_client() -> "lark.ws.Client | None":

@@ -51,14 +51,20 @@ def test_confirm_receipt_idempotent_and_guarded():
     try:
         rec = _mk_issue(db)
         assert rec.acknowledged_at is None
-        assert receipts.confirm_receipt(db, kind="issue", record_id=rec.id) is True
+        # first tap → newly recorded + acknowledged (green) card echoed back
+        newly, card = receipts.confirm_receipt(db, kind="issue", record_id=rec.id)
+        assert newly is True
+        assert card is not None and card["header"]["template"] == "green"
+        assert not any(e.get("tag") == "action" for e in card["elements"])  # button gone
         db.refresh(rec)
         assert rec.acknowledged_at is not None
-        # second tap → idempotent no-op
-        assert receipts.confirm_receipt(db, kind="issue", record_id=rec.id) is False
-        # missing record / bad kind
-        assert receipts.confirm_receipt(db, kind="issue", record_id=999999999) is False
-        assert receipts.confirm_receipt(db, kind="bogus", record_id=rec.id) is False
+        # second tap → not newly recorded, but still yields the acknowledged card
+        newly2, card2 = receipts.confirm_receipt(db, kind="issue", record_id=rec.id)
+        assert newly2 is False
+        assert card2 is not None and card2["header"]["template"] == "green"
+        # missing record / bad kind → (False, None)
+        assert receipts.confirm_receipt(db, kind="issue", record_id=999999999) == (False, None)
+        assert receipts.confirm_receipt(db, kind="bogus", record_id=rec.id) == (False, None)
     finally:
         db.close()
 

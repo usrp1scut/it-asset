@@ -18,6 +18,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.modules.inventory.models import (
+    EmployeeItemIssue,
     InventoryLocation,
     InventoryOrder,
     InventoryTransaction,
@@ -55,8 +56,10 @@ _SKU_HEADERS = [
 
 _TXN_HEADERS = [
     "时间", "SKU 编码", "物品名称", "类型", "数量",
-    "操作前库存", "操作后库存", "库位", "操作人", "领用人", "备注",
+    "操作前库存", "操作后库存", "库位", "操作人", "领用人", "领用确认", "备注",
 ]
+
+_ACK_CN = {"acknowledged": "已确认", "pending": "待确认"}
 
 
 def export_sku_workbook(
@@ -148,6 +151,30 @@ def _resolve_recipients(db: Session, rows: list[InventoryTransaction]) -> dict[i
     return {oid: names.get(rid, "") for oid, rid in orders.items() if rid is not None}
 
 
+def _resolve_acks(db: Session, rows: list[InventoryTransaction]) -> dict[int, dict]:
+    """Map txn id → 领用确认 state for 发放 rows, via the linked EmployeeItemIssue
+    (issue_order_id == txn.related_order_id, matched on sku). Returns
+    ``{txn_id: {"state": "acknowledged"|"pending", "at": iso|None}}``; rows with
+    no confirmation card requested are simply absent."""
+    order_ids = {r.related_order_id for r in rows if r.related_order_id is not None}
+    if not order_ids:
+        return {}
+    issues = db.scalars(
+        select(EmployeeItemIssue).where(EmployeeItemIssue.issue_order_id.in_(order_ids))
+    )
+    by_key = {(i.issue_order_id, i.sku_id): i for i in issues}
+    out: dict[int, dict] = {}
+    for r in rows:
+        iss = by_key.get((r.related_order_id, r.sku_id)) if r.related_order_id else None
+        if iss is None:
+            continue
+        if iss.acknowledged_at is not None:
+            out[r.id] = {"state": "acknowledged", "at": iss.acknowledged_at.isoformat()}
+        elif iss.receipt_msg_id:
+            out[r.id] = {"state": "pending", "at": None}
+    return out
+
+
 def list_txns(
     db: Session,
     *,
@@ -173,6 +200,7 @@ def list_txns(
     )
     skus, ops, locs = _resolve_refs(db, rows)
     recips = _resolve_recipients(db, rows)
+    acks = _resolve_acks(db, rows)
     items = [
         {
             "id": r.id,
@@ -187,6 +215,8 @@ def list_txns(
             "location": locs.get(r.location_id, ""),
             "operator": ops.get(r.operator_id, "") if r.operator_id else "",
             "recipient": recips.get(r.related_order_id, "") if r.related_order_id else "",
+            "ack": (acks.get(r.id) or {}).get("state", ""),
+            "ack_at": (acks.get(r.id) or {}).get("at"),
             "remark": r.remark or "",
         }
         for r in rows
@@ -215,6 +245,7 @@ def export_txn_workbook(
     rows = list(db.scalars(stmt))
     skus, ops, locs = _resolve_refs(db, rows)
     recips = _resolve_recipients(db, rows)
+    acks = _resolve_acks(db, rows)
 
     for r in rows:
         sku = skus.get(r.sku_id)
@@ -229,6 +260,7 @@ def export_txn_workbook(
             locs.get(r.location_id, ""),
             ops.get(r.operator_id, "") if r.operator_id else "",
             recips.get(r.related_order_id, "") if r.related_order_id else "",
+            _ACK_CN.get((acks.get(r.id) or {}).get("state", ""), ""),
             r.remark or "",
         ])
 

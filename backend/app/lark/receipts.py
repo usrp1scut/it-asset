@@ -73,32 +73,35 @@ def send_receipt(db, *, kind: str, record_id: int, open_id: str | None) -> None:
         db.commit()
 
 
-def confirm_receipt(db, *, kind: str, record_id: int) -> bool:
-    """Record the employee's 确认收到 and update the card in place. Idempotent:
-    returns False if the record is missing or was already acknowledged."""
+def confirm_receipt(db, *, kind: str, record_id: int) -> tuple[bool, dict | None]:
+    """Record the employee's 确认收到 and return ``(newly_recorded, ack_card)``.
+
+    ``ack_card`` is the acknowledged-state card JSON, which the WS card-action
+    handler echoes straight back in its callback response — updating the card
+    *in place* without a second API call, so it stays inside Lark's ~3 s
+    callback window (the old out-of-band PATCH could time out / fail silently,
+    which is why taps appeared to do nothing). ``ack_card`` is ``None`` only
+    when the record is missing or the kind is unknown.
+
+    Idempotent: a repeat tap returns ``newly_recorded=False`` but still yields
+    the acknowledged card, so a stale button (whose earlier update was lost)
+    still flips to 已确认 when tapped again.
+    """
     if kind not in (ASSET, ISSUE):
-        return False
+        return False, None
     rec = _load(db, kind, record_id)
-    if rec is None or rec.acknowledged_at is not None:
-        return False
-    now = datetime.now(UTC)
-    rec.acknowledged_at = now
-    db.commit()
-    # Update the card to its acknowledged state (best-effort).
-    if rec.receipt_msg_id:
-        title, lines = _parts(db, kind, rec)
-        card = receipt_card(
-            title=title,
-            lines=lines,
-            ack_value={"ack": kind, "id": record_id},
-            acknowledged=True,
-            ack_time=now.astimezone().strftime("%Y-%m-%d %H:%M"),
-        )
-        client = get_lark_client()
-        if client.configured:
-            try:
-                anyio.run(client.update_card, rec.receipt_msg_id, card)
-            except Exception:  # noqa: BLE001 — ack is already recorded
-                log.exception("confirm_receipt: card update failed (kind=%s id=%s)",
-                              kind, record_id)
-    return True
+    if rec is None:
+        return False, None
+    newly = rec.acknowledged_at is None
+    if newly:
+        rec.acknowledged_at = datetime.now(UTC)
+        db.commit()
+    title, lines = _parts(db, kind, rec)
+    card = receipt_card(
+        title=title,
+        lines=lines,
+        ack_value={"ack": kind, "id": record_id},
+        acknowledged=True,
+        ack_time=rec.acknowledged_at.astimezone().strftime("%Y-%m-%d %H:%M"),
+    )
+    return newly, card
