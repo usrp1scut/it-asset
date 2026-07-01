@@ -13,6 +13,9 @@ service does not crash-loop before the app is configured.
 
 import json
 import logging
+import os
+import threading
+import time
 
 import lark_oapi as lark
 
@@ -22,6 +25,10 @@ from app.modules.approvals import service
 from app.modules.offboarding import service as offboarding_service
 
 log = logging.getLogger("lark.ws")
+
+# Liveness file touched by a background thread; the container healthcheck reads
+# its freshness to tell a frozen WS process from a live one.
+_HEARTBEAT_FILE = os.environ.get("LARK_WS_HEARTBEAT", "/tmp/lark_ws_alive")
 
 
 def _on_user_deleted(data) -> None:
@@ -142,12 +149,44 @@ def build_client() -> "lark.ws.Client | None":
     )
 
 
+def _start_heartbeat() -> None:
+    """Touch the liveness file every 30s so the healthcheck can distinguish a
+    live WS loop from a fully frozen process (a hung process stops touching it)."""
+
+    def loop() -> None:
+        while True:
+            try:
+                with open(_HEARTBEAT_FILE, "w") as f:
+                    f.write(str(int(time.time())))
+            except OSError:
+                log.warning("could not write heartbeat file %s", _HEARTBEAT_FILE)
+            time.sleep(30)
+
+    threading.Thread(target=loop, name="lark-ws-heartbeat", daemon=True).start()
+
+
 def main() -> None:
     logging.basicConfig(level=logging.INFO)
     client = build_client()
     if client is None:
         return
-    client.start()  # blocking — maintains the long connection
+    _start_heartbeat()
+    # client.start() blocks while the long connection is up. The SDK reconnects
+    # internally, but if start() ever returns/raises the connection is gone —
+    # loop with backoff so 领用确认 / approval callbacks keep being delivered
+    # instead of the process quietly dying (SIGTERM on shutdown still exits us).
+    backoff = 1
+    while True:
+        began = time.monotonic()
+        try:
+            client.start()
+            log.warning("lark-ws connection closed; reconnecting")
+        except Exception:  # noqa: BLE001 — keep the callback pipe alive
+            log.exception("lark-ws connection error; reconnecting")
+        if time.monotonic() - began > 60:
+            backoff = 1  # a healthy long-lived connection just ended; reset
+        time.sleep(backoff)
+        backoff = min(backoff * 2, 30)
 
 
 if __name__ == "__main__":
