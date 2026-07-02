@@ -49,6 +49,8 @@ export interface AssetDetail {
   asset: Asset
   lifecycle: ChangeLog[]
   accessories: Accessory[]
+  receipt_state: '' | 'pending' | 'acknowledged'
+  receipt_ack_at: string | null
 }
 
 export interface AssetListResponse {

@@ -79,10 +79,19 @@ def _detail(db: Session, code: str) -> AssetDetailOut:
     asset = service.get_asset(db, code)
     if asset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "asset not found")
+    asn = service.active_assignment(db, asset.id)
+    receipt_state, receipt_ack_at = "", None
+    if asn is not None:
+        if asn.acknowledged_at is not None:
+            receipt_state, receipt_ack_at = "acknowledged", asn.acknowledged_at
+        elif asn.receipt_msg_id:
+            receipt_state = "pending"
     return AssetDetailOut(
         asset=_to_out(db, asset),
         lifecycle=[ChangeLogOut.model_validate(x) for x in service.lifecycle(db, asset.id)],
         accessories=[AccessoryOut.model_validate(x) for x in service.accessories(db, asset.id)],
+        receipt_state=receipt_state,
+        receipt_ack_at=receipt_ack_at,
     )
 
 

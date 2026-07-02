@@ -218,6 +218,52 @@ def test_assign_backfills_owner_and_clears_review():
     assert r["owner_name"] is None              # no stale 责任人 after return
 
 
+def test_asset_detail_exposes_receipt_state():
+    """The detail surfaces the current holder's 领用确认: blank (no card) →
+    pending (card sent) → acknowledged (tapped), and blank again after return."""
+    from app.db import SessionLocal
+    from app.lark import receipts
+    from app.modules.assets.models import AssetAssignment
+    from sqlalchemy import select
+
+    admin = _login()
+    emp = client.post(
+        "/api/auth/dev-login",
+        json={"email": f"e-{uuid.uuid4().hex[:6]}@c.com", "name": "王测试"},
+    ).json()["user"]
+    pc = client.post(
+        "/api/assets", json={"asset_class": "personal", "prefix": "PC"}, headers=_h(admin)
+    ).json()
+    code = pc["asset_code"]
+    client.post(f"/api/assets/{code}/assign", json={"user_id": emp["id"]}, headers=_h(admin))
+
+    def detail() -> dict:
+        return client.get(f"/api/assets/{code}", headers=_h(admin)).json()
+
+    assert detail()["receipt_state"] == ""  # no card requested
+
+    db = SessionLocal()
+    try:
+        asn = db.scalar(
+            select(AssetAssignment).where(
+                AssetAssignment.asset_id == pc["id"], AssetAssignment.status == "active"
+            )
+        )
+        asn.receipt_msg_id = "om-asset-test"  # simulate a card having been sent
+        db.commit()
+        assert detail()["receipt_state"] == "pending"
+        newly, _card = receipts.confirm_receipt(db, kind="asset", record_id=asn.id)
+        assert newly is True
+        d = detail()
+        assert d["receipt_state"] == "acknowledged"
+        assert d["receipt_ack_at"]
+    finally:
+        db.close()
+
+    client.post(f"/api/assets/{code}/return", json={}, headers=_h(admin))
+    assert detail()["receipt_state"] == ""  # active assignment gone
+
+
 def test_update_ignores_owner_name_on_personal_asset():
     admin = _login()
     # personal: owner_name is directory-derived — a free-text edit is ignored,

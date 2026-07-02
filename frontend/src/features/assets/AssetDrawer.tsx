@@ -448,6 +448,26 @@ export default function AssetDrawer({
                     </Descriptions.Item>
                     <Descriptions.Item label="责任人">
                       {a.owner_name ?? (a.owner_user_id ? `#${a.owner_user_id}` : '未分配')}
+                      {data.receipt_state === 'acknowledged' && (
+                        <Tag
+                          color="success"
+                          style={{ marginLeft: 8 }}
+                          title={
+                            data.receipt_ack_at
+                              ? new Date(data.receipt_ack_at).toLocaleString('zh-CN', {
+                                  hour12: false,
+                                })
+                              : undefined
+                          }
+                        >
+                          已确认领取
+                        </Tag>
+                      )}
+                      {data.receipt_state === 'pending' && (
+                        <Tag color="warning" style={{ marginLeft: 8 }}>
+                          待确认
+                        </Tag>
+                      )}
                     </Descriptions.Item>
                     <Descriptions.Item label="部门">
                       {a.department_name ?? '—'}
@@ -468,7 +488,12 @@ export default function AssetDrawer({
               {
                 key: 'lifecycle',
                 label: `生命周期 (${data.lifecycle.length})`,
-                children: <Lifecycle events={data.lifecycle} />,
+                children: (
+                  <Lifecycle
+                    events={data.lifecycle}
+                    receipt={{ state: data.receipt_state, at: data.receipt_ack_at }}
+                  />
+                ),
               },
               {
                 key: 'accessories',
