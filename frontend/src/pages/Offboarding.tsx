@@ -167,6 +167,17 @@ export default function Offboarding() {
       message.error(e.response?.data?.detail ?? '通知失败'),
   })
 
+  const deleteMut = useMutation({
+    mutationFn: async (id: number) => (await api.delete(`/offboarding/${id}`)).data,
+    onSuccess: () => {
+      message.success('工单已删除')
+      setSelectedId(null)
+      invalidate()
+    },
+    onError: (e: { response?: { data?: { detail?: string } } }) =>
+      message.error(e.response?.data?.detail ?? '删除失败'),
+  })
+
   const returnedValue = (detail?.items ?? [])
     .filter((i) => i.status === 'returned')
     .reduce((s, i) => s + Number(i.snapshot_value ?? 0), 0)
@@ -363,21 +374,21 @@ export default function Offboarding() {
               </div>
 
               {/* Action bar */}
-              {detail.status !== 'completed' && (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  {detail.notified_at === null && (
-                    <Popconfirm
-                      title="确认并通知离职员工?"
-                      description="将给该员工与其直属上级发送 Lark 归还提醒。建单时未自动通知,以避免误触发打扰。"
-                      onConfirm={() => notifyMut.mutate(detail.id)}
-                      okText="确认并通知"
-                      cancelText="取消"
-                    >
-                      <Button type="primary" loading={notifyMut.isPending}>
-                        确认并通知员工
-                      </Button>
-                    </Popconfirm>
-                  )}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                {detail.status !== 'completed' && detail.notified_at === null && (
+                  <Popconfirm
+                    title="确认并通知离职员工?"
+                    description="将给该员工与其直属上级发送 Lark 归还提醒。建单时未自动通知,以避免误触发打扰。"
+                    onConfirm={() => notifyMut.mutate(detail.id)}
+                    okText="确认并通知"
+                    cancelText="取消"
+                  >
+                    <Button type="primary" loading={notifyMut.isPending}>
+                      确认并通知员工
+                    </Button>
+                  </Popconfirm>
+                )}
+                {detail.status !== 'completed' && (
                   <Popconfirm
                     title="关闭离职工单?"
                     description={detail.pending_items > 0 ? `还有 ${detail.pending_items} 件待归还,需先处理` : '所有资产已处理,确认关闭并通知 HR。'}
@@ -390,8 +401,20 @@ export default function Offboarding() {
                       确认完成 · 关闭工单
                     </Button>
                   </Popconfirm>
-                </div>
-              )}
+                )}
+                <Popconfirm
+                  title="删除离职工单?"
+                  description="永久删除该工单及其资产清单快照;不影响已归还的资产或已生成的报废申请。适用于清除重复 / 误建的工单。"
+                  onConfirm={() => deleteMut.mutate(detail.id)}
+                  okText="删除"
+                  okButtonProps={{ danger: true }}
+                  cancelText="取消"
+                >
+                  <Button danger loading={deleteMut.isPending} style={{ marginLeft: 'auto' }}>
+                    删除工单
+                  </Button>
+                </Popconfirm>
+              </div>
             </div>
           )}
         </div>

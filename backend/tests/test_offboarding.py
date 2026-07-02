@@ -187,6 +187,28 @@ def test_lark_event_does_not_duplicate_a_closed_case():
         db.close()
 
 
+def test_offboarding_delete_case():
+    """An erroneous / duplicate case can be deleted (records gone; 404 after)."""
+    admin = _login()
+    h = _h(admin)
+    emp = _login("employee")
+    emp_id = emp["user"]["id"]
+    pc = _type_id(h, "PC")
+    code = _make_in_use_asset(h, pc, emp_id, 4200)
+    cid = client.post("/api/offboarding", json={"user_id": emp_id}, headers=h).json()["id"]
+
+    # delete requires it_admin; an employee can't
+    emp_h = _h(emp)
+    assert client.delete(f"/api/offboarding/{cid}", headers=emp_h).status_code == 403
+
+    d = client.delete(f"/api/offboarding/{cid}", headers=h)
+    assert d.status_code == 204
+    assert client.get(f"/api/offboarding/{cid}", headers=h).status_code == 404
+    # the snapshotted asset itself is untouched (still in use, still owned)
+    asset = client.get(f"/api/assets/{code}", headers=h).json()["asset"]
+    assert asset["status"] == "in_use" and asset["owner_user_id"] == emp_id
+
+
 def test_offboarding_rejects_duplicate_open_case():
     admin = _login()
     h = _h(admin)

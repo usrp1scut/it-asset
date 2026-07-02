@@ -160,6 +160,19 @@ def close_case(case_id: int, db: Session = Depends(get_db), user: User = Depends
     return get_case(case_id, db, user)
 
 
+@router.delete("/{case_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_case(case_id: int, db: Session = Depends(get_db), user: User = Depends(it_admin)):
+    """Delete an offboarding work order (e.g. an erroneous / duplicate case).
+    Does not undo already-returned assets or scrap requests — only the record."""
+    case = service.get_case(db, case_id)
+    if case is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "工单不存在")
+    case_no = case.case_no
+    service.delete_case(db, case)
+    write_audit(db, actor_user_id=user.id, action="offboarding.delete",
+                resource_type="offboarding_case", resource_id=case_no)
+
+
 @router.post("/scan-overdue")
 def scan_overdue(db: Session = Depends(get_db), user: User = Depends(it_admin)):
     """Manual trigger for the daily overdue scan (until the Celery job lands)."""
