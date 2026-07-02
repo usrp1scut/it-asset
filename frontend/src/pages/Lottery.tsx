@@ -51,7 +51,6 @@ const TIERS: Tier[] = [
   { id: 'third', label: '三等奖', emoji: '🥉', color: '#00B42A', glow: 'rgba(0,180,42,0.4)' },
 ]
 
-const ROLL_MS = 3200 // minimum suspense before the reveal
 const CONFETTI_COLORS = ['#FFB31A', '#FF8800', '#5B92FF', '#00B42A', '#F2729B', '#7E5EE5', '#fff']
 
 function avatarOf(name: string): string {
@@ -130,7 +129,7 @@ function RollingStage({ names, tier }: { names: string[]; tier: Tier }) {
             textAlign: 'center',
             background: `linear-gradient(135deg, ${tier.color}33, ${tier.color}11)`,
             border: `1.5px solid ${tier.color}55`,
-            animation: 'rollBlur 0.15s ease-in-out infinite alternate',
+            animation: 'rollPulse 0.45s ease-in-out infinite alternate',
           }}
         >
           <div style={{ fontSize: 30, fontWeight: 800, color: '#fff', letterSpacing: '0.05em' }}>
@@ -353,7 +352,8 @@ export default function Lottery() {
     if (!canDraw) return
     setPhase('rolling')
     setResult(null)
-    // Slot-machine theatre: flash random candidate names while we wait.
+    // Slot-machine theatre: flash random candidate names. No fixed timer — the
+    // reel keeps spinning until the operator clicks 停止揭晓.
     rollTimer.current = setInterval(() => {
       const picks: string[] = []
       for (let i = 0; i < count; i++) {
@@ -362,7 +362,6 @@ export default function Lottery() {
       setRollNames(picks)
     }, 75)
 
-    const started = Date.now()
     try {
       const draw = (
         await api.post('/lottery/draws', {
@@ -373,27 +372,32 @@ export default function Lottery() {
           exclude_winners: excludeWinners,
         })
       ).data as Draw
-      // Hold the suspense for at least ROLL_MS even if the API is instant.
-      const wait = Math.max(0, ROLL_MS - (Date.now() - started))
-      setTimeout(() => {
-        if (rollTimer.current) clearInterval(rollTimer.current)
-        setResult(draw)
-        setPhase('reveal')
-        // Confetti plays once, then we unmount it so the reveal becomes a
-        // static (cheap) screen — no perpetual animation to choke the GPU.
-        setShowConfetti(true)
-        if (confettiTimer.current) clearTimeout(confettiTimer.current)
-        confettiTimer.current = setTimeout(() => setShowConfetti(false), 5000)
-        message.success(`🎉 抽出 ${draw.winners.length} 位中奖者`)
-        qc.invalidateQueries({ queryKey: ['lottery-draws'] })
-        qc.invalidateQueries({ queryKey: ['lottery-eligible'] })
-      }, wait)
+      // Winners are decided server-side (audited RNG); stash them and keep
+      // rolling. Setting result just arms the 停止揭晓 button — the reveal
+      // itself is triggered manually by stopDraw().
+      setResult(draw)
     } catch (e) {
       if (rollTimer.current) clearInterval(rollTimer.current)
       setPhase('idle')
+      setResult(null)
       const detail = (e as { response?: { data?: { detail?: string } } }).response?.data?.detail
       message.error(detail ?? '抽奖失败')
     }
+  }
+
+  const stopDraw = () => {
+    // Armed only once the draw has come back; the button is disabled otherwise.
+    if (phase !== 'rolling' || !result) return
+    if (rollTimer.current) clearInterval(rollTimer.current)
+    setPhase('reveal')
+    // Confetti plays once, then we unmount it so the reveal becomes a static
+    // (cheap) screen — no perpetual animation to choke the GPU.
+    setShowConfetti(true)
+    if (confettiTimer.current) clearTimeout(confettiTimer.current)
+    confettiTimer.current = setTimeout(() => setShowConfetti(false), 5000)
+    message.success(`🎉 抽出 ${result.winners.length} 位中奖者`)
+    qc.invalidateQueries({ queryKey: ['lottery-draws'] })
+    qc.invalidateQueries({ queryKey: ['lottery-eligible'] })
   }
 
   const reset = () => {
@@ -642,12 +646,21 @@ export default function Lottery() {
               <button onClick={reset} style={bigBtn('#3370FF', false)}>
                 ✨ 再抽一轮
               </button>
+            ) : phase === 'rolling' ? (
+              <button onClick={stopDraw} disabled={!result} style={bigBtn(tier.color, !result)}>
+                {result ? '🛑 停 止 揭 晓' : '🎲 正在抽取…'}
+              </button>
             ) : (
               <button onClick={startDraw} disabled={!canDraw} style={bigBtn(tier.color, !canDraw)}>
-                {phase === 'rolling' ? '🎲 正在抽取…' : '🎲 开 始 抽 奖'}
+                🎲 开 始 抽 奖
               </button>
             )}
           </div>
+          {phase === 'rolling' && (
+            <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
+              {result ? '名单已就绪 · 点「停止揭晓」定格中奖者' : '正在抽取中奖名单…'}
+            </div>
+          )}
           {pool === 0 && phase === 'idle' && (
             <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: '#FF8F8F' }}>
               当前没有可抽的在职 Lark 员工(本地 / 密码账号不参与抽奖)。
