@@ -19,6 +19,19 @@
 
 📖 详细操作见 **[用户手册 · docs/USER_MANUAL.md](docs/USER_MANUAL.md)**。
 
+## 功能预览
+
+> 截图取自内置演示数据(`python -m app.seed_demo` 生成)。
+
+![工作台看板](docs/screenshots/dashboard.png)
+<sub>工作台 —— 资产总数/总值/待审批/库存预警 KPI、状态分布、流转趋势、待办聚合。</sub>
+
+| | |
+|---|---|
+| **资产台账** —— 自动编号、状态流转、批量导入/导出<br>![资产台账](docs/screenshots/assets.png) | **资产详情** —— 生命周期时间线 + 领用确认回执<br>![资产详情](docs/screenshots/asset-detail.png) |
+| **库存耗材** —— SKU / 入库 / 领用 / 低库存预警<br>![库存物品](docs/screenshots/inventory.png) | **库存流水** —— 出入库明细,含领用人 / 领用确认<br>![库存流水](docs/screenshots/inventory-ledger.png) |
+| **审批中心** —— 申请→审批→发放,批量与自动规则<br>![审批中心](docs/screenshots/approvals.png) | **年会抽奖** —— 全屏大屏三阶段抽奖<br>![抽奖大屏](docs/screenshots/lottery.png) |
+
 > **设计与需求文档**(唯一基准 = PRD v0.2):
 > - 业务需求:[`design_handoff_it_asset/PRD.md`](design_handoff_it_asset/PRD.md)
 > - 设计规格 / 屏幕 / Design Tokens:[`design_handoff_it_asset/README.md`](design_handoff_it_asset/README.md)
