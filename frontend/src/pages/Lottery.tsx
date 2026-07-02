@@ -648,7 +648,7 @@ export default function Lottery() {
               </button>
             ) : phase === 'rolling' ? (
               <button onClick={stopDraw} disabled={!result} style={bigBtn(tier.color, !result)}>
-                {result ? '🛑 停 止 揭 晓' : '🎲 正在抽取…'}
+                {result ? '揭 晓' : '🎲 正在抽取…'}
               </button>
             ) : (
               <button onClick={startDraw} disabled={!canDraw} style={bigBtn(tier.color, !canDraw)}>
@@ -658,7 +658,7 @@ export default function Lottery() {
           </div>
           {phase === 'rolling' && (
             <div style={{ textAlign: 'center', marginTop: 12, fontSize: 12, color: 'rgba(255,255,255,0.55)' }}>
-              {result ? '名单已就绪 · 点「停止揭晓」定格中奖者' : '正在抽取中奖名单…'}
+              {result ? '名单已就绪 · 点「揭晓」定格中奖者' : '正在抽取中奖名单…'}
             </div>
           )}
           {pool === 0 && phase === 'idle' && (
