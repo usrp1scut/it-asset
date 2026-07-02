@@ -11,7 +11,14 @@ const ACTION: Record<string, { label: string; en: string; color: string; bg: str
   update: { label: '信息更新', en: 'Updated', color: '#7E5EE5', bg: '#F1ECFF' },
 }
 
-export default function Lifecycle({ events }: { events: ChangeLog[] }) {
+export default function Lifecycle({
+  events,
+  receipt,
+}: {
+  events: ChangeLog[]
+  // Current holder's 领用确认 — shown on the latest 已分配 event only.
+  receipt?: { state: '' | 'pending' | 'acknowledged'; at: string | null }
+}) {
   if (events.length === 0)
     return <div style={{ color: 'var(--text-3)', fontSize: 13 }}>暂无生命周期记录</div>
 
@@ -64,6 +71,35 @@ export default function Lifecycle({ events }: { events: ChangeLog[] }) {
                     }}
                   >
                     最新
+                  </span>
+                )}
+                {i === 0 && e.action === 'assign' && receipt?.state === 'acknowledged' && (
+                  <span
+                    title={receipt.at ? new Date(receipt.at).toLocaleString('zh-CN') : undefined}
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--success)',
+                      padding: '1px 6px',
+                      background: 'var(--success-bg)',
+                      borderRadius: 3,
+                      fontWeight: 500,
+                    }}
+                  >
+                    ✅ 已确认领取
+                  </span>
+                )}
+                {i === 0 && e.action === 'assign' && receipt?.state === 'pending' && (
+                  <span
+                    style={{
+                      fontSize: 11,
+                      color: 'var(--warning)',
+                      padding: '1px 6px',
+                      background: 'var(--warning-bg)',
+                      borderRadius: 3,
+                      fontWeight: 500,
+                    }}
+                  >
+                    待确认
                   </span>
                 )}
               </div>

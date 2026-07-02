@@ -260,6 +260,15 @@ def accessories(db: Session, asset_id: int) -> list[AssetAccessory]:
     )
 
 
+def active_assignment(db: Session, asset_id: int) -> AssetAssignment | None:
+    """The current (unreturned) assignment, for surfacing the holder's 领用确认."""
+    return db.scalar(
+        select(AssetAssignment)
+        .where(AssetAssignment.asset_id == asset_id, AssetAssignment.status == "active")
+        .order_by(AssetAssignment.assigned_at.desc())
+    )
+
+
 # ── status actions ───────────────────────────────────────────────────────────
 
 

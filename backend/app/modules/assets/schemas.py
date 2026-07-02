@@ -251,6 +251,9 @@ class AssetDetailOut(BaseModel):
     asset: AssetOut
     lifecycle: list[ChangeLogOut]
     accessories: list[AccessoryOut]
+    # Current holder's 领用确认 state: "" (no card sent) | "pending" | "acknowledged"
+    receipt_state: str = ""
+    receipt_ack_at: datetime | None = None
 
 
 class AssignIn(BaseModel):
