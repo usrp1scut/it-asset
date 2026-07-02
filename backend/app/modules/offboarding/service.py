@@ -2,7 +2,7 @@ import uuid
 from datetime import UTC, date, datetime
 
 import anyio
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.config import get_settings
@@ -63,6 +63,15 @@ def list_cases(db: Session, status: str | None = None) -> list[OffboardingCase]:
 
 def get_case(db: Session, case_id: int) -> OffboardingCase | None:
     return db.get(OffboardingCase, case_id)
+
+
+def delete_case(db: Session, case: OffboardingCase) -> None:
+    """Remove an offboarding work order (e.g. an erroneous/duplicate one) and its
+    item snapshots. This does NOT undo any already-returned assets or scrap
+    requests those actions created — it only drops the case record."""
+    db.execute(delete(OffboardingItem).where(OffboardingItem.case_id == case.id))
+    db.delete(case)
+    db.commit()
 
 
 def items_of(db: Session, case_id: int) -> list[OffboardingItem]:
