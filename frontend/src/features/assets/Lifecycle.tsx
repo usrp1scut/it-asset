@@ -8,6 +8,7 @@ const ACTION: Record<string, { label: string; en: string; color: string; bg: str
   repair: { label: '报修', en: 'Repair', color: '#FF8800', bg: '#FFF7E8' },
   scrap: { label: '报废', en: 'Scrapped', color: '#4E5969', bg: '#E5E6EB' },
   bind_accessory: { label: '配件绑定', en: 'Bound', color: '#00B2C7', bg: '#E0F7FA' },
+  relocate: { label: '位置变更', en: 'Relocated', color: '#00B42A', bg: '#E8FFEA' },
   update: { label: '信息更新', en: 'Updated', color: '#7E5EE5', bg: '#F1ECFF' },
 }
 

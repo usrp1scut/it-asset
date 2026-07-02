@@ -70,7 +70,8 @@ class Asset(Base):
     owner_name: Mapped[str | None] = mapped_column(String(255))   # 使用人原文兜底
     department_id: Mapped[int | None] = mapped_column(ForeignKey("departments.id"))
     department_name: Mapped[str | None] = mapped_column(String(255))
-    location: Mapped[str | None] = mapped_column(String(255))
+    location: Mapped[str | None] = mapped_column(String(255))  # 派生:座位图落座时回写
+    seat_id: Mapped[int | None] = mapped_column(ForeignKey("seats.id", ondelete="SET NULL"))
 
     purchase_date: Mapped[date | None] = mapped_column(Date)
     purchase_price: Mapped[Decimal | None] = mapped_column(Numeric(14, 2))

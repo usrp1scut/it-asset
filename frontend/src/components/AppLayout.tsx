@@ -26,6 +26,7 @@ const ITEMS: MenuItemDef[] = [
   { key: '/scrap', label: '资产报废', icon: 'warning', adminOnly: true },
   { key: '/repair', label: '维修中心', icon: 'repair', adminOnly: true },
   { key: '/offboarding', label: '离职归还', icon: 'user', adminOnly: true, roles: ['hr'] },
+  { key: '/seatmap', label: '座位图', icon: 'dock', adminOnly: true },
   // Tools / system group
   { key: '/users', label: '用户管理', icon: 'user', adminOnly: true, section: '工具与系统' },
   { key: '/lottery', label: '抽奖', icon: 'box' },
