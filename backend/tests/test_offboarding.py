@@ -144,6 +144,49 @@ def test_offboarding_create_from_lark(monkeypatch):
         db.close()
 
 
+def test_lark_event_does_not_duplicate_a_closed_case():
+    """IT often creates & closes the offboarding case *before* the employee's
+    Lark account is removed. The later user.left event must NOT spawn a second
+    case for the same employee."""
+    from app.db import SessionLocal
+    from app.modules.offboarding import service
+    from app.modules.offboarding.models import OffboardingCase
+    from app.modules.users.models import User
+    from sqlalchemy import func, select
+
+    admin = _login()
+    h = _h(admin)
+    emp = _login("employee")
+    emp_id = emp["user"]["id"]
+
+    # create a case (no in-use assets → 0 pending → immediately closeable)
+    cid = client.post("/api/offboarding", json={"user_id": emp_id}, headers=h).json()["id"]
+    closed = client.post(f"/api/offboarding/{cid}/close", headers=h)
+    assert closed.status_code == 200 and closed.json()["status"] == "completed"
+
+    db = SessionLocal()
+    try:
+        u = db.get(User, emp_id)
+        u.lark_open_id = f"ou_{uuid.uuid4().hex[:10]}"
+        db.commit()
+        open_id = u.lark_open_id
+
+        # the Lark delete event fires afterwards → no duplicate case
+        result = service.create_from_lark(db, lark_open_id=open_id)
+        assert result is None
+        total = db.scalar(
+            select(func.count()).select_from(OffboardingCase).where(
+                OffboardingCase.user_id == emp_id
+            )
+        )
+        assert total == 1  # still just the pre-created (closed) case
+        # …and the event still flipped the user to 离职
+        db.refresh(u)
+        assert u.status.value == "inactive"
+    finally:
+        db.close()
+
+
 def test_offboarding_rejects_duplicate_open_case():
     admin = _login()
     h = _h(admin)
