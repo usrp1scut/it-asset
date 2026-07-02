@@ -197,6 +197,17 @@ def create_from_lark(
         return None
     # The deletion event is authoritative — flip the user to 离职 (inactive).
     user.status = UserStatus.inactive
+    # Don't auto-create a duplicate. IT often handles a departure ahead of time —
+    # creating the case (and even closing it) *before* Lark fires the delete
+    # event. So the auto-trigger must skip when the employee already has a case
+    # in ANY state (incl. completed), not just an in-progress one. (Manual
+    # re-creation after completion is still allowed via create_case.)
+    existing = db.scalar(
+        select(OffboardingCase).where(OffboardingCase.user_id == user.id)
+    )
+    if existing is not None:
+        db.commit()  # persist the status flip; no second work order
+        return None
     try:
         return create_case(
             db,
