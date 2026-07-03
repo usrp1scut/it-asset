@@ -3,10 +3,12 @@
 查看:staff(含 HR);变更:it_admin。所有变更后统一返回 map 详情(前端整图刷新)。
 """
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 
 from app.deps import get_db
 from app.modules.perms.deps import require_perm
+from app.modules.seatmap import pdf as seatmap_pdf
 from app.modules.seatmap import service
 from app.modules.seatmap.schemas import (
     AssignUserIn,
@@ -51,6 +53,18 @@ def get_map(map_id: int, db: Session = Depends(get_db), _: User = Depends(staff)
 @router.delete("/{map_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_map(map_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)):
     service.delete_map(db, _get(db, map_id))
+
+
+@router.get("/{map_id}/export")
+def export_pdf(map_id: int, db: Session = Depends(get_db), _: User = Depends(staff)):
+    """A4 landscape PDF floor plan of the map (vector, printable)."""
+    m = _get(db, map_id)
+    data = seatmap_pdf.render_seatmap_pdf(db, m)
+    return StreamingResponse(
+        iter([data]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename=seatmap-{map_id}.pdf"},
+    )
 
 
 @router.get("/{map_id}/candidates", response_model=CandidatesOut)

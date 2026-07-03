@@ -107,6 +107,21 @@ export default function SeatMap() {
     })
   }
 
+  const exportPdf = async () => {
+    if (mapId == null) return
+    try {
+      const res = await api.get(`/seatmaps/${mapId}/export`, { responseType: 'blob' })
+      const url = URL.createObjectURL(res.data as Blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `座位图-${detail?.map.name ?? mapId}.pdf`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch {
+      message.error('导出失败')
+    }
+  }
+
   const enterEdit = () => {
     const cells: Record<string, string | null> = {}
     detail?.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
@@ -188,6 +203,7 @@ export default function SeatMap() {
           onChange={(v) => { setCurrentId(v); setMode('assign'); setSel(null) }}
           options={(maps ?? []).map((x) => ({ value: x.id, label: x.name }))}
         />
+        {m && <Button onClick={exportPdf}>导出 PDF</Button>}
         {m && <Button danger onClick={deleteMap}>删除图</Button>}
       </PageHead>
 

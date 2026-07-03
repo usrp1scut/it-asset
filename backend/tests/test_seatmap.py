@@ -149,6 +149,18 @@ def test_seatmap_delete_map_clears_location():
     assert _loc(h, code) is None
 
 
+def test_seatmap_export_pdf():
+    h = _h(_login())
+    mk = _mk_numbered_map(h, f"3F-{uuid.uuid4().hex[:4]}", 2, 2)
+    r = client.get(f"/api/seatmaps/{mk['id']}/export", headers=h)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "application/pdf"
+    assert r.content[:5] == b"%PDF-"
+    # export is view-gated → an employee can't
+    emp = _h(_login("employee"))
+    assert client.get(f"/api/seatmaps/{mk['id']}/export", headers=emp).status_code == 403
+
+
 def test_seatmap_requires_roles():
     emp_h = _h(_login("employee"))
     assert client.get("/api/seatmaps", headers=emp_h).status_code == 403
