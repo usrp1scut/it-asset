@@ -19,6 +19,8 @@ from app.modules.inventory.router import router as inventory_router
 from app.modules.lottery.router import router as lottery_router
 from app.modules.lottery.service import ensure_prize_category
 from app.modules.offboarding.router import router as offboarding_router
+from app.modules.perms.router import router as perms_router
+from app.modules.perms.service import seed_defaults as seed_role_permissions
 from app.modules.seatmap.router import router as seatmap_router
 from app.modules.users.people_router import router as users_router
 from app.modules.users.router import router as auth_router
@@ -41,6 +43,7 @@ async def lifespan(_app: FastAPI):
     try:
         ensure_initial_admin(db)
         ensure_prize_category(db)
+        seed_role_permissions(db)
     finally:
         db.close()
     yield
@@ -76,6 +79,7 @@ app.include_router(approvals_router)
 app.include_router(offboarding_router)
 app.include_router(lottery_router)
 app.include_router(seatmap_router)
+app.include_router(perms_router)
 
 
 @app.get("/health", tags=["meta"])

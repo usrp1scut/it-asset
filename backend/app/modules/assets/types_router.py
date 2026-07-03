@@ -11,14 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.assets.models import Asset, AssetType
 from app.modules.assets.schemas import AssetTypeCreate, AssetTypeOut, AssetTypeUpdate
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/asset-types", tags=["asset-types"])
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
-it_admin = require_roles(Role.it_admin)
+staff = require_perm("asset_types", "view")
+it_admin = require_perm("asset_types", "manage")
 
 
 def _with_count(db: Session, t: AssetType) -> AssetTypeOut:

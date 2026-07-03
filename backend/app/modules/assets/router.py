@@ -12,7 +12,7 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.core.storage import get_object, put_object, remove_object
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.assets import importer, labels, service
 from app.modules.assets.models import Asset, AssetClass, AssetType
 from app.modules.assets.schemas import (
@@ -36,13 +36,14 @@ from app.modules.assets.state_machine import (
     IllegalTransition,
     InfrastructureNotAssignable,
 )
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/assets", tags=["assets"])
 
-# Read = any staff role; write = IT admin (sys_admin always passes via require_roles).
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
-it_admin = require_roles(Role.it_admin)
+# Read = 资产台账「查看」;write = 「管理」。可在「角色权限」页调整(sys_admin 恒通过)。
+staff = require_perm("assets", "view")
+it_admin = require_perm("assets", "manage")
 
 
 def _to_out(db: Session, asset: Asset) -> AssetOut:

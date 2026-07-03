@@ -15,6 +15,7 @@ import RepairOrders from './pages/RepairOrders'
 import Offboarding from './pages/Offboarding'
 import Lottery from './pages/Lottery'
 import SeatMap from './pages/SeatMap'
+import RolePermissions from './pages/RolePermissions'
 import MobileApp from './pages/mobile/MobileApp'
 import MobileAdminHome from './pages/mobile/admin/MobileAdminHome'
 import MobileAdminScanResult from './pages/mobile/admin/MobileAdminScanResult'
@@ -61,6 +62,7 @@ export const router = createBrowserRouter([
           { path: '/seatmap', element: <SeatMap /> },
           { path: '/lottery', element: <Lottery /> },
           { path: '/users', element: <Users /> },
+          { path: '/role-permissions', element: <RolePermissions /> },
           { path: '/logs', element: <AuditLogs /> },
         ],
       },

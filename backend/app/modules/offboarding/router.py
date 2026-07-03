@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.offboarding import service
 from app.modules.offboarding.models import OffboardingCase, OffboardingItem, OffboardingItemStatus
 from app.modules.offboarding.schemas import (
@@ -21,12 +21,13 @@ from app.modules.offboarding.schemas import (
     ItemOut,
     ItemReturnIn,
 )
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/offboarding", tags=["offboarding"])
 # View access (list/detail). HR can view but not mutate (mutations use it_admin).
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement, Role.hr)
-it_admin = require_roles(Role.it_admin)
+staff = require_perm("offboarding", "view")
+it_admin = require_perm("offboarding", "manage")
 
 
 def _summary(items: list[OffboardingItem]) -> dict:

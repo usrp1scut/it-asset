@@ -267,6 +267,15 @@ def me(user: User = Depends(get_current_user)) -> MeResult:
     return MeResult(user=UserOut.model_validate(user), permissions=perms)
 
 
+@router.get("/permissions")
+def my_permissions(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> dict:
+    """Current user's effective per-module {view, manage} — drives frontend nav
+    and action gating (backend still enforces via require_perm)."""
+    from app.modules.perms.service import effective_for
+
+    return effective_for(db, user.role)
+
+
 @router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
 def logout() -> None:
     """Stateless JWT — client discards the token. Endpoint kept for symmetry."""

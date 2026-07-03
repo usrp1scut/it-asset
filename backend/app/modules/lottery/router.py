@@ -3,18 +3,18 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.inventory.models import Sku
 from app.modules.lottery import service
 from app.modules.lottery.models import LotteryDraw, LotteryWinner
 from app.modules.lottery.schemas import DrawIn, WinnerSelection
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/lottery", tags=["lottery"])
-# Everyone except plain employees (sys_admin auto-passes via require_roles).
-lottery_user = require_roles(
-    Role.manager, Role.it_admin, Role.procurement, Role.finance, Role.hr
-)
+# 抽奖:查看历史 = view;抽奖/发放/通知/删除 = manage(默认同一批角色)。
+lottery_view = require_perm("lottery", "view")
+lottery_manage = require_perm("lottery", "manage")
 
 
 def _draw_out(db: Session, draw: LotteryDraw) -> dict:
@@ -59,7 +59,7 @@ def eligible_count(
     name: str | None = None,
     exclude_winners: bool = False,
     db: Session = Depends(get_db),
-    _: User = Depends(lottery_user),
+    _: User = Depends(lottery_view),
 ) -> dict:
     """Drawable count. With name + exclude_winners, excludes prior winners of
     that activity so the UI shows the real remaining pool."""
@@ -69,7 +69,7 @@ def eligible_count(
 
 
 @router.get("/prizes")
-def list_prizes(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> list[dict]:
+def list_prizes(db: Session = Depends(get_db), _: User = Depends(lottery_view)) -> list[dict]:
     """In-stock 奖品-category SKUs — the only items a draw may link to."""
     return [
         {
@@ -84,14 +84,14 @@ def list_prizes(db: Session = Depends(get_db), _: User = Depends(lottery_user)) 
 
 
 @router.get("/pool")
-def pool_names(db: Session = Depends(get_db), _: User = Depends(lottery_user)) -> dict:
+def pool_names(db: Session = Depends(get_db), _: User = Depends(lottery_view)) -> dict:
     """Display names of the eligible pool — drives the big-screen rolling
     (slot-machine) animation so it flashes real candidate names."""
     return {"names": service.eligible_names(db)}
 
 
 @router.post("/draws", status_code=status.HTTP_201_CREATED)
-def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depends(lottery_user)):
+def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depends(lottery_manage)):
     try:
         draw = service.run_draw(
             db,
@@ -118,7 +118,7 @@ def create_draw(body: DrawIn, db: Session = Depends(get_db), user: User = Depend
 
 
 @router.get("/draws")
-def list_draws(db: Session = Depends(get_db), _: User = Depends(lottery_user)):
+def list_draws(db: Session = Depends(get_db), _: User = Depends(lottery_view)):
     rows = db.scalars(
         select(LotteryDraw).order_by(LotteryDraw.id.desc()).limit(50)
     ).all()
@@ -126,7 +126,7 @@ def list_draws(db: Session = Depends(get_db), _: User = Depends(lottery_user)):
 
 
 @router.get("/draws/{draw_id}")
-def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(lottery_user)):
+def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(lottery_view)):
     draw = db.get(LotteryDraw, draw_id)
     if draw is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在")
@@ -134,7 +134,7 @@ def get_draw(draw_id: int, db: Session = Depends(get_db), _: User = Depends(lott
 
 
 @router.delete("/draws", status_code=status.HTTP_200_OK)
-def clear_draws(db: Session = Depends(get_db), user: User = Depends(lottery_user)) -> dict:
+def clear_draws(db: Session = Depends(get_db), user: User = Depends(lottery_manage)) -> dict:
     """Clear all 抽奖 history. Audited (the draws are gone but the act of
     clearing is recorded in audit_logs)."""
     deleted = service.clear_draws(db)
@@ -146,7 +146,7 @@ def clear_draws(db: Session = Depends(get_db), user: User = Depends(lottery_user
 
 
 @router.delete("/draws/{draw_id}", status_code=status.HTTP_204_NO_CONTENT)
-def remove_draw(draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_user)):
+def remove_draw(draw_id: int, db: Session = Depends(get_db), user: User = Depends(lottery_manage)):
     if not service.delete_draw(db, draw_id):
         raise HTTPException(status.HTTP_404_NOT_FOUND, "抽奖记录不存在")
     write_audit(
@@ -160,7 +160,7 @@ def confirm_stock_out(
     draw_id: int,
     body: WinnerSelection | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(lottery_user),
+    user: User = Depends(lottery_manage),
 ):
     """Deliver the prize to selected winners (body.winner_ids; omitted = all):
     deduct one unit per selected, not-yet-delivered winner."""
@@ -186,7 +186,7 @@ def notify_winners(
     draw_id: int,
     body: WinnerSelection | None = None,
     db: Session = Depends(get_db),
-    user: User = Depends(lottery_user),
+    user: User = Depends(lottery_manage),
 ):
     """DM selected winners on Lark (body.winner_ids; omitted = all). Skips those
     already notified; no-op-safe if Lark is off."""

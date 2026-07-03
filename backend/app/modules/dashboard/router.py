@@ -2,15 +2,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.assets.models import AuditLog
 from app.modules.dashboard import service
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(tags=["dashboard"])
 
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
-it_admin = require_roles(Role.it_admin)
+staff = require_perm("dashboard", "view")
+it_admin = require_perm("audit", "view")
 
 
 @router.get("/api/dashboard/overview")

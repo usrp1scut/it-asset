@@ -5,7 +5,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
-from app.deps import get_db, require_roles
+from app.deps import get_db
+from app.modules.perms.deps import require_perm
 from app.modules.seatmap import service
 from app.modules.seatmap.schemas import (
     AssignUserIn,
@@ -17,11 +18,11 @@ from app.modules.seatmap.schemas import (
     MapOut,
     PlaceAssetIn,
 )
-from app.modules.users.models import Role, User
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/seatmaps", tags=["seatmap"])
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement, Role.hr)
-it_admin = require_roles(Role.it_admin)
+staff = require_perm("seatmap", "view")
+it_admin = require_perm("seatmap", "manage")
 
 
 def _get(db: Session, map_id: int):

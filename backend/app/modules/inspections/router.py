@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_current_user, get_db, require_roles
+from app.deps import get_current_user, get_db
 from app.lark.client import get_lark_client
 from app.modules.assets.models import Asset, AssetClass, AssetStatus
 from app.modules.inspections.models import (
@@ -16,10 +16,12 @@ from app.modules.inspections.models import (
     InspectionStatus,
     InspectionTask,
 )
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(prefix="/api/inspections", tags=["inspections"])
-it_admin = require_roles(Role.it_admin)
+viewer = require_perm("inspections", "view")
+it_admin = require_perm("inspections", "manage")
 
 
 _SCOPES = {
@@ -105,7 +107,7 @@ def _progress(db: Session, task_id: int) -> dict[str, int]:
 
 
 @router.get("")
-def list_tasks(db: Session = Depends(get_db), _: User = Depends(it_admin)):
+def list_tasks(db: Session = Depends(get_db), _: User = Depends(viewer)):
     rows = db.scalars(
         select(InspectionTask).order_by(InspectionTask.started_at.desc())
     ).all()
@@ -151,7 +153,7 @@ def _item_rows(db: Session, task_id: int, only_mismatch: bool = False):
 
 
 @router.get("/{task_id}")
-def get_task(task_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)):
+def get_task(task_id: int, db: Session = Depends(get_db), _: User = Depends(viewer)):
     task = db.get(InspectionTask, task_id)
     if task is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "task not found")
@@ -169,7 +171,7 @@ def get_task(task_id: int, db: Session = Depends(get_db), _: User = Depends(it_a
 
 @router.get("/{task_id}/mismatches")
 def get_mismatches(
-    task_id: int, db: Session = Depends(get_db), _: User = Depends(it_admin)
+    task_id: int, db: Session = Depends(get_db), _: User = Depends(viewer)
 ):
     task = db.get(InspectionTask, task_id)
     if task is None:

@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.assets import repair_workflow as wf
 from app.modules.assets import service
 from app.modules.assets.models import Asset, RepairOrder
@@ -16,11 +16,12 @@ from app.modules.assets.schemas import (
     RepairOrderOut,
     RepairUpdateIn,
 )
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(tags=["repair"])
-it_admin = require_roles(Role.it_admin)
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
+it_admin = require_perm("repair", "manage")
+staff = require_perm("repair", "view")
 
 
 def _enrich(db: Session, order: RepairOrder) -> RepairOrderOut:

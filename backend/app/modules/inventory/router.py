@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
-from app.deps import get_db, require_roles
+from app.deps import get_db
 from app.modules.inventory import reports, service
 from app.modules.inventory.models import (
     InventoryLocation,
@@ -33,12 +33,13 @@ from app.modules.inventory.schemas import (
     StockOut,
     TxnOut,
 )
-from app.modules.users.models import Role, User
+from app.modules.perms.deps import require_perm
+from app.modules.users.models import User
 
 router = APIRouter(tags=["inventory"])
 
-staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
-it_admin = require_roles(Role.it_admin, Role.procurement)
+staff = require_perm("inventory", "view")
+it_admin = require_perm("inventory", "manage")
 
 # Category codes that are system-managed: can't be deleted, and their code can't
 # be changed (the name still can). "GIFT" is the 奖品 (prize) category the lottery

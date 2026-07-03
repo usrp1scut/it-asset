@@ -4,14 +4,17 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import write_audit
 from app.deps import get_db, require_roles
+from app.modules.perms.deps import require_perm
 from app.modules.users.models import Department, Role, User, UserStatus
 from app.modules.users.schemas import RoleChangeIn, UserManageOut, UserPickOut
 from app.modules.users.service import sync_directory
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
+# 人员搜索是跨模块共用的下拉数据(分配/接收人),沿用固定角色;用户管理(/manage、
+# /sync、改角色)走「用户管理」模块权限(锁定 it_admin)。
 staff = require_roles(Role.it_admin, Role.manager, Role.finance, Role.procurement)
-admin = require_roles(Role.it_admin)  # sys_admin passes implicitly
+admin = require_perm("users", "manage")
 
 # Promotable role surface: sys_admin is bootstrap-only, not mintable from UI.
 _ASSIGNABLE = {
