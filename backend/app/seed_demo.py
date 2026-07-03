@@ -20,6 +20,7 @@ from app.modules.inventory.models import (
     ManagementMode,
     Sku,
 )
+from app.modules.seatmap import models as _seatmap_models  # noqa: F401 — register seats FK target
 from app.modules.users.models import Department, Role, User, UserStatus
 
 _TABLES = [
