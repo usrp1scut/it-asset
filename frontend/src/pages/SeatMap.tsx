@@ -32,7 +32,8 @@ interface Person { id: number; name: string; department_name: string | null; ass
 interface Candidates { people: Person[]; assets: SeatAsset[] }
 
 const ZONES = ['A', 'B', 'C', 'D']
-const CELL = 58
+const ZONE_COLORS: Record<string, string> = { A: '#3370FF', B: '#00B42A', C: '#FF8800', D: '#7E5EE5' }
+const zoneColor = (z?: string | null) => (z ? ZONE_COLORS[z] : undefined) ?? 'var(--border-strong)'
 type Sel = { kind: 'person' | 'asset'; id: number; label: string } | null
 
 export default function SeatMap() {
@@ -40,6 +41,7 @@ export default function SeatMap() {
   const [currentId, setCurrentId] = useState<number | null>(null)
   const [mode, setMode] = useState<'assign' | 'edit'>('assign')
   const [zone, setZone] = useState('A')
+  const [cellSize, setCellSize] = useState(58)
   const [order, setOrder] = useState<'row' | 'serpentine'>('row')
   const [editCells, setEditCells] = useState<Record<string, string | null>>({})
   const [sel, setSel] = useState<Sel>(null)
@@ -220,15 +222,18 @@ export default function SeatMap() {
       {isLoading || !m ? (
         <Spin style={{ marginTop: 60 }} />
       ) : (
+        <>
+        <MapStats seats={detail?.seats ?? []} cellSize={cellSize} setCellSize={setCellSize} />
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
           <div style={{ overflow: 'auto', maxWidth: '100%' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${m.cols}, ${CELL}px)`, gap: 6 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${m.cols}, ${cellSize}px)`, gap: 6 }}>
               {Array.from({ length: m.rows * m.cols }).map((_, i) => {
                 const r = Math.floor(i / m.cols), c = i % m.cols, k = `${r}-${c}`
                 const seat = seatAt.get(k)
                 const isSeat = mode === 'edit' ? k in editCells : !!seat
+                const cellZone = mode === 'edit' ? editCells[k] : seat?.zone
                 return (
-                  <Cell key={k} size={CELL} isSeat={isSeat} editing={mode === 'edit'} seat={seat}
+                  <Cell key={k} size={cellSize} isSeat={isSeat} editing={mode === 'edit'} seat={seat} zone={cellZone}
                     onClick={() => onCell(r, c)}
                     onDrop={(e) => mode === 'assign' && onDrop(r, c, e)}
                     onDragOver={(e) => { if (mode === 'assign' && seat) e.preventDefault() }} />
@@ -266,6 +271,7 @@ export default function SeatMap() {
             </div>
           )}
         </div>
+        </>
       )}
 
       <CreateModal open={createOpen} form={form} setForm={setForm}
@@ -283,43 +289,95 @@ function PageHead({ onNew, children }: { onNew: () => void; children?: React.Rea
   )
 }
 
-function Cell({ size, isSeat, editing, seat, onClick, onDrop, onDragOver }: {
-  size: number; isSeat: boolean; editing: boolean; seat?: Seat
+function Cell({ size, isSeat, editing, seat, zone, onClick, onDrop, onDragOver }: {
+  size: number; isSeat: boolean; editing: boolean; seat?: Seat; zone?: string | null
   onClick: () => void; onDrop: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
 }) {
+  // Non-seat cell: a paintable 过道 in edit mode, invisible whitespace in assign
+  // mode (so empty aisles don't clutter the map and seat clusters stand out).
+  if (!isSeat) {
+    return (
+      <div onClick={onClick} onDrop={onDrop} onDragOver={onDragOver}
+        style={{
+          width: size, height: size, borderRadius: 8,
+          cursor: editing ? 'pointer' : 'default',
+          border: editing ? '1px dashed var(--border)' : '1px solid transparent',
+          background: editing ? 'var(--bg-canvas)' : 'transparent',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+        {editing && <span style={{ fontSize: 10, color: 'var(--text-4)' }}>过道</span>}
+      </div>
+    )
+  }
   const occ = !!seat?.user_id
   const nd = seat?.assets.length ?? 0
   let bg = 'var(--bg-card)', bd = 'var(--border)', fg = 'var(--text-4)'
-  if (!isSeat) { bg = 'var(--bg-canvas)'; bd = 'var(--border)' }
-  else if (occ) { bg = 'var(--lark-blue-bg)'; bd = 'var(--lark-blue)'; fg = 'var(--lark-blue)' }
+  if (occ) { bg = 'var(--lark-blue-bg)'; bd = 'var(--lark-blue)'; fg = 'var(--lark-blue)' }
   else if (nd) { bg = 'var(--success-bg)'; bd = 'var(--success)'; fg = 'var(--success)' }
+  const small = size < 52
   return (
     <div onClick={onClick} onDrop={onDrop} onDragOver={onDragOver}
+      title={seat?.user_name ?? undefined}
       style={{
-        width: size, height: size, borderRadius: 8, cursor: 'pointer', padding: 3,
-        border: `${isSeat ? '1px' : '1px dashed'} solid ${bd}`, background: bg,
+        position: 'relative', width: size, height: size, borderRadius: 8, cursor: 'pointer', padding: 3,
+        border: `1px solid ${bd}`, background: bg,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
         overflow: 'hidden',
       }}>
-      {!isSeat ? (
-        <span style={{ fontSize: 10, color: 'var(--text-4)' }}>{editing ? '过道' : ''}</span>
-      ) : (
+      {/* zone accent stripe — makes A/B/C/D areas visually distinct */}
+      <div style={{
+        position: 'absolute', top: 0, left: 0, right: 0, height: 3,
+        background: zoneColor(zone), borderTopLeftRadius: 8, borderTopRightRadius: 8,
+      }} />
+      <span style={{ fontSize: 10, color: fg }}>{seat?.seat_no ?? '—'}</span>
+      {occ ? (
         <>
-          <span style={{ fontSize: 10, color: fg }}>{seat?.seat_no ?? '—'}</span>
-          {occ ? (
-            <>
-              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--lark-blue)', lineHeight: 1.1, textAlign: 'center' }}>
-                {seat?.user_name ?? '已占'}
-              </span>
-              {nd > 0 && <span style={{ fontSize: 10, color: 'var(--lark-blue)' }}>+{nd} 资产</span>}
-            </>
-          ) : nd ? (
-            <span style={{ fontSize: 11, color: 'var(--success)' }}>{nd} 台设备</span>
-          ) : (
-            <span style={{ fontSize: 14, color: 'var(--text-4)' }}>+</span>
-          )}
+          <span style={{
+            fontSize: small ? 10 : 11, fontWeight: 600, color: 'var(--lark-blue)',
+            lineHeight: 1.05, textAlign: 'center', maxWidth: '100%',
+            overflow: 'hidden', textOverflow: 'ellipsis',
+          }}>
+            {seat?.user_name ?? '已占'}
+          </span>
+          {nd > 0 && !small && <span style={{ fontSize: 10, color: 'var(--lark-blue)' }}>+{nd} 资产</span>}
         </>
+      ) : nd ? (
+        <span style={{ fontSize: 11, color: 'var(--success)' }}>{nd} 台</span>
+      ) : (
+        <span style={{ fontSize: 14, color: 'var(--text-4)' }}>+</span>
       )}
+    </div>
+  )
+}
+
+function MapStats({ seats, cellSize, setCellSize }: {
+  seats: Seat[]; cellSize: number; setCellSize: (n: number) => void
+}) {
+  const total = seats.length
+  const occupied = seats.filter((s) => s.user_id || s.assets.length).length
+  const withAssets = seats.filter((s) => s.assets.length).length
+  const zones = [...new Set(seats.map((s) => s.zone).filter(Boolean))] as string[]
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', marginBottom: 12 }}>
+      <span style={{ fontSize: 13, color: 'var(--text-2)' }}>
+        工位 <b>{total}</b> · 已坐 <b style={{ color: 'var(--lark-blue)' }}>{occupied}</b>
+        {' '}· 空 {total - occupied} · 带资产 {withAssets}
+      </span>
+      {zones.length > 1 && (
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+          {zones.map((z) => (
+            <span key={z} style={{ fontSize: 12, color: 'var(--text-3)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <span style={{ width: 8, height: 8, borderRadius: 2, background: zoneColor(z) }} />
+              {z} 区 · {seats.filter((s) => s.zone === z).length}
+            </span>
+          ))}
+        </div>
+      )}
+      <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 12, color: 'var(--text-3)' }}>缩放</span>
+        <Segmented size="small" value={cellSize} onChange={(v) => setCellSize(v as number)}
+          options={[{ label: '紧凑', value: 46 }, { label: '适中', value: 58 }, { label: '宽松', value: 74 }]} />
+      </div>
     </div>
   )
 }
