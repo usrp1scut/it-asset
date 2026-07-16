@@ -28,14 +28,53 @@ def _register_font(pdf: FPDF) -> str:
     return "Helvetica"
 
 
-def _fit(pdf: FPDF, font: str, text: str, max_w: float, pt: float) -> str:
+def _wrap(pdf: FPDF, font: str, text: str, max_w: float, pt: float, max_lines: int):
+    """Greedy char-wrap `text` into ≤ max_lines lines each ≤ max_w at size pt.
+
+    Returns (lines, fully_fit). If the whole string doesn't fit, the last line
+    is ellipsized so nothing is silently cut without a `…` marker.
+    """
     pdf.set_font(font, size=pt)
-    if pdf.get_string_width(text) <= max_w:
-        return text
-    ell = "…"
-    while text and pdf.get_string_width(text + ell) > max_w:
-        text = text[:-1]
-    return text + ell if text else ""
+    lines: list[str] = []
+    cur = ""
+    i, n = 0, len(text)
+    while i < n:
+        ch = text[i]
+        if not cur or pdf.get_string_width(cur + ch) <= max_w:
+            cur += ch
+            i += 1
+        else:
+            lines.append(cur)
+            cur = ""
+            if len(lines) >= max_lines:
+                break
+    if cur and len(lines) < max_lines:
+        lines.append(cur)
+        cur, i = "", n
+    fully = i >= n and not cur
+    if not fully and lines:  # overflow → ellipsize the last visible line
+        ell = "…"
+        last = lines[-1]
+        while last and pdf.get_string_width(last + ell) > max_w:
+            last = last[:-1]
+        lines[-1] = (last + ell) if last else ell
+    return lines, fully
+
+
+def _name_lines(
+    pdf: FPDF, font: str, text: str, max_w: float, pt_hi: float
+) -> tuple[list[str], float]:
+    """Fit an occupant name without cutting it off: pick the largest font
+    (≤ pt_hi, down to 4.5) at which the name wraps into ≤ 2 lines; only if it
+    still overflows at 4.5pt do we ellipsize. Returns (lines, pt)."""
+    pt = pt_hi
+    while pt >= 4.5:
+        lines, fully = _wrap(pdf, font, text, max_w, pt, 2)
+        if fully:
+            return lines, pt
+        pt -= 0.5
+    lines, _ = _wrap(pdf, font, text, max_w, 4.5, 2)
+    return lines, 4.5
 
 
 def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
@@ -121,15 +160,21 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
         pad = cell * 0.12
         if occ:
             pdf.set_text_color(12, 68, 124)
-            pdf.set_font(font, size=nm_pt)
-            name = _fit(pdf, font, s["user_name"] or "已占", cell - 2 * pad, nm_pt)
-            pdf.set_font(font, size=nm_pt)
-            pdf.set_xy(x, y + cell * 0.44)
-            pdf.cell(cell, cell * 0.3, name, align="C")
-            if nd and cell >= 14:
+            # fit the full name (shrink font, then wrap to 2 lines) so long
+            # names aren't silently chopped off in the export
+            lines, npt = _name_lines(pdf, font, s["user_name"] or "已占", cell - 2 * pad, nm_pt)
+            show_count = bool(nd) and len(lines) == 1 and cell >= 16
+            top, bottom = cell * 0.42, cell * (0.72 if show_count else 0.86)
+            lh = min(cell * 0.24, (bottom - top) / len(lines))
+            y0 = y + top + max(0.0, (bottom - top - lh * len(lines)) / 2)
+            pdf.set_font(font, size=npt)
+            for idx, ln in enumerate(lines):
+                pdf.set_xy(x, y0 + idx * lh)
+                pdf.cell(cell, lh, ln, align="C")
+            if show_count:
                 pdf.set_font(font, size=no_pt)
-                pdf.set_xy(x, y + cell * 0.72)
-                pdf.cell(cell, cell * 0.22, f"+{nd} 资产", align="C")
+                pdf.set_xy(x, y + cell * 0.76)
+                pdf.cell(cell, cell * 0.2, f"+{nd} 资产", align="C")
         elif nd:
             pdf.set_text_color(15, 110, 86)
             pdf.set_font(font, size=nm_pt)

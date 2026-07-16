@@ -194,6 +194,28 @@ def test_seatmap_export_pdf():
     assert client.get(f"/api/seatmaps/{mk['id']}/export", headers=emp).status_code == 403
 
 
+def test_seatmap_pdf_name_fits_without_truncation():
+    """导出时工位姓名不应被截断:够长就缩字号,再长折两行,极端才省略。"""
+    from app.modules.seatmap import pdf as seatmap_pdf
+    from fpdf import FPDF
+
+    p = FPDF(orientation="L", unit="mm", format="A4")
+    p.add_page()
+    font = seatmap_pdf._register_font(p)
+
+    # 中等长度名字:在合理格宽内应完整显示(仅缩字号,不出现省略号)
+    name = "王小明abc"
+    lines, _ = seatmap_pdf._name_lines(p, font, name, 22.0, 9.0)
+    assert "".join(lines) == name
+    assert "…" not in "".join(lines)
+
+    # 很长的名字:折成不超过两行,仍不截断
+    long_name = "测试超长姓名王小明ABCDEFG"
+    llines, _ = seatmap_pdf._name_lines(p, font, long_name, 22.0, 9.0)
+    assert 1 <= len(llines) <= 2
+    assert "".join(llines) == long_name
+
+
 def test_seatmap_requires_roles():
     emp_h = _h(_login("employee"))
     assert client.get("/api/seatmaps", headers=emp_h).status_code == 403
