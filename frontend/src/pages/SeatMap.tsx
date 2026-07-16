@@ -6,6 +6,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Popconfirm,
   Segmented,
   Select,
   Space,
@@ -49,6 +50,7 @@ export default function SeatMap() {
   const [q, setQ] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState({ name: '', rows: 6, cols: 8 })
+  const [inspectId, setInspectId] = useState<number | null>(null)
 
   const { data: maps } = useQuery<MapMeta[]>({
     queryKey: ['seatmaps'],
@@ -161,14 +163,8 @@ export default function SeatMap() {
       setSel(null)
       return
     }
-    if (seat.user_id || seat.assets.length) {
-      Modal.confirm({
-        title: `清空工位 ${seat.seat_no ?? ''}?`,
-        content: '将撤离占用人、把工位上的设备移出(location 清空)。',
-        okText: '清空', cancelText: '取消',
-        onOk: () => mut(async () => { await api.post(`/seatmaps/${mapId}/seats/${seat.id}/clear`) }),
-      })
-    }
+    // 点击已落座 / 有设备的工位 → 弹窗看详情(占用人 + 资产列表)
+    if (seat.user_id || seat.assets.length) setInspectId(seat.id)
   }
   const onDrop = (r: number, c: number, e: React.DragEvent) => {
     e.preventDefault()
@@ -176,11 +172,20 @@ export default function SeatMap() {
     if (!seat) return
     const [kind, id] = (e.dataTransfer.getData('text/plain') || '').split(':')
     if (!id) return
-    if (kind === 'person')
+    if (kind === 'person') {
+      // 换座:目标已被别人占用则拦下,避免误挤掉现有占用人
+      if (seat.user_id && seat.user_id !== +id) { message.info('该工位已有人,请先清空'); return }
       mut(async () => { await api.post(`/seatmaps/${mapId}/seats/${seat.id}/assign-user`, { user_id: +id, move_assets: moveAssets }) })
-    else if (kind === 'asset')
+    } else if (kind === 'asset')
       mut(async () => { await api.post(`/seatmaps/${mapId}/seats/${seat.id}/place-asset`, { asset_id: +id }) })
   }
+  const removeSeatAsset = (assetId: number) =>
+    mut(async () => { await api.delete(`/seatmaps/${mapId}/assets/${assetId}`) })
+  const clearSeatById = (seatId: number) =>
+    api.post(`/seatmaps/${mapId}/seats/${seatId}/clear`)
+      .then(() => { invalidate(); message.success('已清空工位'); setInspectId(null) })
+      .catch((e: { response?: { data?: { detail?: string } } }) =>
+        message.error(e.response?.data?.detail ?? '操作失败'))
 
   if (maps && maps.length === 0)
     return (
@@ -195,6 +200,7 @@ export default function SeatMap() {
     )
 
   const m = detail?.map
+  const inspectSeat = detail?.seats.find((s) => s.id === inspectId) ?? null
   return (
     <div style={{ padding: 24 }}>
       <PageHead onNew={() => setCreateOpen(true)}>
@@ -250,6 +256,8 @@ export default function SeatMap() {
                 const cellZone = mode === 'edit' ? editCells[k] : seat?.zone
                 return (
                   <Cell key={k} size={cellSize} isSeat={isSeat} editing={mode === 'edit'} seat={seat} zone={cellZone}
+                    draggable={mode === 'assign' && !!seat?.user_id}
+                    onDragStart={(e) => { if (seat?.user_id) e.dataTransfer.setData('text/plain', `person:${seat.user_id}`) }}
                     onClick={() => onCell(r, c)}
                     onDrop={(e) => mode === 'assign' && onDrop(r, c, e)}
                     onDragOver={(e) => { if (mode === 'assign' && seat) e.preventDefault() }} />
@@ -282,7 +290,9 @@ export default function SeatMap() {
                 {(cand?.assets ?? []).length === 0 && <Hint>无</Hint>}
               </PanelGroup>
               <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 8 }}>
-                {sel ? `已选「${sel.label}」· 点工位落座` : '点人员/设备再点工位,或直接拖入'}
+                {sel
+                  ? `已选「${sel.label}」· 点工位落座`
+                  : '点人员/设备再点工位,或直接拖入;拖动已落座人员可直接换工位,点工位看详情'}
               </div>
             </div>
           )}
@@ -292,6 +302,56 @@ export default function SeatMap() {
 
       <CreateModal open={createOpen} form={form} setForm={setForm}
         onOk={() => createMap.mutate()} onCancel={() => setCreateOpen(false)} loading={createMap.isPending} />
+
+      <Modal
+        open={inspectSeat != null}
+        onCancel={() => setInspectId(null)}
+        title={`工位 ${inspectSeat?.seat_no ?? ''}${inspectSeat?.zone ? ` · ${inspectSeat.zone} 区` : ''}`}
+        footer={[
+          inspectSeat && (inspectSeat.user_id || inspectSeat.assets.length) ? (
+            <Popconfirm key="clear" title="清空该工位?" description="撤离占用人、把设备移出(location 清空)"
+              okText="清空" cancelText="取消" okButtonProps={{ danger: true }}
+              onConfirm={() => inspectSeat && clearSeatById(inspectSeat.id)}>
+              <Button danger>清空工位</Button>
+            </Popconfirm>
+          ) : null,
+          <Button key="close" onClick={() => setInspectId(null)}>关闭</Button>,
+        ]}
+      >
+        {inspectSeat && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 4 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
+              占用人:{inspectSeat.user_name
+                ? <b style={{ color: 'var(--text-1)' }}>{inspectSeat.user_name}</b>
+                : <span style={{ color: 'var(--text-4)' }}>无(仅放置设备)</span>}
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>
+                工位上的资产({inspectSeat.assets.length})
+              </div>
+              {inspectSeat.assets.length === 0 ? (
+                <Hint>无</Hint>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {inspectSeat.assets.map((a) => (
+                    <div key={a.id} style={{
+                      display: 'flex', alignItems: 'center', gap: 8, padding: '6px 9px',
+                      border: '1px solid var(--border)', borderRadius: 8,
+                    }}>
+                      <span style={{ fontSize: 14 }}>🖥</span>
+                      <span style={{ flex: 1, minWidth: 0 }}>
+                        <span style={{ fontSize: 13, color: 'var(--text-1)' }}>{a.name || a.asset_code}</span>{' '}
+                        <span style={{ fontSize: 11, color: 'var(--text-3)' }}>{a.asset_code}</span>
+                      </span>
+                      <Button size="small" danger type="link" onClick={() => removeSeatAsset(a.id)}>移出</Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
     </div>
   )
 }
@@ -305,8 +365,9 @@ function PageHead({ onNew, children }: { onNew: () => void; children?: React.Rea
   )
 }
 
-function Cell({ size, isSeat, editing, seat, zone, onClick, onDrop, onDragOver }: {
+function Cell({ size, isSeat, editing, seat, zone, draggable, onDragStart, onClick, onDrop, onDragOver }: {
   size: number; isSeat: boolean; editing: boolean; seat?: Seat; zone?: string | null
+  draggable?: boolean; onDragStart?: (e: React.DragEvent) => void
   onClick: () => void; onDrop: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
 }) {
   // Non-seat cell: a paintable 过道 in edit mode, invisible whitespace in assign
@@ -333,9 +394,11 @@ function Cell({ size, isSeat, editing, seat, zone, onClick, onDrop, onDragOver }
   const small = size < 52
   return (
     <div onClick={onClick} onDrop={onDrop} onDragOver={onDragOver}
-      title={seat?.user_name ?? undefined}
+      draggable={draggable} onDragStart={onDragStart}
+      title={draggable ? `${seat?.user_name ?? ''}（可拖到其它工位换座)` : seat?.user_name ?? undefined}
       style={{
-        position: 'relative', width: size, height: size, borderRadius: 8, cursor: 'pointer', padding: 3,
+        position: 'relative', width: size, height: size, borderRadius: 8,
+        cursor: draggable ? 'grab' : 'pointer', padding: 3,
         border: `1px solid ${bd}`, background: bg,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
         overflow: 'hidden',

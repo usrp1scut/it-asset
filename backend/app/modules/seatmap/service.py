@@ -182,6 +182,14 @@ def assign_user(db: Session, m: FloorMap, seat_id: int, *, user_id: int, move_as
     u = db.get(User, user_id)
     if u is None:
         raise SeatMapError("用户不存在")
+    # 若该用户已坐在本图其它工位,先腾出——支持「座位间直接拖动换座」,免去
+    # 「先清空再拖」两步。其名下资产随 move_assets 一并迁到新工位。
+    for other in db.scalars(
+        select(Seat).where(
+            Seat.map_id == m.id, Seat.user_id == user_id, Seat.id != seat.id
+        )
+    ):
+        other.user_id = None
     seat.user_id = user_id
     moved = 0
     if move_assets:

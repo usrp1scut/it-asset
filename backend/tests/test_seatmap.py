@@ -85,6 +85,39 @@ def test_seatmap_seat_person_brings_assets_and_writes_location():
     assert _loc(h, code) == f"{name}-A01"
 
 
+def test_seatmap_move_person_between_seats():
+    """把已落座的人分到另一工位:旧工位自动腾空,人和名下资产跟着走。"""
+    h = _h(_login())
+    emp_id = _login("employee")["user"]["id"]
+    tid = _type_id(h, "PC")
+    code, _ = _asset(h, tid)
+    client.post(f"/api/assets/{code}/assign", json={"user_id": emp_id}, headers=h)  # in-use
+
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mk = _mk_numbered_map(h, name, 1, 2)
+    mid, det = mk["id"], mk["detail"]
+    a01, a02 = _seat(det, "A01"), _seat(det, "A02")
+
+    # 先坐 A01(带入名下资产)
+    d1 = client.post(
+        f"/api/seatmaps/{mid}/seats/{a01['id']}/assign-user",
+        json={"user_id": emp_id, "move_assets": True}, headers=h,
+    ).json()
+    assert _seat(d1, "A01")["user_id"] == emp_id
+    assert any(a["asset_code"] == code for a in _seat(d1, "A01")["assets"])
+
+    # 再拖到 A02 —— A01 应自动腾空,人和资产都到 A02
+    d2 = client.post(
+        f"/api/seatmaps/{mid}/seats/{a02['id']}/assign-user",
+        json={"user_id": emp_id, "move_assets": True}, headers=h,
+    ).json()
+    assert _seat(d2, "A01")["user_id"] is None
+    assert _seat(d2, "A01")["assets"] == []
+    assert _seat(d2, "A02")["user_id"] == emp_id
+    assert any(a["asset_code"] == code for a in _seat(d2, "A02")["assets"])
+    assert _loc(h, code) == f"{name}-A02"
+
+
 def test_seatmap_place_and_clear_asset():
     h = _h(_login())
     tid = _type_id(h, "PC")
