@@ -80,7 +80,7 @@ def set_layout(map_id: int, body: LayoutIn, db: Session = Depends(get_db),
                _: User = Depends(it_admin)):
     m = _get(db, map_id)
     try:
-        service.set_layout(db, m, body.seats, body.labels)
+        service.set_layout(db, m, body.seats, body.labels, expected_version=body.version)
     except service.SeatMapError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return service.map_payload(db, m)

@@ -16,6 +16,7 @@ class MapOut(BaseModel):
     name: str
     rows: int
     cols: int
+    version: int = 1   # 布局几何版本;保存布局时回传做乐观锁
 
 
 class SeatAssetOut(BaseModel):
@@ -66,6 +67,9 @@ class LayoutIn(BaseModel):
     seats: list[LayoutCell]
     # 空白格上的位置备注(窗/柜子/机房/前台…);与 seats 互斥同一格
     labels: list[LabelCell] = []
+    # 进入编辑时的 map.version。带上就做乐观锁:期间有人改过布局 -> 409,
+    # 免得旧快照静默删掉别人新加的工位。省略则不校验(脚本/兼容用)。
+    version: int | None = None
 
 
 class GrowIn(BaseModel):

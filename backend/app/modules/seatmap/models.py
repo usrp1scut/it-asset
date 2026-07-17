@@ -28,6 +28,11 @@ class FloorMap(Base):
     name: Mapped[str] = mapped_column(String(64))
     rows: Mapped[int] = mapped_column(Integer, default=6)
     cols: Mapped[int] = mapped_column(Integer, default=8)
+    # 布局几何的乐观锁:只有改动「格子集合/坐标」的操作(保存布局、扩展画布)
+    # 才推进它。落座/放设备/起别名不推进 —— 否则别人拖个人就会把正在编辑
+    # 布局的人挡下,属于误伤。保存布局时带上进入编辑时的版本,不匹配就 409,
+    # 避免旧快照静默删掉别人新加的工位(并把上面的资产踢下座)。
+    version: Mapped[int] = mapped_column(Integer, default=1, server_default="1")
     created_by: Mapped[int | None] = mapped_column(BigInteger)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(

@@ -31,7 +31,7 @@ interface Seat {
   assets: SeatAsset[]
 }
 interface MapLabel { id: number; row: number; col: number; text: string }
-interface MapMeta { id: number; name: string; rows: number; cols: number }
+interface MapMeta { id: number; name: string; rows: number; cols: number; version: number }
 interface MapDetail { map: MapMeta; seats: Seat[]; labels: MapLabel[] }
 interface Person { id: number; name: string; department_name: string | null; asset_count: number }
 interface Candidates { people: Person[]; assets: SeatAsset[] }
@@ -52,6 +52,8 @@ export default function SeatMap() {
   const [order, setOrder] = useState<'row' | 'serpentine'>('row')
   const [editCells, setEditCells] = useState<Record<string, string | null>>({})
   const [editLabels, setEditLabels] = useState<Record<string, string>>({})
+  // 进入编辑时的布局版本;保存时带回做乐观锁,期间别人改过布局就会被拦下
+  const [editVersion, setEditVersion] = useState<number | null>(null)
   const [paint, setPaint] = useState<'seat' | 'label'>('seat')
   const [labelText, setLabelText] = useState('窗')
   const [sel, setSel] = useState<Sel>(null)
@@ -139,40 +141,42 @@ export default function SeatMap() {
     }
   }
 
-  const enterEdit = () => {
+  // 用一份服务端详情重置编辑快照(含版本号)—— 保证格子与版本永远同源
+  const applyDetail = (d: MapDetail) => {
     const cells: Record<string, string | null> = {}
-    detail?.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
+    d.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
     const labs: Record<string, string> = {}
-    detail?.labels?.forEach((lb) => { labs[`${lb.row}-${lb.col}`] = lb.text })
+    d.labels?.forEach((lb) => { labs[`${lb.row}-${lb.col}`] = lb.text })
     setEditCells(cells)
     setEditLabels(labs)
+    setEditVersion(d.map.version)
+  }
+  const enterEdit = () => {
+    if (detail) applyDetail(detail)
     setSel(null)
     setMode('edit')
   }
-  const saveLayout = () =>
-    mut(async () => {
-      const seats = Object.entries(editCells).map(([k, z]) => {
-        const [r, c] = k.split('-').map(Number)
-        return { row: r, col: c, zone: z }
-      })
-      const labels = Object.entries(editLabels).map(([k, text]) => {
-        const [r, c] = k.split('-').map(Number)
-        return { row: r, col: c, text }
-      })
-      await api.put(`/seatmaps/${mapId}/layout`, { seats, labels })
-    }, '布局已保存')
+  const saveLayout = () => {
+    const seats = Object.entries(editCells).map(([k, z]) => {
+      const [r, c] = k.split('-').map(Number)
+      return { row: r, col: c, zone: z }
+    })
+    const labels = Object.entries(editLabels).map(([k, text]) => {
+      const [r, c] = k.split('-').map(Number)
+      return { row: r, col: c, text }
+    })
+    return api.put(`/seatmaps/${mapId}/layout`, { seats, labels, version: editVersion })
+      // 用返回的详情刷新快照 + 版本,否则连续保存第二次会被自己的旧版本挡下
+      .then((res) => { applyDetail(res.data as MapDetail); invalidate(); message.success('布局已保存') })
+      .catch((e: { response?: { data?: { detail?: string } } }) =>
+        message.error(e.response?.data?.detail ?? '操作失败'))
+  }
   // 在边缘加行/列。立即生效(上/左会把已有工位整体平移),故用返回的最新
   // 详情重置编辑态 —— 未保存的涂改会被丢弃,所以先扩画布再画。
   const growMap = (edge: 'top' | 'bottom' | 'left' | 'right') =>
     api.post(`/seatmaps/${mapId}/grow`, { edge, count: 1 })
       .then((res) => {
-        const d = res.data as MapDetail
-        const cells: Record<string, string | null> = {}
-        d.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
-        const labs: Record<string, string> = {}
-        d.labels?.forEach((lb) => { labs[`${lb.row}-${lb.col}`] = lb.text })
-        setEditCells(cells)
-        setEditLabels(labs)
+        applyDetail(res.data as MapDetail)   // 含新版本号:grow 也推进了版本
         invalidate()
         message.success('已扩展画布')
       })

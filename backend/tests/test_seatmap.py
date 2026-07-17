@@ -242,6 +242,60 @@ def test_seatmap_export_pdf():
     assert client.get(f"/api/seatmaps/{mk['id']}/export", headers=emp).status_code == 403
 
 
+def test_seatmap_layout_optimistic_lock():
+    """两人同时编辑:拿旧版本保存会被 409 挡下,而不是静默吃掉对方新加的工位。"""
+    h = _h(_login())
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mid = client.post(
+        "/api/seatmaps", json={"name": name, "rows": 2, "cols": 2}, headers=h
+    ).json()["map"]["id"]
+    v0 = client.get(f"/api/seatmaps/{mid}", headers=h).json()["map"]["version"]
+
+    # A 保存:版本推进
+    d1 = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": [{"row": 0, "col": 0, "zone": "A"}], "version": v0},
+        headers=h,
+    ).json()
+    assert d1["map"]["version"] == v0 + 1
+
+    # B 拿着进编辑时的旧版本保存 -> 409,且 A 的工位没被吃掉
+    r = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": [{"row": 1, "col": 1, "zone": "A"}], "version": v0},
+        headers=h,
+    )
+    assert r.status_code == 409
+    d2 = client.get(f"/api/seatmaps/{mid}", headers=h).json()
+    assert [(s["row"], s["col"]) for s in d2["seats"]] == [(0, 0)]
+
+    # B 刷新后用新版本保存 -> 通过
+    r = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": [{"row": 1, "col": 1, "zone": "A"}], "version": d2["map"]["version"]},
+        headers=h,
+    )
+    assert r.status_code == 200
+
+    # 扩展画布也推进版本 -> 旧快照保存同样被挡
+    stale = r.json()["map"]["version"]
+    client.post(f"/api/seatmaps/{mid}/grow", json={"edge": "bottom"}, headers=h)
+    r = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": [{"row": 1, "col": 1, "zone": "A"}], "version": stale},
+        headers=h,
+    )
+    assert r.status_code == 409
+
+    # 落座这类占用变更不推进版本 -> 不会误伤正在编辑布局的人
+    cur = client.get(f"/api/seatmaps/{mid}", headers=h).json()["map"]["version"]
+    emp = _login("employee")["user"]["id"]
+    sid = client.get(f"/api/seatmaps/{mid}", headers=h).json()["seats"][0]["id"]
+    client.post(f"/api/seatmaps/{mid}/seats/{sid}/assign-user",
+                json={"user_id": emp, "move_assets": False}, headers=h)
+    assert client.get(f"/api/seatmaps/{mid}", headers=h).json()["map"]["version"] == cur
+
+
 def test_seatmap_labels_save_update_clear_and_clash():
     """空白格位置备注(窗/机房/前台):随布局一起存,替换式语义,与工位互斥。"""
     h = _h(_login())

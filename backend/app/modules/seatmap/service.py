@@ -147,13 +147,25 @@ def delete_map(db: Session, m: FloorMap) -> None:
 # ── layout / numbering ────────────────────────────────────────────────────────
 
 
-def set_layout(db: Session, m: FloorMap, cells: list, labels: list | None = None) -> None:
+def set_layout(
+    db: Session,
+    m: FloorMap,
+    cells: list,
+    labels: list | None = None,
+    expected_version: int | None = None,
+) -> None:
     """Replace the set of seat cells (add new, update zone, remove absent) and
     the set of position labels (窗/柜子/机房…) in one save.
 
     Removing a seat first moves any assets on it off the map. A cell is either a
     seat or a label — never both.
+
+    并发保护:这是**全量替换**——不在 cells 里的工位会被删除,连带把上面的
+    资产踢下工位。两个人同时编辑时,后保存的旧快照会静默吃掉先保存者新加的
+    工位。故 `expected_version` 与当前版本不符时直接拒绝。
     """
+    if expected_version is not None and expected_version != m.version:
+        raise SeatMapError("这张图已被他人修改,请刷新后重试")
     in_bounds = lambda r, c: 0 <= r < m.rows and 0 <= c < m.cols  # noqa: E731
     incoming = {(c.row, c.col): c for c in cells if in_bounds(c.row, c.col)}
     incoming_labels = {
@@ -188,6 +200,7 @@ def set_layout(db: Session, m: FloorMap, cells: list, labels: list | None = None
     for (r, c), cur in existing_labels.items():
         if (r, c) not in incoming_labels:
             db.delete(cur)
+    m.version += 1   # 几何变了:让别人手里的旧快照失效
     db.commit()
 
 
@@ -237,6 +250,7 @@ def grow(db: Session, m: FloorMap, *, edge: str, count: int = 1) -> None:
         m.rows = cur + n
     else:
         m.cols = cur + n
+    m.version += 1   # 坐标/画布变了:让别人手里的旧快照失效
     # 先把新尺寸落库:_shift 里的 expire_all() 会丢掉尚未 flush 的改动
     db.flush()
     if edge == "top":
