@@ -52,6 +52,36 @@ body {
   padding-top: 8px;
 }
 
+/* ── 座位图画布 (SeatMap.tsx) ──
+   大图要能上下左右滚动,且滚动条必须「看得见」:macOS 默认是浮层滚动条,不滚
+   不显,用户根本不知道这块能滚。只要显式声明 ::-webkit-scrollbar,WebKit 就
+   切回常驻滚动条(内容溢出时始终可见)。 */
+.seatmap-scroll {
+  overflow: auto;
+  overscroll-behavior: contain;   /* 滚到边界别把整页也带着滚 */
+}
+/* ⚠️ 别在这里加 scrollbar-width / scrollbar-color:Chrome 121+ 一旦见到这两个
+   标准属性,就会**忽略**下面的 ::-webkit-scrollbar,反而退回 macOS 的浮层
+   滚动条(不滚不显)——正是我们要修的那个毛病。Firefox 的回退放在文件末尾的
+   @supports 里单独给。 */
+.seatmap-scroll::-webkit-scrollbar { width: 12px; height: 12px; }
+.seatmap-scroll::-webkit-scrollbar-track { background: var(--bg-canvas); border-radius: 8px; }
+.seatmap-scroll::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 8px;
+  border: 3px solid var(--bg-canvas);   /* 内缩,让滑块看着更细 */
+}
+.seatmap-scroll::-webkit-scrollbar-thumb:hover { background: var(--text-3); }
+.seatmap-scroll::-webkit-scrollbar-corner { background: var(--bg-canvas); }
+/* Firefox 不认 ::-webkit-scrollbar,只能用标准属性;用 @supports 把它挡在
+   Chromium/WebKit 之外,免得触发上面说的「标准属性一出现就丢弃 webkit 规则」。 */
+@supports not selector(::-webkit-scrollbar) {
+  .seatmap-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) var(--bg-canvas);
+  }
+}
+
 /* ── 年会抽奖大屏 (Lottery.tsx) ──
    Stage animations — see design_handoff LOTTERY_DESIGN.md §4. */
 @keyframes lotteryFloat { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-12px); } }

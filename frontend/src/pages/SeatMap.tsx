@@ -335,8 +335,17 @@ export default function SeatMap() {
         <>
         <MapStats seats={detail?.seats ?? []} cellSize={cellSize} setCellSize={setCellSize} />
         <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-          <div style={{ overflow: 'auto', maxWidth: '100%' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: `repeat(${m.cols}, ${cellSize}px)`, gap: 6 }}>
+          {/* 画布视口:flex 子项默认 min-width:auto,不加 minWidth:0 它不会收缩,
+              溢出的是整个页面而不是这块 —— 那样根本不存在容器滚动条。限高则让
+              纵向也在这里滚,配合 .seatmap-scroll 的常驻滚动条。 */}
+          <div className="seatmap-scroll"
+            style={{ flex: '0 1 auto', minWidth: 0, maxHeight: 'calc(100vh - 300px)' }}>
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: `repeat(${m.cols}, ${cellSize}px)`,
+              gap: 6,
+              width: 'max-content',   /* 别被视口压扁,该溢出就溢出 -> 触发横向滚动 */
+            }}>
               {Array.from({ length: m.rows * m.cols }).map((_, i) => {
                 const r = Math.floor(i / m.cols), c = i % m.cols, k = `${r}-${c}`
                 const seat = seatAt.get(k)
