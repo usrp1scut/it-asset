@@ -14,6 +14,7 @@ from app.modules.seatmap.schemas import (
     AssignUserIn,
     AutoNumberIn,
     CandidatesOut,
+    GrowIn,
     LayoutIn,
     MapCreate,
     MapDetail,
@@ -82,6 +83,13 @@ def set_layout(map_id: int, body: LayoutIn, db: Session = Depends(get_db),
     except service.SeatMapError as e:
         raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return service.map_payload(db, m)
+
+
+@router.post("/{map_id}/grow", response_model=MapDetail)
+def grow(map_id: int, body: GrowIn, db: Session = Depends(get_db),
+         _: User = Depends(it_admin)):
+    """在已有图的某条边加行/列(上/左会整体平移已有工位与备注)。"""
+    return _mutate(db, map_id, lambda m: service.grow(db, m, edge=body.edge, count=body.count))
 
 
 @router.post("/{map_id}/autonumber", response_model=MapDetail)

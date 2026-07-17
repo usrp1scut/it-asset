@@ -6,12 +6,15 @@
 """
 from itertools import groupby
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from app.modules.assets.models import Asset, AssetChangeLog, AssetClass, AssetStatus
 from app.modules.seatmap.models import FloorMap, MapLabel, Seat
 from app.modules.users.models import Department, User, UserStatus
+
+MAX_DIM = 40           # 画布行/列上限
+_SHIFT_PARK = 1000     # 整体平移时的临时停车区(见 _shift)
 
 
 class SeatMapError(ValueError):
@@ -176,6 +179,62 @@ def set_layout(db: Session, m: FloorMap, cells: list, labels: list | None = None
     for (r, c), cur in existing_labels.items():
         if (r, c) not in incoming_labels:
             db.delete(cur)
+    db.commit()
+
+
+def _resync_locations(db: Session, m: FloorMap) -> None:
+    """未编号工位的展示名由行列派生(R3C5),平移后要把资产的 location 同步过来。"""
+    smap = {s.id: s for s in seats_of(db, m.id)}
+    if not smap:
+        return
+    for a in db.scalars(select(Asset).where(Asset.seat_id.in_(list(smap)))):
+        a.location = _label(m, smap[a.seat_id])
+
+
+def _shift(db: Session, map_id: int, field: str, n: int) -> None:
+    """把本图所有工位 + 备注的 row(或 col)整体 +n。
+
+    (map_id,row,col) 上有唯一约束,而 Postgres 对非延迟约束是**逐行**检查的 ——
+    直接 `SET row = row + n` 会在挪到一半时撞上还没挪的行。所以先整体挪到
+    +1000 的空区间、再挪回目标位置:两条语句的目标值都与当时的现值不重叠,
+    因此中途不会冲突。
+    """
+    for table in (Seat, MapLabel):
+        col = getattr(table, field)
+        db.execute(update(table).where(table.map_id == map_id).values({field: col + _SHIFT_PARK}))
+        db.execute(
+            update(table).where(table.map_id == map_id).values({field: col - _SHIFT_PARK + n})
+        )
+    db.expire_all()  # 上面走的是 Core UPDATE,让 ORM 对象重新读
+
+
+def grow(db: Session, m: FloorMap, *, edge: str, count: int = 1) -> None:
+    """在已有图的某条边上加行/列。
+
+    下 / 右:只是把画布放大,已有坐标不动。
+    上 / 左:画布放大之外,还要把已有工位与备注整体平移,保持相对位置不变。
+    """
+    if edge not in ("top", "bottom", "left", "right"):
+        raise SeatMapError("方向只能是 上/下/左/右")
+    n = int(count or 1)
+    if n < 1:
+        raise SeatMapError("至少加 1 行/列")
+    vertical = edge in ("top", "bottom")
+    cur = m.rows if vertical else m.cols
+    if cur + n > MAX_DIM:
+        raise SeatMapError(f"最多 {MAX_DIM} {'行' if vertical else '列'}")
+
+    if vertical:
+        m.rows = cur + n
+    else:
+        m.cols = cur + n
+    # 先把新尺寸落库:_shift 里的 expire_all() 会丢掉尚未 flush 的改动
+    db.flush()
+    if edge == "top":
+        _shift(db, m.id, "row", n)
+    elif edge == "left":
+        _shift(db, m.id, "col", n)
+    _resync_locations(db, m)
     db.commit()
 
 

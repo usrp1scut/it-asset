@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict
 
 
@@ -62,6 +64,13 @@ class LayoutIn(BaseModel):
     seats: list[LayoutCell]
     # 空白格上的位置备注(窗/柜子/机房/前台…);与 seats 互斥同一格
     labels: list[LabelCell] = []
+
+
+class GrowIn(BaseModel):
+    """在已有图的某条边加行/列。上/左会把已有工位与备注整体平移。"""
+
+    edge: Literal["top", "bottom", "left", "right"]
+    count: int = 1
 
 
 class AutoNumberIn(BaseModel):

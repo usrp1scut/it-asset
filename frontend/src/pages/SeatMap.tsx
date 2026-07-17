@@ -158,6 +158,24 @@ export default function SeatMap() {
       })
       await api.put(`/seatmaps/${mapId}/layout`, { seats, labels })
     }, '布局已保存')
+  // 在边缘加行/列。立即生效(上/左会把已有工位整体平移),故用返回的最新
+  // 详情重置编辑态 —— 未保存的涂改会被丢弃,所以先扩画布再画。
+  const growMap = (edge: 'top' | 'bottom' | 'left' | 'right') =>
+    api.post(`/seatmaps/${mapId}/grow`, { edge, count: 1 })
+      .then((res) => {
+        const d = res.data as MapDetail
+        const cells: Record<string, string | null> = {}
+        d.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
+        const labs: Record<string, string> = {}
+        d.labels?.forEach((lb) => { labs[`${lb.row}-${lb.col}`] = lb.text })
+        setEditCells(cells)
+        setEditLabels(labs)
+        invalidate()
+        message.success('已扩展画布')
+      })
+      .catch((e: { response?: { data?: { detail?: string } } }) =>
+        message.error(e.response?.data?.detail ?? '操作失败'))
+
   const autonumber = () =>
     mut(async () => { await api.post(`/seatmaps/${mapId}/autonumber`, { order, per_zone: true, prefix: 'A' }) }, '已自动编号')
 
@@ -273,6 +291,13 @@ export default function SeatMap() {
                 />
               )}
               <Button type="primary" onClick={saveLayout}>保存布局</Button>
+              <span style={{ fontSize: 12, color: 'var(--text-3)', marginLeft: 4 }}>扩展画布</span>
+              <Space.Compact size="small">
+                <Button title="顶部加一行" onClick={() => growMap('top')}>↑</Button>
+                <Button title="底部加一行" onClick={() => growMap('bottom')}>↓</Button>
+                <Button title="左侧加一列" onClick={() => growMap('left')}>←</Button>
+                <Button title="右侧加一列" onClick={() => growMap('right')}>→</Button>
+              </Space.Compact>
               <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
                 {paint === 'seat'
                   ? '点格子:工位 ⇄ 过道;先保存再自动编号'

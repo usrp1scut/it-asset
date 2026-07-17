@@ -232,6 +232,51 @@ def test_seatmap_labels_save_update_clear_and_clash():
     assert client.put(f"/api/seatmaps/{mid}/layout", json=bad, headers=h).status_code == 409
 
 
+def test_seatmap_grow_edges():
+    """在边缘加行/列:下/右只扩画布,上/左还要把已有工位与备注整体平移。"""
+    h = _h(_login())
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mid = client.post(
+        "/api/seatmaps", json={"name": name, "rows": 2, "cols": 2}, headers=h
+    ).json()["map"]["id"]
+    client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": [{"row": 0, "col": 0, "zone": "A"}],
+              "labels": [{"row": 1, "col": 1, "text": "窗"}]},
+        headers=h,
+    )
+
+    # 右 / 下:坐标不动
+    d = client.post(
+        f"/api/seatmaps/{mid}/grow", json={"edge": "right", "count": 2}, headers=h
+    ).json()
+    assert d["map"]["cols"] == 4
+    assert (d["seats"][0]["row"], d["seats"][0]["col"]) == (0, 0)
+    d = client.post(f"/api/seatmaps/{mid}/grow", json={"edge": "bottom"}, headers=h).json()
+    assert d["map"]["rows"] == 3
+    assert (d["seats"][0]["row"], d["seats"][0]["col"]) == (0, 0)
+    assert (d["labels"][0]["row"], d["labels"][0]["col"]) == (1, 1)
+
+    # 上:整体下移(工位 0->2,备注 1->3)
+    d = client.post(f"/api/seatmaps/{mid}/grow", json={"edge": "top", "count": 2}, headers=h).json()
+    assert d["map"]["rows"] == 5
+    assert d["seats"][0]["row"] == 2
+    assert d["labels"][0]["row"] == 3
+
+    # 左:整体右移(工位 0->1,备注 1->2)
+    d = client.post(f"/api/seatmaps/{mid}/grow", json={"edge": "left"}, headers=h).json()
+    assert d["map"]["cols"] == 5
+    assert d["seats"][0]["col"] == 1
+    assert d["labels"][0]["col"] == 2
+    # 相对位置保持不变:备注仍在工位的右下角
+    assert (d["labels"][0]["row"] - d["seats"][0]["row"],
+            d["labels"][0]["col"] - d["seats"][0]["col"]) == (1, 1)
+
+    # 超出上限 -> 409
+    r = client.post(f"/api/seatmaps/{mid}/grow", json={"edge": "right", "count": 40}, headers=h)
+    assert r.status_code == 409
+
+
 def test_seatmap_pdf_name_fits_without_truncation():
     """导出时工位姓名不应被截断:够长就缩字号,再长折两行,极端才省略。"""
     from app.modules.seatmap import pdf as seatmap_pdf
