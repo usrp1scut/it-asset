@@ -232,6 +232,41 @@ def test_seatmap_labels_save_update_clear_and_clash():
     assert client.put(f"/api/seatmaps/{mid}/layout", json=bad, headers=h).status_code == 409
 
 
+def test_seatmap_seat_alias_replaces_display_not_ledger():
+    """别名替代显示名,但台账 location 仍按自动编号走 —— 改别名不扰动台账历史。"""
+    h = _h(_login())
+    tid = _type_id(h, "PC")
+    code, aid = _asset(h, tid)
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mk = _mk_numbered_map(h, name, 1, 2)
+    mid = mk["id"]
+    sid = _seat(mk["detail"], "A01")["id"]
+    client.post(f"/api/seatmaps/{mid}/seats/{sid}/place-asset", json={"asset_id": aid}, headers=h)
+    assert _loc(h, code) == f"{name}-A01"
+
+    # 起别名:显示名变别名,编号仍在,台账位置纹丝不动
+    d = client.post(
+        f"/api/seatmaps/{mid}/seats/{sid}/alias", json={"alias": "研发-12"}, headers=h
+    ).json()
+    s = _seat(d, "A01")
+    assert s["alias"] == "研发-12"
+    assert s["display_no"] == "研发-12"
+    assert s["seat_no"] == "A01"
+    assert _loc(h, code) == f"{name}-A01"
+
+    # 重新自动编号不会覆盖别名
+    d = client.post(f"/api/seatmaps/{mid}/autonumber", json={}, headers=h).json()
+    assert _seat(d, "A01")["alias"] == "研发-12"
+
+    # 清空别名 -> 回落到编号显示
+    d = client.post(
+        f"/api/seatmaps/{mid}/seats/{sid}/alias", json={"alias": "  "}, headers=h
+    ).json()
+    s = _seat(d, "A01")
+    assert s["alias"] is None
+    assert s["display_no"] == "A01"
+
+
 def test_seatmap_grow_edges():
     """在边缘加行/列:下/右只扩画布,上/左还要把已有工位与备注整体平移。"""
     h = _h(_login())

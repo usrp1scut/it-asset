@@ -22,8 +22,15 @@ class SeatMapError(ValueError):
 
 
 def _label(m: FloorMap, seat: Seat) -> str:
+    """资产台账里的位置文本。**刻意只认 seat_no,不认别名** —— 别名是显示层的
+    东西,改它不该重写台账历史(产品决策)。"""
     tail = seat.seat_no or f"R{seat.row + 1}C{seat.col + 1}"
     return f"{m.name}-{tail}"
+
+
+def display_no(seat: Seat) -> str:
+    """界面/导出上给人看的工位名:别名 → 编号 → 行列兜底。"""
+    return seat.alias or seat.seat_no or f"R{seat.row + 1}C{seat.col + 1}"
 
 
 def _relocate(
@@ -110,6 +117,8 @@ def map_payload(db: Session, m: FloorMap) -> dict:
                 "row": s.row,
                 "col": s.col,
                 "seat_no": s.seat_no,
+                "alias": s.alias,
+                "display_no": display_no(s),
                 "zone": s.zone,
                 "user_id": s.user_id,
                 "user_name": names.get(s.user_id),
@@ -297,6 +306,17 @@ def assign_user(db: Session, m: FloorMap, seat_id: int, *, user_id: int, move_as
             moved += 1
     db.commit()
     return moved
+
+
+def set_alias(db: Session, m: FloorMap, seat_id: int, *, alias: str | None) -> None:
+    """给工位起/改/清别名。清空传空串或 null。
+
+    只动显示层:不碰 seat_no,也不重算资产 location(台账按编号走)。
+    """
+    seat = _seat_in_map(db, m, seat_id)
+    text = (alias or "").strip()
+    seat.alias = text[:32] or None
+    db.commit()
 
 
 def place_asset(db: Session, m: FloorMap, seat_id: int, *, asset_id: int) -> None:

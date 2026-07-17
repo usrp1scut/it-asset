@@ -29,6 +29,8 @@ class SeatOut(BaseModel):
     row: int
     col: int
     seat_no: str | None
+    alias: str | None = None
+    display_no: str = ""   # 别名 → 编号 → 行列;界面/导出显示用
     zone: str | None
     user_id: int | None
     user_name: str | None = None
@@ -86,6 +88,12 @@ class AssignUserIn(BaseModel):
 
 class PlaceAssetIn(BaseModel):
     asset_id: int
+
+
+class SeatAliasIn(BaseModel):
+    """工位别名;空 -> 清除别名,回落到自动编号显示。"""
+
+    alias: str | None = None
 
 
 class CandidatePerson(BaseModel):

@@ -20,6 +20,7 @@ from app.modules.seatmap.schemas import (
     MapDetail,
     MapOut,
     PlaceAssetIn,
+    SeatAliasIn,
 )
 from app.modules.users.models import User
 
@@ -114,6 +115,13 @@ def assign_user(map_id: int, seat_id: int, body: AssignUserIn, db: Session = Dep
                 _: User = Depends(it_admin)):
     return _mutate(db, map_id, lambda m: service.assign_user(
         db, m, seat_id, user_id=body.user_id, move_assets=body.move_assets))
+
+
+@router.post("/{map_id}/seats/{seat_id}/alias", response_model=MapDetail)
+def set_alias(map_id: int, seat_id: int, body: SeatAliasIn, db: Session = Depends(get_db),
+              _: User = Depends(it_admin)):
+    """给工位起别名(显示时替代编号);空 -> 清除。台账 location 不受影响。"""
+    return _mutate(db, map_id, lambda m: service.set_alias(db, m, seat_id, alias=body.alias))
 
 
 @router.post("/{map_id}/seats/{seat_id}/place-asset", response_model=MapDetail)

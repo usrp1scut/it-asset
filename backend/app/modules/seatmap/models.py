@@ -44,6 +44,10 @@ class Seat(Base):
     row: Mapped[int] = mapped_column(Integer)
     col: Mapped[int] = mapped_column(Integer)
     seat_no: Mapped[str | None] = mapped_column(String(16))  # 自动编号,如 A05
+    # 人读的别名(如「研发-12」)。设了就在地图/弹窗/导出里**替代编号显示**;
+    # 自动编号只重算 seat_no,不会覆盖它。台账 location 仍按 seat_no 派生
+    # (见 _label),所以改别名不会扰动资产台账历史。
+    alias: Mapped[str | None] = mapped_column(String(32))
     zone: Mapped[str | None] = mapped_column(String(16))     # 区域,如 A / B
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # 就座的人
 

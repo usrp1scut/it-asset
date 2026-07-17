@@ -205,11 +205,16 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
         pdf.set_fill_color(*_ZONE_RGB.get(s["zone"], _GRAY))
         pdf.rect(x, y, cell, max(cell * 0.12, 1.2), style="F")
 
-        # seat number
+        # seat number(设了别名就显示别名);别名可能较长,同样走自适应排版
         pdf.set_text_color(*_GRAY)
-        pdf.set_font(font, size=no_pt)
-        pdf.set_xy(x, y + cell * 0.16)
-        pdf.cell(cell, cell * 0.28, s["seat_no"] or "—", align="C")
+        no_lines, npt2 = _name_lines(
+            pdf, font, s.get("display_no") or s["seat_no"] or "—", cell - 2 * pad, no_pt, 2
+        )
+        pdf.set_font(font, size=npt2)
+        nlh = min(cell * 0.16, cell * 0.28 / max(len(no_lines), 1))
+        for idx, ln in enumerate(no_lines):
+            pdf.set_xy(x, y + cell * 0.16 + idx * nlh)
+            pdf.cell(cell, nlh, ln, align="C")
 
         # occupant / device
         if occ:

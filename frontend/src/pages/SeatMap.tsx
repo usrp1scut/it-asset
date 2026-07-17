@@ -23,6 +23,8 @@ interface Seat {
   row: number
   col: number
   seat_no: string | null
+  alias: string | null
+  display_no: string   // 别名 → 编号 → 行列
   zone: string | null
   user_id: number | null
   user_name: string | null
@@ -58,6 +60,7 @@ export default function SeatMap() {
   const [createOpen, setCreateOpen] = useState(false)
   const [form, setForm] = useState({ name: '', rows: 6, cols: 8 })
   const [inspectId, setInspectId] = useState<number | null>(null)
+  const [aliasDraft, setAliasDraft] = useState('')
 
   const { data: maps } = useQuery<MapMeta[]>({
     queryKey: ['seatmaps'],
@@ -213,8 +216,9 @@ export default function SeatMap() {
       setSel(null)
       return
     }
-    // 点击已落座 / 有设备的工位 → 弹窗看详情(占用人 + 资产列表)
-    if (seat.user_id || seat.assets.length) setInspectId(seat.id)
+    // 点工位看详情:占用人 + 资产列表 + 起别名(空工位也能点,用来起名)
+    setInspectId(seat.id)
+    setAliasDraft(seat.alias ?? '')
   }
   const onDrop = (r: number, c: number, e: React.DragEvent) => {
     e.preventDefault()
@@ -231,6 +235,11 @@ export default function SeatMap() {
   }
   const removeSeatAsset = (assetId: number) =>
     mut(async () => { await api.delete(`/seatmaps/${mapId}/assets/${assetId}`) })
+  // 别名只改显示(地图/弹窗/导出);台账位置仍按自动编号,故不会动资产历史
+  const saveAlias = (seatId: number) =>
+    mut(async () => {
+      await api.post(`/seatmaps/${mapId}/seats/${seatId}/alias`, { alias: aliasDraft })
+    }, '别名已保存')
   const clearSeatById = (seatId: number) =>
     api.post(`/seatmaps/${mapId}/seats/${seatId}/clear`)
       .then(() => { invalidate(); message.success('已清空工位'); setInspectId(null) })
@@ -384,7 +393,7 @@ export default function SeatMap() {
       <Modal
         open={inspectSeat != null}
         onCancel={() => setInspectId(null)}
-        title={`工位 ${inspectSeat?.seat_no ?? ''}${inspectSeat?.zone ? ` · ${inspectSeat.zone} 区` : ''}`}
+        title={`工位 ${inspectSeat?.display_no ?? ''}${inspectSeat?.zone ? ` · ${inspectSeat.zone} 区` : ''}`}
         footer={[
           inspectSeat && (inspectSeat.user_id || inspectSeat.assets.length) ? (
             <Popconfirm key="clear" title="清空该工位?" description="撤离占用人、把设备移出(location 清空)"
@@ -398,6 +407,19 @@ export default function SeatMap() {
       >
         {inspectSeat && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14, marginTop: 4 }}>
+            <div>
+              <div style={{ fontSize: 12, color: 'var(--text-3)', marginBottom: 6 }}>
+                别名(留空则显示自动编号 {inspectSeat.seat_no ?? '—'};不影响台账位置)
+              </div>
+              <Space.Compact style={{ width: '100%' }}>
+                <Input
+                  value={aliasDraft} maxLength={32} placeholder="如 研发-12"
+                  onChange={(e) => setAliasDraft(e.target.value)}
+                  onPressEnter={() => saveAlias(inspectSeat.id)}
+                />
+                <Button type="primary" onClick={() => saveAlias(inspectSeat.id)}>保存</Button>
+              </Space.Compact>
+            </div>
             <div style={{ fontSize: 13, color: 'var(--text-2)' }}>
               占用人:{inspectSeat.user_name
                 ? <b style={{ color: 'var(--text-1)' }}>{inspectSeat.user_name}</b>
@@ -504,7 +526,12 @@ function Cell({ size, isSeat, editing, seat, zone, label, draggable, onDragStart
         position: 'absolute', top: 0, left: 0, right: 0, height: 3,
         background: zoneColor(zone), borderTopLeftRadius: 8, borderTopRightRadius: 8,
       }} />
-      <span style={{ fontSize: 10, color: fg }}>{seat?.seat_no ?? '—'}</span>
+      <span style={{
+        fontSize: 10, color: fg, maxWidth: '100%',
+        overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+      }}>
+        {seat?.display_no || seat?.seat_no || '—'}
+      </span>
       {occ ? (
         <>
           <span style={{
