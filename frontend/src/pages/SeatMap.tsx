@@ -227,8 +227,7 @@ export default function SeatMap() {
     const [kind, id] = (e.dataTransfer.getData('text/plain') || '').split(':')
     if (!id) return
     if (kind === 'person') {
-      // 换座:目标已被别人占用则拦下,避免误挤掉现有占用人
-      if (seat.user_id && seat.user_id !== +id) { message.info('该工位已有人,请先清空'); return }
+      // 目标有人 = 换位:从工位拖来则两人对调,从侧栏拖来则对方回侧栏(后端统一处理)
       mut(async () => { await api.post(`/seatmaps/${mapId}/seats/${seat.id}/assign-user`, { user_id: +id, move_assets: moveAssets }) })
     } else if (kind === 'asset')
       mut(async () => { await api.post(`/seatmaps/${mapId}/seats/${seat.id}/place-asset`, { asset_id: +id }) })
@@ -379,7 +378,7 @@ export default function SeatMap() {
               <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 8 }}>
                 {sel
                   ? `已选「${sel.label}」· 点工位落座`
-                  : '点人员/设备再点工位,或直接拖入;拖动已落座人员可直接换工位,点工位看详情'}
+                  : '点人员/设备再点工位,或直接拖入;拖到有人的工位=两人换位,点工位看详情'}
               </div>
             </div>
           )}

@@ -118,6 +118,54 @@ def test_seatmap_move_person_between_seats():
     assert _loc(h, code) == f"{name}-A02"
 
 
+def test_seatmap_drag_onto_occupied_seat_swaps():
+    """拖到有人的工位 = 换位:从工位拖来两人对调,从侧栏拖来对方回侧栏。"""
+    h = _h(_login())
+    tok = uuid.uuid4().hex[:6]
+    a_id = _login("employee", name=f"甲{tok}")["user"]["id"]
+    b_id = _login("employee", name=f"乙{tok}")["user"]["id"]
+    c_id = _login("employee", name=f"丙{tok}")["user"]["id"]
+    tid = _type_id(h, "PC")
+    ca, _ = _asset(h, tid)
+    cb, _ = _asset(h, tid)
+    client.post(f"/api/assets/{ca}/assign", json={"user_id": a_id}, headers=h)
+    client.post(f"/api/assets/{cb}/assign", json={"user_id": b_id}, headers=h)
+
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mk = _mk_numbered_map(h, name, 1, 2)
+    mid = mk["id"]
+    s1 = _seat(mk["detail"], "A01")["id"]
+    s2 = _seat(mk["detail"], "A02")["id"]
+
+    def seat_user(det, no):
+        return _seat(det, no)["user_id"]
+
+    for uid, sid in ((a_id, s1), (b_id, s2)):
+        client.post(f"/api/seatmaps/{mid}/seats/{sid}/assign-user",
+                    json={"user_id": uid, "move_assets": True}, headers=h)
+    assert _loc(h, ca) == f"{name}-A01"
+    assert _loc(h, cb) == f"{name}-A02"
+
+    # 甲(A01)拖到乙所在的 A02 -> 两人对调,各自资产跟着走
+    d = client.post(f"/api/seatmaps/{mid}/seats/{s2}/assign-user",
+                    json={"user_id": a_id, "move_assets": True}, headers=h).json()
+    assert seat_user(d, "A02") == a_id
+    assert seat_user(d, "A01") == b_id      # 乙被换到甲原来的工位,而不是被挤没
+    assert _loc(h, ca) == f"{name}-A02"
+    assert _loc(h, cb) == f"{name}-A01"
+
+    # 丙从侧栏拖到甲所在的 A02 -> 甲回侧栏(未落座),其资产移出工位
+    d = client.post(f"/api/seatmaps/{mid}/seats/{s2}/assign-user",
+                    json={"user_id": c_id, "move_assets": True}, headers=h).json()
+    assert seat_user(d, "A02") == c_id
+    assert seat_user(d, "A01") == b_id      # 乙不受影响
+    assert a_id not in [s["user_id"] for s in d["seats"]]  # 甲已不在图上
+    assert _loc(h, ca) is None             # 甲的资产随之移出工位
+    # 甲回到侧栏候选名单
+    cand = client.get(f"/api/seatmaps/{mid}/candidates", params={"q": f"甲{tok}"}, headers=h).json()
+    assert any(p["id"] == a_id for p in cand["people"])
+
+
 def test_seatmap_place_and_clear_asset():
     h = _h(_login())
     tid = _type_id(h, "PC")

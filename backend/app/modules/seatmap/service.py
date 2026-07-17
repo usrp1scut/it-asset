@@ -280,32 +280,60 @@ def _seat_in_map(db: Session, m: FloorMap, seat_id: int) -> Seat:
 
 
 def assign_user(db: Session, m: FloorMap, seat_id: int, *, user_id: int, move_assets: bool) -> int:
+    """把人落到工位上。目标工位已有人时 = **换位**,而不是把对方挤没:
+
+    | 拖动来源      | 目标空       | 目标有人 Q                    |
+    |---------------|--------------|-------------------------------|
+    | 本图其它工位  | 原工位腾空   | Q 坐到本人原工位(两人对调)  |
+    | 侧栏(未落座)| 直接落座     | Q 回到侧栏(未落座)          |
+
+    各人名下在用的个人资产随 move_assets 跟着人走(Q 回侧栏时其资产移出工位);
+    别人放在工位上的共享设备不跟人走 —— 设备属于工位。
+    """
     seat = _seat_in_map(db, m, seat_id)
     u = db.get(User, user_id)
     if u is None:
         raise SeatMapError("用户不存在")
-    # 若该用户已坐在本图其它工位,先腾出——支持「座位间直接拖动换座」,免去
-    # 「先清空再拖」两步。其名下资产随 move_assets 一并迁到新工位。
-    for other in db.scalars(
+    # 本人当前所在工位(未落座则为 None)
+    prev = db.scalar(
         select(Seat).where(
             Seat.map_id == m.id, Seat.user_id == user_id, Seat.id != seat.id
         )
-    ):
-        other.user_id = None
+    )
+    displaced = seat.user_id if seat.user_id != user_id else None
     seat.user_id = user_id
-    moved = 0
-    if move_assets:
-        q = select(Asset).where(
-            Asset.owner_user_id == user_id,
-            Asset.status == AssetStatus.in_use,
-            Asset.asset_class == AssetClass.personal,
-            Asset.deleted_at.is_(None),
-        )
-        for a in db.scalars(q):
-            _relocate(db, a, seat, m, operator_id=None)
-            moved += 1
+
+    if prev is not None:
+        # 从工位拖来:目标原占用人坐到本人原工位(对调);目标本来没人则腾空
+        prev.user_id = displaced
+        if move_assets:
+            _move_owned_assets(db, m, prev, displaced)
+    elif displaced is not None and move_assets:
+        # 从侧栏拖来:被换下的人回到侧栏,其名下资产一并移出工位
+        _move_owned_assets(db, m, None, displaced)
+
+    moved = _move_owned_assets(db, m, seat, user_id) if move_assets else 0
     db.commit()
     return moved
+
+
+def _move_owned_assets(
+    db: Session, m: FloorMap, seat: Seat | None, user_id: int | None
+) -> int:
+    """把某人名下在用的个人资产挪到 TA 的新工位;seat=None 表示移出工位。"""
+    if user_id is None:
+        return 0
+    q = select(Asset).where(
+        Asset.owner_user_id == user_id,
+        Asset.status == AssetStatus.in_use,
+        Asset.asset_class == AssetClass.personal,
+        Asset.deleted_at.is_(None),
+    )
+    n = 0
+    for a in db.scalars(q):
+        _relocate(db, a, seat, m, operator_id=None)
+        n += 1
+    return n
 
 
 def set_alias(db: Session, m: FloorMap, seat_id: int, *, alias: str | None) -> None:
