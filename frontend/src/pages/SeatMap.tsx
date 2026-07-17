@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react'
 import {
+  AutoComplete,
   Button,
   Checkbox,
   Empty,
@@ -27,12 +28,15 @@ interface Seat {
   user_name: string | null
   assets: SeatAsset[]
 }
+interface MapLabel { id: number; row: number; col: number; text: string }
 interface MapMeta { id: number; name: string; rows: number; cols: number }
-interface MapDetail { map: MapMeta; seats: Seat[] }
+interface MapDetail { map: MapMeta; seats: Seat[]; labels: MapLabel[] }
 interface Person { id: number; name: string; department_name: string | null; asset_count: number }
 interface Candidates { people: Person[]; assets: SeatAsset[] }
 
 const ZONES = ['A', 'B', 'C', 'D']
+// 位置备注常用词(可自由输入,这些只是快捷选项)
+const LABEL_PRESETS = ['窗', '柜子', '机房', '前台', '门', '打印区', '会议室', '茶水间']
 const ZONE_COLORS: Record<string, string> = { A: '#3370FF', B: '#00B42A', C: '#FF8800', D: '#7E5EE5' }
 const zoneColor = (z?: string | null) => (z ? ZONE_COLORS[z] : undefined) ?? 'var(--border-strong)'
 type Sel = { kind: 'person' | 'asset'; id: number; label: string } | null
@@ -45,6 +49,9 @@ export default function SeatMap() {
   const [cellSize, setCellSize] = useState(58)
   const [order, setOrder] = useState<'row' | 'serpentine'>('row')
   const [editCells, setEditCells] = useState<Record<string, string | null>>({})
+  const [editLabels, setEditLabels] = useState<Record<string, string>>({})
+  const [paint, setPaint] = useState<'seat' | 'label'>('seat')
+  const [labelText, setLabelText] = useState('窗')
   const [sel, setSel] = useState<Sel>(null)
   const [moveAssets, setMoveAssets] = useState(true)
   const [q, setQ] = useState('')
@@ -75,6 +82,11 @@ export default function SeatMap() {
   const seatAt = useMemo(() => {
     const m = new Map<string, Seat>()
     detail?.seats.forEach((s) => m.set(`${s.row}-${s.col}`, s))
+    return m
+  }, [detail])
+  const labelAt = useMemo(() => {
+    const m = new Map<string, string>()
+    detail?.labels?.forEach((lb) => m.set(`${lb.row}-${lb.col}`, lb.text))
     return m
   }, [detail])
 
@@ -127,7 +139,10 @@ export default function SeatMap() {
   const enterEdit = () => {
     const cells: Record<string, string | null> = {}
     detail?.seats.forEach((s) => { cells[`${s.row}-${s.col}`] = s.zone })
+    const labs: Record<string, string> = {}
+    detail?.labels?.forEach((lb) => { labs[`${lb.row}-${lb.col}`] = lb.text })
     setEditCells(cells)
+    setEditLabels(labs)
     setSel(null)
     setMode('edit')
   }
@@ -137,7 +152,11 @@ export default function SeatMap() {
         const [r, c] = k.split('-').map(Number)
         return { row: r, col: c, zone: z }
       })
-      await api.put(`/seatmaps/${mapId}/layout`, { seats })
+      const labels = Object.entries(editLabels).map(([k, text]) => {
+        const [r, c] = k.split('-').map(Number)
+        return { row: r, col: c, text }
+      })
+      await api.put(`/seatmaps/${mapId}/layout`, { seats, labels })
     }, '布局已保存')
   const autonumber = () =>
     mut(async () => { await api.post(`/seatmaps/${mapId}/autonumber`, { order, per_zone: true, prefix: 'A' }) }, '已自动编号')
@@ -145,6 +164,19 @@ export default function SeatMap() {
   const onCell = (r: number, c: number) => {
     const k = `${r}-${c}`
     if (mode === 'edit') {
+      if (paint === 'label') {
+        // 备注只贴空白格 —— 一个格子要么工位要么备注(后端同样校验)
+        if (k in editCells) { message.info('该格是工位,先点成过道再加备注'); return }
+        if (k in editLabels) {
+          setEditLabels((p) => { const n = { ...p }; delete n[k]; return n })
+          return
+        }
+        const t = labelText.trim()
+        if (!t) { message.info('先填备注文字,如「窗」'); return }
+        setEditLabels((p) => ({ ...p, [k]: t }))
+        return
+      }
+      if (k in editLabels) { message.info('该格是备注,先点掉备注再放工位'); return }
       setEditCells((prev) => {
         const next = { ...prev }
         if (k in next) delete next[k]
@@ -222,11 +254,30 @@ export default function SeatMap() {
           />
           {mode === 'edit' ? (
             <>
-              <span style={{ fontSize: 12, color: 'var(--text-3)' }}>区域</span>
-              <Select value={zone} onChange={setZone} style={{ width: 80 }}
-                options={ZONES.map((z) => ({ value: z, label: z + ' 区' }))} />
+              <Segmented
+                value={paint}
+                onChange={(v) => setPaint(v as 'seat' | 'label')}
+                options={[{ label: '工位', value: 'seat' }, { label: '位置备注', value: 'label' }]}
+              />
+              {paint === 'seat' ? (
+                <>
+                  <span style={{ fontSize: 12, color: 'var(--text-3)' }}>区域</span>
+                  <Select value={zone} onChange={setZone} style={{ width: 80 }}
+                    options={ZONES.map((z) => ({ value: z, label: z + ' 区' }))} />
+                </>
+              ) : (
+                <AutoComplete
+                  value={labelText} onChange={setLabelText} style={{ width: 130 }}
+                  options={LABEL_PRESETS.map((v) => ({ value: v }))}
+                  placeholder="窗 / 柜子 / 机房" allowClear
+                />
+              )}
               <Button type="primary" onClick={saveLayout}>保存布局</Button>
-              <span style={{ fontSize: 12, color: 'var(--text-4)' }}>点格子:工位 ⇄ 过道;先保存再自动编号</span>
+              <span style={{ fontSize: 12, color: 'var(--text-4)' }}>
+                {paint === 'seat'
+                  ? '点格子:工位 ⇄ 过道;先保存再自动编号'
+                  : '点空白格:加/去备注(窗、柜子、机房、前台…)'}
+              </span>
             </>
           ) : (
             <>
@@ -254,8 +305,10 @@ export default function SeatMap() {
                 const seat = seatAt.get(k)
                 const isSeat = mode === 'edit' ? k in editCells : !!seat
                 const cellZone = mode === 'edit' ? editCells[k] : seat?.zone
+                const note = mode === 'edit' ? editLabels[k] : labelAt.get(k)
                 return (
                   <Cell key={k} size={cellSize} isSeat={isSeat} editing={mode === 'edit'} seat={seat} zone={cellZone}
+                    label={note}
                     draggable={mode === 'assign' && !!seat?.user_id}
                     onDragStart={(e) => { if (seat?.user_id) e.dataTransfer.setData('text/plain', `person:${seat.user_id}`) }}
                     onClick={() => onCell(r, c)}
@@ -365,11 +418,29 @@ function PageHead({ onNew, children }: { onNew: () => void; children?: React.Rea
   )
 }
 
-function Cell({ size, isSeat, editing, seat, zone, draggable, onDragStart, onClick, onDrop, onDragOver }: {
+function Cell({ size, isSeat, editing, seat, zone, label, draggable, onDragStart, onClick, onDrop, onDragOver }: {
   size: number; isSeat: boolean; editing: boolean; seat?: Seat; zone?: string | null
+  label?: string
   draggable?: boolean; onDragStart?: (e: React.DragEvent) => void
   onClick: () => void; onDrop: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
 }) {
+  // 位置备注格(窗/柜子/机房…):平面图上的参照物,不可落座/放设备。
+  if (label) {
+    return (
+      <div onClick={onClick} title={label}
+        style={{
+          width: size, height: size, borderRadius: 8, padding: 3,
+          cursor: editing ? 'pointer' : 'default',
+          border: '1px dashed var(--border-strong)', background: 'var(--bg-canvas)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          textAlign: 'center', overflow: 'hidden',
+        }}>
+        <span style={{ fontSize: size < 52 ? 10 : 11, color: 'var(--text-3)', lineHeight: 1.15 }}>
+          {label}
+        </span>
+      </div>
+    )
+  }
   // Non-seat cell: a paintable 过道 in edit mode, invisible whitespace in assign
   // mode (so empty aisles don't clutter the map and seat clusters stand out).
   if (!isSeat) {

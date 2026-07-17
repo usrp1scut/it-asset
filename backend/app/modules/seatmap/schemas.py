@@ -33,9 +33,17 @@ class SeatOut(BaseModel):
     assets: list[SeatAssetOut] = []
 
 
+class MapLabelOut(BaseModel):
+    id: int
+    row: int
+    col: int
+    text: str
+
+
 class MapDetail(BaseModel):
     map: MapOut
     seats: list[SeatOut]
+    labels: list[MapLabelOut] = []
 
 
 class LayoutCell(BaseModel):
@@ -44,8 +52,16 @@ class LayoutCell(BaseModel):
     zone: str | None = None
 
 
+class LabelCell(BaseModel):
+    row: int
+    col: int
+    text: str
+
+
 class LayoutIn(BaseModel):
     seats: list[LayoutCell]
+    # 空白格上的位置备注(窗/柜子/机房/前台…);与 seats 互斥同一格
+    labels: list[LabelCell] = []
 
 
 class AutoNumberIn(BaseModel):

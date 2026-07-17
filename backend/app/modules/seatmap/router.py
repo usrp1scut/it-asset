@@ -77,7 +77,10 @@ def candidates(map_id: int, q: str | None = None, db: Session = Depends(get_db),
 def set_layout(map_id: int, body: LayoutIn, db: Session = Depends(get_db),
                _: User = Depends(it_admin)):
     m = _get(db, map_id)
-    service.set_layout(db, m, body.seats)
+    try:
+        service.set_layout(db, m, body.seats, body.labels)
+    except service.SeatMapError as e:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(e)) from e
     return service.map_payload(db, m)
 
 

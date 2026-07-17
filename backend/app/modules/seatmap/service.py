@@ -10,7 +10,7 @@ from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.modules.assets.models import Asset, AssetChangeLog, AssetClass, AssetStatus
-from app.modules.seatmap.models import FloorMap, Seat
+from app.modules.seatmap.models import FloorMap, MapLabel, Seat
 from app.modules.users.models import Department, User, UserStatus
 
 
@@ -81,14 +81,26 @@ def _assets_on(db: Session, seat_ids: list[int]) -> dict[int, list[Asset]]:
     return out
 
 
+def labels_of(db: Session, map_id: int) -> list[MapLabel]:
+    return list(
+        db.scalars(
+            select(MapLabel).where(MapLabel.map_id == map_id).order_by(MapLabel.row, MapLabel.col)
+        )
+    )
+
+
 def map_payload(db: Session, m: FloorMap) -> dict:
-    """Assemble the map + enriched seats (occupant name + placed assets)."""
+    """Assemble the map + enriched seats (occupant name + placed assets) + labels."""
     seats = seats_of(db, m.id)
     on = _assets_on(db, [s.id for s in seats])
     uids = {s.user_id for s in seats if s.user_id}
     names = {u.id: u.name for u in db.scalars(select(User).where(User.id.in_(uids or [0])))}
     return {
         "map": m,
+        "labels": [
+            {"id": lb.id, "row": lb.row, "col": lb.col, "text": lb.text}
+            for lb in labels_of(db, m.id)
+        ],
         "seats": [
             {
                 "id": s.id,
@@ -115,6 +127,7 @@ def delete_map(db: Session, m: FloorMap) -> None:
         for a in db.scalars(select(Asset).where(Asset.seat_id.in_(ids))):
             _relocate(db, a, None, m, operator_id=None)
         db.execute(delete(Seat).where(Seat.map_id == m.id))
+    db.execute(delete(MapLabel).where(MapLabel.map_id == m.id))
     db.delete(m)
     db.commit()
 
@@ -122,15 +135,25 @@ def delete_map(db: Session, m: FloorMap) -> None:
 # ── layout / numbering ────────────────────────────────────────────────────────
 
 
-def set_layout(db: Session, m: FloorMap, cells: list) -> None:
-    """Replace the set of seat cells (add new, update zone, remove absent).
-    Removing a seat first moves any assets on it off the map."""
-    existing = {(s.row, s.col): s for s in seats_of(db, m.id)}
-    incoming = {
-        (c.row, c.col): c
-        for c in cells
-        if 0 <= c.row < m.rows and 0 <= c.col < m.cols
+def set_layout(db: Session, m: FloorMap, cells: list, labels: list | None = None) -> None:
+    """Replace the set of seat cells (add new, update zone, remove absent) and
+    the set of position labels (窗/柜子/机房…) in one save.
+
+    Removing a seat first moves any assets on it off the map. A cell is either a
+    seat or a label — never both.
+    """
+    in_bounds = lambda r, c: 0 <= r < m.rows and 0 <= c < m.cols  # noqa: E731
+    incoming = {(c.row, c.col): c for c in cells if in_bounds(c.row, c.col)}
+    incoming_labels = {
+        (lb.row, lb.col): lb
+        for lb in (labels or [])
+        if in_bounds(lb.row, lb.col) and (lb.text or "").strip()
     }
+    clash = set(incoming) & set(incoming_labels)
+    if clash:
+        raise SeatMapError("同一格子不能既是工位又是备注")
+
+    existing = {(s.row, s.col): s for s in seats_of(db, m.id)}
     for (r, c), cell in incoming.items():
         s = existing.get((r, c))
         if s:
@@ -142,6 +165,17 @@ def set_layout(db: Session, m: FloorMap, cells: list) -> None:
             for a in db.scalars(select(Asset).where(Asset.seat_id == s.id)):
                 _relocate(db, a, None, m, operator_id=None)
             db.delete(s)
+
+    existing_labels = {(lb.row, lb.col): lb for lb in labels_of(db, m.id)}
+    for (r, c), lb in incoming_labels.items():
+        cur = existing_labels.get((r, c))
+        if cur:
+            cur.text = lb.text.strip()[:32]
+        else:
+            db.add(MapLabel(map_id=m.id, row=r, col=c, text=lb.text.strip()[:32]))
+    for (r, c), cur in existing_labels.items():
+        if (r, c) not in incoming_labels:
+            db.delete(cur)
     db.commit()
 
 

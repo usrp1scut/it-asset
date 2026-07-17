@@ -81,6 +81,7 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
     payload = service.map_payload(db, m)
     seats = payload["seats"]
     by_cell = {(s["row"], s["col"]): s for s in seats}
+    labels = payload.get("labels") or []
     total = len(seats)
     occupied = sum(1 for s in seats if s["user_id"] or s["assets"])
     with_assets = sum(1 for s in seats if s["assets"])
@@ -180,5 +181,22 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
             pdf.set_font(font, size=nm_pt)
             pdf.set_xy(x, y + cell * 0.46)
             pdf.cell(cell, cell * 0.3, f"{nd} 台", align="C")
+
+    # ── position labels (窗 / 柜子 / 机房 / 前台 …) ────────────────────────────
+    # Reference markers on blank cells: muted, no border — they orient the reader
+    # without competing with the seats.
+    for lb in labels:
+        x = left + lb["col"] * (cell + gap)
+        y = grid_top + lb["row"] * (cell + gap)
+        pdf.set_fill_color(242, 243, 245)
+        pdf.rect(x, y, cell, cell, style="F")
+        pdf.set_text_color(120, 126, 138)
+        lines, lpt = _name_lines(pdf, font, lb["text"], cell - 2 * (cell * 0.1), nm_pt)
+        pdf.set_font(font, size=lpt)
+        lh = min(cell * 0.26, cell / max(len(lines), 1))
+        y0 = y + max(0.0, (cell - lh * len(lines)) / 2)
+        for idx, ln in enumerate(lines):
+            pdf.set_xy(x, y0 + idx * lh)
+            pdf.cell(cell, lh, ln, align="C")
 
     return bytes(pdf.output())

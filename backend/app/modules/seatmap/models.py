@@ -46,3 +46,20 @@ class Seat(Base):
     seat_no: Mapped[str | None] = mapped_column(String(16))  # 自动编号,如 A05
     zone: Mapped[str | None] = mapped_column(String(16))     # 区域,如 A / B
     user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"))  # 就座的人
+
+
+class MapLabel(Base):
+    """空白格上的位置备注(窗 / 柜子 / 机房 / 前台 …)。
+
+    纯粹是平面图上的参照物注记:不参与自动编号与统计,不能坐人、不能放设备。
+    一个格子要么是工位、要么是备注,二者互斥(见 service.set_layout 的校验)。
+    """
+
+    __tablename__ = "map_labels"
+    __table_args__ = (UniqueConstraint("map_id", "row", "col", name="uq_label_map_cell"),)
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    map_id: Mapped[int] = mapped_column(ForeignKey("floor_maps.id"), index=True)
+    row: Mapped[int] = mapped_column(Integer)
+    col: Mapped[int] = mapped_column(Integer)
+    text: Mapped[str] = mapped_column(String(32))

@@ -194,6 +194,44 @@ def test_seatmap_export_pdf():
     assert client.get(f"/api/seatmaps/{mk['id']}/export", headers=emp).status_code == 403
 
 
+def test_seatmap_labels_save_update_clear_and_clash():
+    """空白格位置备注(窗/机房/前台):随布局一起存,替换式语义,与工位互斥。"""
+    h = _h(_login())
+    name = f"3F-{uuid.uuid4().hex[:4]}"
+    mid = client.post(
+        "/api/seatmaps", json={"name": name, "rows": 2, "cols": 2}, headers=h
+    ).json()["map"]["id"]
+    seats = [{"row": 0, "col": 0, "zone": "A"}, {"row": 0, "col": 1, "zone": "A"}]
+
+    # 工位在第一行,备注贴在下面的空白格
+    det = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": seats, "labels": [
+            {"row": 1, "col": 0, "text": "窗"}, {"row": 1, "col": 1, "text": "机房"},
+        ]},
+        headers=h,
+    ).json()
+    assert len(det["seats"]) == 2
+    assert sorted(lb["text"] for lb in det["labels"]) == ["机房", "窗"]
+
+    # 改文案 + 删掉一个
+    det2 = client.put(
+        f"/api/seatmaps/{mid}/layout",
+        json={"seats": seats, "labels": [{"row": 1, "col": 0, "text": "前台"}]},
+        headers=h,
+    ).json()
+    assert [(lb["row"], lb["col"], lb["text"]) for lb in det2["labels"]] == [(1, 0, "前台")]
+
+    # 不传 labels -> 清空(替换式)
+    det3 = client.put(f"/api/seatmaps/{mid}/layout", json={"seats": seats}, headers=h).json()
+    assert det3["labels"] == []
+
+    # 同一格既是工位又是备注 -> 409
+    bad = {"seats": [{"row": 0, "col": 0, "zone": "A"}],
+           "labels": [{"row": 0, "col": 0, "text": "窗"}]}
+    assert client.put(f"/api/seatmaps/{mid}/layout", json=bad, headers=h).status_code == 409
+
+
 def test_seatmap_pdf_name_fits_without_truncation():
     """导出时工位姓名不应被截断:够长就缩字号,再长折两行,极端才省略。"""
     from app.modules.seatmap import pdf as seatmap_pdf
