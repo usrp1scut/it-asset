@@ -247,11 +247,34 @@ def test_seatmap_pdf_name_fits_without_truncation():
     assert "".join(lines) == name
     assert "…" not in "".join(lines)
 
-    # 很长的名字:折成不超过两行,仍不截断
+    # 很长的名字:折行后仍不截断
     long_name = "测试超长姓名王小明ABCDEFG"
     llines, _ = seatmap_pdf._name_lines(p, font, long_name, 22.0, 9.0)
-    assert 1 <= len(llines) <= 2
+    assert 1 <= len(llines) <= 3
     assert "".join(llines) == long_name
+
+    # 通讯录显示名「名字(别名)」按括号拆行,而不是硬折成 `Lily (` / `李…`
+    assert seatmap_pdf._name_parts("Lily（李小明）") == ["Lily", "李小明"]
+    assert seatmap_pdf._name_parts("Lily(李小明)") == ["Lily", "李小明"]
+    assert seatmap_pdf._name_parts("张三") == ["张三"]
+    plines, _ = seatmap_pdf._name_lines(p, font, "Lily（李小明）", 24.0 - 2 * 1.92, 9.0)
+    assert plines == ["Lily", "李小明"]
+
+
+def test_seatmap_pdf_page_grows_for_big_maps():
+    """页面迁就内容:小图仍是 A4;大图把页面放大,而不是把格子压小到放不下名字。"""
+    from app.modules.seatmap import pdf as seatmap_pdf
+
+    # 小图 -> A4 横向,格子取舒适值
+    pw, ph, cell = seatmap_pdf._page_geometry(4, 6)
+    assert (pw, ph) == seatmap_pdf._A4_LANDSCAPE
+    assert cell == seatmap_pdf._TARGET_CELL
+
+    # 128 工位那种大图 -> 页面变大,格子不被压缩
+    bw, bh, bcell = seatmap_pdf._page_geometry(14, 25)
+    assert bcell == seatmap_pdf._TARGET_CELL
+    assert bw > pw and bh > ph
+    assert bw <= seatmap_pdf._MAX_PAGE[0] and bh <= seatmap_pdf._MAX_PAGE[1]
 
 
 def test_seatmap_requires_roles():

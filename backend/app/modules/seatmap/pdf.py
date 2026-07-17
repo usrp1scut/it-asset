@@ -1,7 +1,13 @@
-"""座位图 → A4 横向 PDF(矢量平面图,非截图).
+"""座位图 → PDF(矢量平面图,非截图).
 
 复用 labels.py 的 fpdf2 + 内置 CJK 字体(wqy-zenhei)。每个工位画成方格:顶部区域
-色条 + 编号 + 占用人(或设备数),过道留空。自动缩放格子以铺满一页。
+色条 + 编号 + 占用人(或设备数),过道留空,空白格可带位置备注(窗/机房…)。
+
+版面策略:**页面迁就内容,而不是把内容压进 A4**。
+- 只画用到的范围(按工位/备注的外接矩形裁掉四周空白行列);
+- 以「舒适格子边长」反推页面尺寸 —— 小图还是 A4,大图自动长成 A2/A1 这类
+  平面图常见幅面。这样格子不会被压小到姓名放不下(旧版 128 工位图就是被
+  压到 ~11mm,连 4.5pt 都塞不下,只能省略号截断)。
 """
 from datetime import date
 from pathlib import Path
@@ -18,6 +24,14 @@ _CJK_FONT_PATHS = [
 ]
 _ZONE_RGB = {"A": (51, 112, 255), "B": (0, 180, 42), "C": (255, 136, 0), "D": (126, 94, 229)}
 _GRAY = (150, 155, 165)
+
+_TARGET_CELL = 24.0          # 舒适格子边长(mm):姓名能完整放下的尺寸
+_MIN_CELL = 10.0
+_A4_LANDSCAPE = (297.0, 210.0)   # 页面下限
+_MAX_PAGE = (1189.0, 841.0)      # 页面上限(A0),超大图才会触顶
+_MARGIN = 10.0
+_GRID_TOP = 30.0                 # 让出标题 + 汇总 + 图例
+_GAP = 1.4
 
 
 def _register_font(pdf: FPDF) -> str:
@@ -61,53 +75,98 @@ def _wrap(pdf: FPDF, font: str, text: str, max_w: float, pt: float, max_lines: i
     return lines, fully
 
 
+def _name_parts(text: str) -> list[str]:
+    """『Lily(李四)』→ ['Lily', '李四'].
+
+    通讯录显示名是「名字(别名)」,按括号拆成两行远比硬折字好读
+    (旧版会切成 `Lily (` / `李…`)。没有括号就整串一行。
+    """
+    t = (text or "").strip()
+    for lp, rp in (("（", "）"), ("(", ")")):
+        if lp in t:
+            head, _, tail = t.partition(lp)
+            head, tail = head.strip(), tail.strip().removesuffix(rp).strip()
+            if head and tail:
+                return [head, tail]
+    return [t]
+
+
 def _name_lines(
-    pdf: FPDF, font: str, text: str, max_w: float, pt_hi: float
+    pdf: FPDF, font: str, text: str, max_w: float, pt_hi: float, max_lines: int = 3
 ) -> tuple[list[str], float]:
-    """Fit an occupant name without cutting it off: pick the largest font
-    (≤ pt_hi, down to 4.5) at which the name wraps into ≤ 2 lines; only if it
-    still overflows at 4.5pt do we ellipsize. Returns (lines, pt)."""
+    """把姓名完整放进格子:先按「名字/别名」拆行,再按需缩字号 + 折行。
+    只有缩到最小字号仍放不下才省略。返回 (lines, pt)。"""
+    segs = _name_parts(text)
     pt = pt_hi
     while pt >= 4.5:
-        lines, fully = _wrap(pdf, font, text, max_w, pt, 2)
-        if fully:
+        lines: list[str] = []
+        ok = True
+        for seg in segs:
+            room = max_lines - len(lines)
+            if room <= 0:
+                ok = False
+                break
+            ls, fully = _wrap(pdf, font, seg, max_w, pt, room)
+            if not fully:
+                ok = False
+                break
+            lines += ls
+        if ok and lines:
             return lines, pt
         pt -= 0.5
-    lines, _ = _wrap(pdf, font, text, max_w, 4.5, 2)
+    lines, _ = _wrap(pdf, font, text, max_w, 4.5, max_lines)
     return lines, 4.5
+
+
+def _page_geometry(rows_used: int, cols_used: int) -> tuple[float, float, float]:
+    """(page_w, page_h, cell) —— 按舒适格子反推页面,再受最大幅面钳制。"""
+    fit_w = (_MAX_PAGE[0] - 2 * _MARGIN - (cols_used - 1) * _GAP) / cols_used
+    fit_h = (_MAX_PAGE[1] - _GRID_TOP - _MARGIN - (rows_used - 1) * _GAP) / rows_used
+    cell = max(min(_TARGET_CELL, fit_w, fit_h), _MIN_CELL)
+    grid_w = cols_used * cell + (cols_used - 1) * _GAP
+    grid_h = rows_used * cell + (rows_used - 1) * _GAP
+    pw = max(_A4_LANDSCAPE[0], grid_w + 2 * _MARGIN)
+    ph = max(_A4_LANDSCAPE[1], grid_h + _GRID_TOP + _MARGIN)
+    return pw, ph, cell
 
 
 def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
     payload = service.map_payload(db, m)
     seats = payload["seats"]
-    by_cell = {(s["row"], s["col"]): s for s in seats}
     labels = payload.get("labels") or []
+    by_cell = {(s["row"], s["col"]): s for s in seats}
     total = len(seats)
     occupied = sum(1 for s in seats if s["user_id"] or s["assets"])
     with_assets = sum(1 for s in seats if s["assets"])
     zones = sorted({s["zone"] for s in seats if s["zone"]})
 
-    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    # 只画用到的范围:四周成片的空行空列不该把格子压小
+    used = [(s["row"], s["col"]) for s in seats] + [(lb["row"], lb["col"]) for lb in labels]
+    if used:
+        r0, r1 = min(r for r, _ in used), max(r for r, _ in used)
+        c0, c1 = min(c for _, c in used), max(c for _, c in used)
+    else:
+        r0, r1, c0, c1 = 0, m.rows - 1, 0, m.cols - 1
+    rows_used, cols_used = r1 - r0 + 1, c1 - c0 + 1
+
+    pw, ph, cell = _page_geometry(rows_used, cols_used)
+    pdf = FPDF(unit="mm", format=(pw, ph))  # 纵横由 format 直接给定
     pdf.set_auto_page_break(auto=False)
     pdf.add_page()
     font = _register_font(pdf)
-    pw, ph = 297.0, 210.0
-    margin = 10.0
 
     # ── header ────────────────────────────────────────────────────────────────
     pdf.set_text_color(20, 20, 25)
     pdf.set_font(font, size=15)
-    pdf.set_xy(margin, 8)
+    pdf.set_xy(_MARGIN, 8)
     pdf.cell(0, 8, f"座位图 · {m.name}")
     pdf.set_font(font, size=9)
     pdf.set_text_color(*_GRAY)
-    pdf.set_xy(margin, 17)
+    pdf.set_xy(_MARGIN, 17)
     pdf.cell(0, 5, f"工位 {total} · 已坐 {occupied} · 空 {total - occupied} · 带资产 {with_assets}"
                    f"    导出 {date.today().isoformat()}")
-    # zone legend
     if len(zones) > 1:
-        x = margin
-        y = 23.5
+        x, y = _MARGIN, 23.5
         for z in zones:
             pdf.set_fill_color(*_ZONE_RGB.get(z, _GRAY))
             pdf.rect(x, y, 3, 3, style="F")
@@ -120,22 +179,18 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
             x += 6 + pdf.get_string_width(label)
 
     # ── grid ────────────────────────────────────────────────────────────────
-    grid_top = 30.0
-    avail_w = pw - 2 * margin
-    avail_h = ph - grid_top - margin
-    gap = 1.4
-    cols, rows = m.cols, m.rows
-    cell = min((avail_w - (cols - 1) * gap) / cols, (avail_h - (rows - 1) * gap) / rows, 26.0)
-    cell = max(cell, 6.0)
-    grid_w = cols * cell + (cols - 1) * gap
-    left = margin + (avail_w - grid_w) / 2
+    grid_w = cols_used * cell + (cols_used - 1) * _GAP
+    left = _MARGIN + max(0.0, (pw - 2 * _MARGIN - grid_w) / 2)
+
+    def cell_xy(r: int, c: int) -> tuple[float, float]:
+        return left + (c - c0) * (cell + _GAP), _GRID_TOP + (r - r0) * (cell + _GAP)
 
     no_pt = min(max(cell * 0.42, 4.0), 7.0)
     nm_pt = min(max(cell * 0.5, 4.5), 9.0)
+    pad = cell * 0.08
 
     for (r, c), s in by_cell.items():
-        x = left + c * (cell + gap)
-        y = grid_top + r * (cell + gap)
+        x, y = cell_xy(r, c)
         occ = bool(s["user_id"])
         nd = len(s["assets"])
         if occ:
@@ -147,7 +202,6 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
         pdf.set_draw_color(205, 210, 220)
         pdf.set_line_width(0.2)
         pdf.rect(x, y, cell, cell, style="DF")
-        # zone accent stripe
         pdf.set_fill_color(*_ZONE_RGB.get(s["zone"], _GRAY))
         pdf.rect(x, y, cell, max(cell * 0.12, 1.2), style="F")
 
@@ -158,15 +212,12 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
         pdf.cell(cell, cell * 0.28, s["seat_no"] or "—", align="C")
 
         # occupant / device
-        pad = cell * 0.12
         if occ:
             pdf.set_text_color(12, 68, 124)
-            # fit the full name (shrink font, then wrap to 2 lines) so long
-            # names aren't silently chopped off in the export
             lines, npt = _name_lines(pdf, font, s["user_name"] or "已占", cell - 2 * pad, nm_pt)
-            show_count = bool(nd) and len(lines) == 1 and cell >= 16
-            top, bottom = cell * 0.42, cell * (0.72 if show_count else 0.86)
-            lh = min(cell * 0.24, (bottom - top) / len(lines))
+            show_count = bool(nd) and len(lines) <= 2 and cell >= 16
+            top, bottom = cell * 0.42, cell * (0.74 if show_count else 0.88)
+            lh = min(cell * 0.22, (bottom - top) / len(lines))
             y0 = y + top + max(0.0, (bottom - top - lh * len(lines)) / 2)
             pdf.set_font(font, size=npt)
             for idx, ln in enumerate(lines):
@@ -186,14 +237,13 @@ def render_seatmap_pdf(db: Session, m: FloorMap) -> bytes:
     # Reference markers on blank cells: muted, no border — they orient the reader
     # without competing with the seats.
     for lb in labels:
-        x = left + lb["col"] * (cell + gap)
-        y = grid_top + lb["row"] * (cell + gap)
+        x, y = cell_xy(lb["row"], lb["col"])
         pdf.set_fill_color(242, 243, 245)
         pdf.rect(x, y, cell, cell, style="F")
         pdf.set_text_color(120, 126, 138)
-        lines, lpt = _name_lines(pdf, font, lb["text"], cell - 2 * (cell * 0.1), nm_pt)
+        lines, lpt = _name_lines(pdf, font, lb["text"], cell - 2 * pad, nm_pt)
         pdf.set_font(font, size=lpt)
-        lh = min(cell * 0.26, cell / max(len(lines), 1))
+        lh = min(cell * 0.24, cell / max(len(lines), 1))
         y0 = y + max(0.0, (cell - lh * len(lines)) / 2)
         for idx, ln in enumerate(lines):
             pdf.set_xy(x, y0 + idx * lh)
