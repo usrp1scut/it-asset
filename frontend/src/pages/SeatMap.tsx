@@ -69,15 +69,21 @@ export default function SeatMap() {
     queryFn: async () => (await api.get('/seatmaps')).data,
   })
   const mapId = currentId ?? maps?.[0]?.id ?? null
+  // 分配模式多人同时排座:每 10s 拉一次,别人换的座这边跟着变。布局编辑不轮询——
+  // 那边的涂改还没保存,后台刷新会把它冲掉(编辑的并发交给保存时的乐观锁挡)。
+  // react-query 默认标签页切走就暂停轮询、切回来立刻补一次,不用自己管。
+  const poll = mode === 'assign' ? 10_000 : false
   const { data: detail, isLoading } = useQuery<MapDetail>({
     queryKey: ['seatmap', mapId],
     queryFn: async () => (await api.get(`/seatmaps/${mapId}`)).data,
     enabled: mapId != null,
+    refetchInterval: poll,
   })
   const { data: cand } = useQuery<Candidates>({
     queryKey: ['seatmap-cand', mapId, q],
     queryFn: async () => (await api.get(`/seatmaps/${mapId}/candidates`, { params: { q: q || undefined } })).data,
     enabled: mapId != null && mode === 'assign',
+    refetchInterval: poll,
   })
 
   const invalidate = () => {
@@ -324,6 +330,7 @@ export default function SeatMap() {
               <Checkbox checked={moveAssets} onChange={(e) => setMoveAssets(e.target.checked)}>
                 落座时带入名下在用资产
               </Checkbox>
+              <span style={{ fontSize: 12, color: 'var(--text-4)' }}>每 10 秒自动刷新</span>
             </>
           )}
         </div>
