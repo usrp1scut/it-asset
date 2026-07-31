@@ -58,6 +58,38 @@ def test_list_assets_regex_search():
     assert bad.status_code == 400
 
 
+def test_list_assets_field_scoped_search():
+    admin = _login()
+    tag = uuid.uuid4().hex[:6].upper()  # unique tag shared by both assets
+    # A: tag lives in brand_model; B: tag lives in spec (配置).
+    a = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC", "brand_model": f"MODEL-{tag}"},
+        headers=_h(admin),
+    ).json()["asset_code"]
+    b = client.post(
+        "/api/assets",
+        json={"asset_class": "personal", "prefix": "PC", "spec": f"SPEC-{tag}"},
+        headers=_h(admin),
+    ).json()["asset_code"]
+
+    def codes(**params):
+        r = client.get("/api/assets", params={"q": tag, **params}, headers=_h(admin))
+        assert r.status_code == 200
+        return {i["asset_code"] for i in r.json()["items"]}
+
+    # No fields → default all columns, both match (unchanged behavior).
+    assert {a, b} <= codes()
+    # Restrict to 配置(spec) → only B; A's brand_model hit is excluded.
+    only_spec = codes(fields="spec")
+    assert b in only_spec and a not in only_spec
+    # Restrict to 型号(brand_model) → only A.
+    only_model = codes(fields="brand_model")
+    assert a in only_model and b not in only_model
+    # Unknown field key is ignored → falls back to all columns, both match.
+    assert {a, b} <= codes(fields="nonexistent_col")
+
+
 def test_asset_type_crud_and_create_via_type():
     admin = _login()
 

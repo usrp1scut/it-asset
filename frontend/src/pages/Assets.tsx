@@ -36,6 +36,17 @@ const STATUS_TABS: { key: string; label: string }[] = [
   { key: 'scrapped', label: '已报废' },
 ]
 
+// 关键词可搜的字段:value 必须与后端 _SEARCH_COLUMNS 的键一致。默认全选 =
+// 历史行为(编号/型号/序列号/责任人),取消勾选可缩小到只搜某几个字段。
+const SEARCH_FIELDS = [
+  { value: 'asset_code', label: '编号' },
+  { value: 'brand_model', label: '型号' },
+  { value: 'serial_number', label: '序列号' },
+  { value: 'owner_name', label: '责任人' },
+  { value: 'spec', label: '配置' },
+]
+const ALL_FIELD_KEYS = SEARCH_FIELDS.map((f) => f.value)
+
 export default function Assets() {
   const [status, setStatus] = useState('')
   const [q, setQ] = useState('')
@@ -55,6 +66,8 @@ export default function Assets() {
   // Treat the search box as a POSIX regex (case-insensitive) instead of a
   // plain substring match.
   const [regex, setRegex] = useState(false)
+  // 关键词搜索作用的字段,默认全选(= 旧行为)。可缩小到只搜某几个字段。
+  const [searchFields, setSearchFields] = useState<string[]>(ALL_FIELD_KEYS)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedCodes, setSelectedCodes] = useState<string[]>([])
   const [labelsOpen, setLabelsOpen] = useState(false)
@@ -112,7 +125,7 @@ export default function Assets() {
   })
 
   const { data, isLoading, error } = useQuery<AssetListResponse>({
-    queryKey: ['assets', status, q, regex, page, needsReview],
+    queryKey: ['assets', status, q, regex, searchFields, page, needsReview],
     retry: false, // an invalid regex is a 400 — don't hammer it
     queryFn: async () =>
       (
@@ -120,6 +133,11 @@ export default function Assets() {
           params: {
             status: status || undefined,
             q: q || undefined,
+            // 全选(或没选)时不传,让后端按默认全字段搜;只在缩小范围时才带上
+            fields:
+              searchFields.length && searchFields.length < ALL_FIELD_KEYS.length
+                ? searchFields.join(',')
+                : undefined,
             regex: regex || undefined,
             needs_review: needsReview || undefined,
             page,
@@ -253,19 +271,36 @@ export default function Assets() {
         }}
         items={STATUS_TABS.map((t) => ({ key: t.key, label: t.label }))}
       />
-      <Space style={{ marginBottom: error ? 4 : 16 }}>
+      <Space style={{ marginBottom: error ? 4 : 16 }} wrap>
         <Input.Search
           placeholder={
-            regex
-              ? '正则匹配 编号/型号/序列号/责任人(如 ^PC-00\\d{2}$)'
-              : '搜索编号 / 型号 / 序列号 / 责任人'
+            (regex ? '正则匹配 ' : '搜索 ') +
+            SEARCH_FIELDS
+              // 未选任何字段时后端按全字段搜,占位符也照全部显示
+              .filter((f) => !searchFields.length || searchFields.includes(f.value))
+              .map((f) => f.label)
+              .join(' / ') +
+            (regex ? '(如 ^PC-00\\d{2}$)' : '')
           }
           allowClear
-          style={{ width: 360 }}
+          style={{ width: 340 }}
           onSearch={(v) => {
             setQ(v)
             setPage(1)
           }}
+        />
+        <Select
+          mode="multiple"
+          value={searchFields}
+          onChange={(v) => {
+            setSearchFields(v)
+            setPage(1)
+          }}
+          options={SEARCH_FIELDS}
+          maxTagCount="responsive"
+          placeholder="搜索字段(默认全部)"
+          style={{ minWidth: 160 }}
+          title="选择关键词在哪些字段里匹配;不选=全部字段"
         />
         <Tag.CheckableTag
           checked={regex}

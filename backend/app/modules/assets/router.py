@@ -105,17 +105,21 @@ def list_assets(
     type_id: int | None = None,
     department_id: int | None = None,
     q: str | None = None,
+    fields: str | None = None,
     regex: bool = False,
     needs_review: bool | None = None,
     scrap_candidate: bool | None = None,
     page: int = 1,
     size: int = 20,
 ):
+    # fields=asset_code,spec —— 逗号分隔的搜索字段;service 侧按白名单过滤,
+    # 空/全非法则回退到全部列(与不传等价)。
+    field_list = [f.strip() for f in fields.split(",") if f.strip()] if fields else None
     try:
         total, rows = service.list_assets(
             db, status=status_, asset_class=asset_class, type_id=type_id,
-            department_id=department_id, q=q, regex=regex, needs_review=needs_review,
-            scrap_candidate=scrap_candidate, page=page, size=size,
+            department_id=department_id, q=q, fields=field_list, regex=regex,
+            needs_review=needs_review, scrap_candidate=scrap_candidate, page=page, size=size,
         )
     except DataError as e:
         # Invalid user-supplied regex → POSIX engine errors. Roll back the

@@ -175,6 +175,18 @@ def change_type(
     return asset
 
 
+# 关键词可搜的列白名单:前端「搜索字段」多选传 fields,只有在这里登记过的键
+# 才会被采纳,其余静默忽略——避免把任意列名(乃至 SQL)透传进查询。默认(不传
+# fields)= 全选,与历史行为一致。regex 模式下同样只作用于被选中的这些列。
+_SEARCH_COLUMNS = {
+    "asset_code": Asset.asset_code,       # 编号
+    "brand_model": Asset.brand_model,     # 型号
+    "serial_number": Asset.serial_number, # 序列号
+    "owner_name": Asset.owner_name,       # 责任人
+    "spec": Asset.spec,                   # 配置
+}
+
+
 def list_assets(
     db: Session,
     *,
@@ -183,6 +195,7 @@ def list_assets(
     type_id: int | None = None,
     department_id: int | None = None,
     q: str | None = None,
+    fields: list[str] | None = None,
     regex: bool = False,
     needs_review: bool | None = None,
     scrap_candidate: bool | None = None,
@@ -203,12 +216,10 @@ def list_assets(
     if scrap_candidate is not None:
         stmt = stmt.where(Asset.scrap_candidate.is_(scrap_candidate))
     if q:
-        cols = (
-            Asset.asset_code,
-            Asset.brand_model,
-            Asset.serial_number,
-            Asset.owner_name,
-        )
+        # 只保留白名单里的选中列;去掉未知键后若为空(没选/全是非法键),回退到
+        # 全部列 —— 等同旧行为,也避免出现「搜了个寂寞」的空条件。
+        picked = [_SEARCH_COLUMNS[f] for f in (fields or []) if f in _SEARCH_COLUMNS]
+        cols = tuple(picked) if picked else tuple(_SEARCH_COLUMNS.values())
         if regex:
             # POSIX case-insensitive regex (`~*`) across the same columns.
             # NULL columns simply don't match. An invalid pattern raises a
