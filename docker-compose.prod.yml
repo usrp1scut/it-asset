@@ -1,5 +1,7 @@
 # Production / UAT compose.
-# Run with:  docker compose -f docker-compose.prod.yml --env-file .env -p it-asset-prod up -d --build
+# Run with:  docker compose -f docker-compose.prod.yml --env-file .env up -d --build
+# 项目名已由下方 `name:` 固化为 it-asset-prod,不用再带 -p;漏了 -p 会因项目名
+# 默认取目录名(it-asset)而对不上运行中的那套,导致新建一整套环境而非更新。
 #
 # Differences vs dev compose:
 #   - built images, no bind-mounted source, no --reload
@@ -11,6 +13,8 @@
 # Intranet HTTP UAT phase: Lark 免登 服务端硬要求 https,所以登录走
 # /api/auth/dev-login(需 .env 里 APP_DEBUG=true)。接上 https 域名后
 # 把 APP_DEBUG 关掉,并把域名加进 Lark 可信域名 / 重定向 URL,免登恢复。
+
+name: it-asset-prod
 
 x-backend-base: &backend-base
   build:

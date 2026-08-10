@@ -77,13 +77,25 @@ docker compose -p it-asset-prod exec backend python -m app.seed_demo
 
 ## 4. 更新部署
 
+拉最新代码后,**原地更新**已有那套(只重建有变化的容器,数据卷不动):
+
 ```bash
 cd it-asset
 git pull
-docker compose -f docker-compose.prod.yml -p it-asset-prod --env-file .env up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env up -d --build
 ```
 
 后端入口会自动跑 `alembic upgrade head`,无需手动迁移。
+
+> ⚠️ **项目名必须是 `it-asset-prod`,否则会新建一整套环境而不是更新。**
+> compose 靠「项目名 + 服务名」认已有容器。`docker-compose.prod.yml` 顶部已用
+> `name: it-asset-prod` 把项目名固化,所以上面的命令**不用再带 `-p`**;带上
+> `-p it-asset-prod` 也一样(两者等价)。
+> 但**千万别用别的项目名**——尤其不带 `-p` 又没走这个 compose 文件时,项目名会
+> 默认取当前目录名(`it-asset`),和运行中的 `it-asset-prod` 对不上,于是另起一套、
+> 抢端口、看不到原数据。更新前后都可 `docker compose ls` 自检:**只应有
+> `it-asset-prod` 一行**。若误建了 `it-asset` 那套,用
+> `docker compose -p it-asset -f docker-compose.prod.yml down` 清掉。
 
 ## 5. 备份
 
