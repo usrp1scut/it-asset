@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   AutoComplete,
   Button,
@@ -63,6 +63,9 @@ export default function SeatMap() {
   const [form, setForm] = useState({ name: '', rows: 6, cols: 8 })
   const [inspectId, setInspectId] = useState<number | null>(null)
   const [aliasDraft, setAliasDraft] = useState('')
+  // 搜人定位:选中后把工位滚到视口中间,并在选中期间给该工位描边
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [locatedId, setLocatedId] = useState<number | null>(null)
 
   const { data: maps } = useQuery<MapMeta[]>({
     queryKey: ['seatmaps'],
@@ -100,6 +103,28 @@ export default function SeatMap() {
     detail?.labels?.forEach((lb) => m.set(`${lb.row}-${lb.col}`, lb.text))
     return m
   }, [detail])
+  // 已落座的人:地图详情本来就带 user_name,搜人定位不用另外请求接口。
+  // (侧栏那个搜索框搜的是「未分配」候选池,按定义搜不到已落座的人。)
+  const seatedPeople = useMemo(
+    () =>
+      (detail?.seats ?? [])
+        .filter((s) => s.user_id && s.user_name)
+        .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? '', 'zh')),
+    [detail],
+  )
+  // 把目标工位滚到视口中间(超出边界浏览器会自动夹到 0 / max)。描边由
+  // locatedId 驱动、选中期间常驻——不设自动褪去的定时器,否则会连带把 Select
+  // 的值清空;描边用静态样式不用动画(Lark webview 扛不住常驻动画)。
+  const scrollToSeat = (seat: Seat) => {
+    const el = scrollRef.current
+    if (!el) return
+    const step = cellSize + 6 // 与网格 gap 保持一致
+    el.scrollTo({
+      left: seat.col * step - (el.clientWidth - cellSize) / 2,
+      top: seat.row * step - (el.clientHeight - cellSize) / 2,
+      behavior: 'smooth',
+    })
+  }
 
   const mut = (fn: () => Promise<unknown>, ok?: string) =>
     fn()
@@ -330,6 +355,29 @@ export default function SeatMap() {
               <Checkbox checked={moveAssets} onChange={(e) => setMoveAssets(e.target.checked)}>
                 落座时带入名下在用资产
               </Checkbox>
+              <Select
+                showSearch allowClear value={locatedId} placeholder="搜姓名定位工位"
+                style={{ width: 220 }}
+                notFoundContent={seatedPeople.length ? '无匹配的已落座人员' : '还没有人落座'}
+                optionFilterProp="title"
+                onChange={(v) => {
+                  setLocatedId(v ?? null)
+                  const seat = seatedPeople.find((s) => s.id === v)
+                  if (seat) scrollToSeat(seat)
+                }}
+                options={seatedPeople.map((s) => ({
+                  value: s.id,
+                  title: s.user_name ?? '',   // 搜索按姓名匹配
+                  label: (
+                    <span>
+                      {s.user_name}
+                      <span style={{ color: 'var(--text-3)', marginLeft: 6, fontSize: 12 }}>
+                        {s.display_no}{s.zone ? ` · ${s.zone} 区` : ''}
+                      </span>
+                    </span>
+                  ),
+                }))}
+              />
               <span style={{ fontSize: 12, color: 'var(--text-4)' }}>每 10 秒自动刷新</span>
             </>
           )}
@@ -345,7 +393,7 @@ export default function SeatMap() {
           {/* 画布视口:flex 子项默认 min-width:auto,不加 minWidth:0 它不会收缩,
               溢出的是整个页面而不是这块 —— 那样根本不存在容器滚动条。限高则让
               纵向也在这里滚,配合 .seatmap-scroll 的常驻滚动条。 */}
-          <div className="seatmap-scroll"
+          <div className="seatmap-scroll" ref={scrollRef}
             style={{ flex: '0 1 auto', minWidth: 0, maxHeight: 'calc(100vh - 300px)' }}>
             <div style={{
               display: 'grid',
@@ -362,6 +410,7 @@ export default function SeatMap() {
                 return (
                   <Cell key={k} size={cellSize} isSeat={isSeat} editing={mode === 'edit'} seat={seat} zone={cellZone}
                     label={note}
+                    highlight={!!seat && seat.id === locatedId}
                     draggable={mode === 'assign' && !!seat?.user_id}
                     onDragStart={(e) => { if (seat?.user_id) e.dataTransfer.setData('text/plain', `person:${seat.user_id}`) }}
                     onClick={() => onCell(r, c)}
@@ -484,9 +533,9 @@ function PageHead({ onNew, children }: { onNew: () => void; children?: React.Rea
   )
 }
 
-function Cell({ size, isSeat, editing, seat, zone, label, draggable, onDragStart, onClick, onDrop, onDragOver }: {
+function Cell({ size, isSeat, editing, seat, zone, label, highlight, draggable, onDragStart, onClick, onDrop, onDragOver }: {
   size: number; isSeat: boolean; editing: boolean; seat?: Seat; zone?: string | null
-  label?: string
+  label?: string; highlight?: boolean
   draggable?: boolean; onDragStart?: (e: React.DragEvent) => void
   onClick: () => void; onDrop: (e: React.DragEvent) => void; onDragOver: (e: React.DragEvent) => void
 }) {
@@ -537,6 +586,8 @@ function Cell({ size, isSeat, editing, seat, zone, label, draggable, onDragStart
         position: 'relative', width: size, height: size, borderRadius: 8,
         cursor: draggable ? 'grab' : 'pointer', padding: 3,
         border: `1px solid ${bd}`, background: bg,
+        // 定位命中:静态描边,选中期间常驻(清空/换人即消失)
+        boxShadow: highlight ? '0 0 0 3px var(--lark-blue)' : undefined,
         display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1,
         overflow: 'hidden',
       }}>
