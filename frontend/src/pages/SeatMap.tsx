@@ -103,15 +103,17 @@ export default function SeatMap() {
     detail?.labels?.forEach((lb) => m.set(`${lb.row}-${lb.col}`, lb.text))
     return m
   }, [detail])
-  // 已落座的人:地图详情本来就带 user_name,搜人定位不用另外请求接口。
-  // (侧栏那个搜索框搜的是「未分配」候选池,按定义搜不到已落座的人。)
-  const seatedPeople = useMemo(
-    () =>
-      (detail?.seats ?? [])
-        .filter((s) => s.user_id && s.user_name)
-        .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? '', 'zh')),
-    [detail],
-  )
+  // 侧栏搜索命中的「已落座」人员。/candidates 只返回未分配的人,按定义搜不到
+  // 已落座的——但地图详情本来就带 user_name,直接在前端筛,不用另外请求接口。
+  // 这样一个搜索框就能找到所有人:没落座的在「未分配人员」,落了座的在这组、
+  // 点一下定位过去。
+  const seatedMatches = useMemo(() => {
+    const kw = q.trim().toLowerCase()
+    if (!kw) return []
+    return (detail?.seats ?? [])
+      .filter((s) => s.user_id && s.user_name?.toLowerCase().includes(kw))
+      .sort((a, b) => (a.user_name ?? '').localeCompare(b.user_name ?? '', 'zh'))
+  }, [detail, q])
   // 把目标工位滚到视口中间(超出边界浏览器会自动夹到 0 / max)。描边由
   // locatedId 驱动、选中期间常驻——不设自动褪去的定时器,否则会连带把 Select
   // 的值清空;描边用静态样式不用动画(Lark webview 扛不住常驻动画)。
@@ -355,29 +357,6 @@ export default function SeatMap() {
               <Checkbox checked={moveAssets} onChange={(e) => setMoveAssets(e.target.checked)}>
                 落座时带入名下在用资产
               </Checkbox>
-              <Select
-                showSearch allowClear value={locatedId} placeholder="搜姓名定位工位"
-                style={{ width: 220 }}
-                notFoundContent={seatedPeople.length ? '无匹配的已落座人员' : '还没有人落座'}
-                optionFilterProp="title"
-                onChange={(v) => {
-                  setLocatedId(v ?? null)
-                  const seat = seatedPeople.find((s) => s.id === v)
-                  if (seat) scrollToSeat(seat)
-                }}
-                options={seatedPeople.map((s) => ({
-                  value: s.id,
-                  title: s.user_name ?? '',   // 搜索按姓名匹配
-                  label: (
-                    <span>
-                      {s.user_name}
-                      <span style={{ color: 'var(--text-3)', marginLeft: 6, fontSize: 12 }}>
-                        {s.display_no}{s.zone ? ` · ${s.zone} 区` : ''}
-                      </span>
-                    </span>
-                  ),
-                }))}
-              />
               <span style={{ fontSize: 12, color: 'var(--text-4)' }}>每 10 秒自动刷新</span>
             </>
           )}
@@ -423,8 +402,25 @@ export default function SeatMap() {
 
           {mode === 'assign' && (
             <div style={{ width: 240, flexShrink: 0 }}>
-              <Input.Search placeholder="搜索人员 / 设备" allowClear value={q}
+              <Input.Search placeholder="搜索人员 / 设备(含已落座)" allowClear value={q}
                 onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 12 }} />
+              {seatedMatches.length > 0 && (
+                <PanelGroup title="已落座 · 点击定位">
+                  {seatedMatches.map((s) => (
+                    <Chip key={'s' + s.id} icon="📍" title={s.user_name ?? ''}
+                      sub={s.display_no + (s.zone ? ` · ${s.zone} 区` : '')}
+                      active={locatedId === s.id}
+                      // 再点一次取消描边——和下面「未分配」chip 的选中/取消一致
+                      onClick={() => {
+                        if (locatedId === s.id) { setLocatedId(null); return }
+                        setLocatedId(s.id)
+                        scrollToSeat(s)
+                      }}
+                      // 从这里拖出去等同于从图上拖:落到有人的工位就是两人换位
+                      onDragStart={(e) => e.dataTransfer.setData('text/plain', `person:${s.user_id}`)} />
+                  ))}
+                </PanelGroup>
+              )}
               <PanelGroup title="未分配人员">
                 {(cand?.people ?? []).map((p) => (
                   <Chip key={'p' + p.id} icon="👤" title={p.name}
@@ -447,7 +443,7 @@ export default function SeatMap() {
               <div style={{ fontSize: 12, color: 'var(--text-4)', marginTop: 8 }}>
                 {sel
                   ? `已选「${sel.label}」· 点工位落座`
-                  : '点人员/设备再点工位,或直接拖入;拖到有人的工位=两人换位,点工位看详情'}
+                  : '搜姓名可找已落座的人并定位;点人员/设备再点工位,或直接拖入;拖到有人的工位=两人换位'}
               </div>
             </div>
           )}
