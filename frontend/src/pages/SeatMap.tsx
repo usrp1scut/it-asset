@@ -368,7 +368,7 @@ export default function SeatMap() {
       ) : (
         <>
         <MapStats seats={detail?.seats ?? []} cellSize={cellSize} setCellSize={setCellSize} />
-        <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div className="seatmap-layout">
           {/* 画布视口:flex 子项默认 min-width:auto,不加 minWidth:0 它不会收缩,
               溢出的是整个页面而不是这块 —— 那样根本不存在容器滚动条。限高则让
               纵向也在这里滚,配合 .seatmap-scroll 的常驻滚动条。 */}

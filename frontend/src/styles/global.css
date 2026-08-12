@@ -52,6 +52,22 @@ body {
   padding-top: 8px;
 }
 
+/* ── 座位图整体版面 (SeatMap.tsx) ──
+   画布 + 右侧人员/设备面板并排。这里**必须** nowrap:换行的 flex 容器是先按
+   弹性项的「假想尺寸」分行、之后才在行内收缩,而画布的基准宽是整张图的内容宽
+   (大图能到几千 px),一旦允许换行,240px 的面板就会被挤到画布下面去。
+   nowrap + 画布 minWidth:0 收缩 → 面板稳定停在右侧,超宽部分由画布自己横向滚。 */
+.seatmap-layout {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  flex-wrap: nowrap;
+}
+/* 窄屏(平板竖屏以下)再退回上下堆叠,否则画布会被压得没法看 */
+@media (max-width: 720px) {
+  .seatmap-layout { flex-wrap: wrap; }
+}
+
 /* ── 座位图画布 (SeatMap.tsx) ──
    大图要能上下左右滚动,且滚动条必须「看得见」:macOS 默认是浮层滚动条,不滚
    不显,用户根本不知道这块能滚。只要显式声明 ::-webkit-scrollbar,WebKit 就
