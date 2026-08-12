@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { message } from 'antd'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { api } from '../../../api/client'
@@ -43,10 +43,19 @@ const EMPTY: FormState = {
   remark: '',
 }
 
+/** 「复制录入」带过来的种子:只含可复用字段,序列号/责任人一律不复制。 */
+interface CopyNav {
+  copyFrom?: string
+  seed?: Partial<Omit<FormState, 'serial_number' | 'owner_name'>>
+}
+
 export default function MobileAdminAssetNew() {
   const navigate = useNavigate()
   const qc = useQueryClient()
-  const [form, setForm] = useState<FormState>(EMPTY)
+  const nav = (useLocation().state ?? null) as CopyNav | null
+  const copyFrom = nav?.copyFrom ?? null
+  // 用 lazy initial state:只在首次挂载时铺一次,之后用户的编辑不会被覆盖
+  const [form, setForm] = useState<FormState>(() => ({ ...EMPTY, ...(nav?.seed ?? {}) }))
   const [typeSheet, setTypeSheet] = useState(false)
   const [scanOpen, setScanOpen] = useState(false)
 
@@ -93,13 +102,31 @@ export default function MobileAdminAssetNew() {
 
   return (
     <MobileFormShell
-      title="新增资产"
+      title={copyFrom ? '复制录入' : '新增资产'}
       onBack={() => navigate(-1)}
       onSave={submit}
       saving={createMut.isPending}
       saveLabel="创建资产"
       saveDisabled={!form.asset_type_id}
     >
+      {copyFrom && (
+        <div
+          style={{
+            margin: '0 12px 12px',
+            padding: '10px 12px',
+            background: '#F2F7FF',
+            border: '1px solid #BEDAFF',
+            borderRadius: 12,
+            fontSize: 12,
+            color: '#4E5969',
+            lineHeight: 1.5,
+          }}
+        >
+          已从 <b style={{ color: '#1F2329' }}>{copyFrom}</b> 复制型号 / 配置 / 采购信息。
+          <br />
+          序列号与责任人未复制(每台需唯一 / 单独分配),请按本台实物填写。
+        </div>
+      )}
       <FormCard>
         {/* Type picker row */}
         <Field label="资产类型" required hint="决定编号前缀与 个人/基础设施 类别">

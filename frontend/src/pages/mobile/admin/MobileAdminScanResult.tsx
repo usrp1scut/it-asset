@@ -6,11 +6,13 @@ import { api } from '../../../api/client'
 import CameraScanner from '../../../features/scanner/CameraScanner'
 import Icon from '../../../components/Icon'
 import AssetTypeIcon from '../../../components/AssetTypeIcon'
+import EmployeePickerSheet from './EmployeePickerSheet'
 
 interface AssetOut {
   id: number
   asset_code: string
   asset_class: string
+  asset_type_id: number | null
   asset_type_name: string | null
   asset_type_icon: string | null
   asset_type_color: string | null
@@ -202,6 +204,10 @@ export default function MobileAdminScanResult() {
   // scan-only chrome (success banner / 继续扫码) when opened from the list.
   const fromScan = raw !== null
   const [scanOpen, setScanOpen] = useState(false)
+  const [assignOpen, setAssignOpen] = useState(false)
+  const [transferOpen, setTransferOpen] = useState(false)
+  // 领用确认卡片默认关,和桌面一致——发卡片会直接打扰到员工
+  const [notifyReceipt, setNotifyReceipt] = useState(false)
 
   const qc = useQueryClient()
   const { data, isLoading, error } = useQuery<AssetDetail>({
@@ -211,8 +217,8 @@ export default function MobileAdminScanResult() {
     retry: false,
   })
 
-  // Lifecycle actions: status (infra), return (personal), 报修, 申请报废.
-  // Assign / transfer need an employee picker (desktop-only for now).
+  // Lifecycle actions: status (infra), assign / transfer / return (personal),
+  // 报修, 申请报废. 分配与转移的选人走 EmployeePickerSheet。
   const act = useMutation({
     mutationFn: async (p: { path: string; body?: object; successMsg?: string }) =>
       (await api.post(`/assets/${encodeURIComponent(code)}/${p.path}`, p.body ?? {})).data,
@@ -225,6 +231,28 @@ export default function MobileAdminScanResult() {
     onError: (e: { response?: { data?: { detail?: string } } }) =>
       message.error(e.response?.data?.detail ?? '操作失败'),
   })
+
+  // 复制录入:与桌面「复制录入」同语义——带走型号/配置/采购等可复用字段,
+  // 序列号与责任人不带(每台唯一 / 需单独分配),留给新表单按实物填。
+  const onCopy = () => {
+    const a = data?.asset
+    if (!a) return
+    navigate('/m/admin/assets/new', {
+      state: {
+        copyFrom: a.asset_code,
+        seed: {
+          asset_type_id: a.asset_type_id,
+          brand_model: a.brand_model ?? '',
+          spec: a.spec ?? '',
+          location: a.location ?? '',
+          supplier: a.supplier ?? '',
+          purchase_date: a.purchase_date ?? '',
+          purchase_price: a.purchase_price ?? '',
+          remark: a.remark ?? '',
+        },
+      },
+    })
+  }
 
   const onRepair = () => {
     const reason = window.prompt('报修原因(必填):')
@@ -592,13 +620,22 @@ export default function MobileAdminScanResult() {
                 ) : (
                   <>
                     {data.asset.status === 'in_use' && (
-                      <button
-                        style={actGhost}
-                        disabled={act.isPending}
-                        onClick={() => act.mutate({ path: 'return' })}
-                      >
-                        归还入库
-                      </button>
+                      <>
+                        <button
+                          style={actGhost}
+                          disabled={act.isPending}
+                          onClick={() => setTransferOpen(true)}
+                        >
+                          转移给他人
+                        </button>
+                        <button
+                          style={actGhost}
+                          disabled={act.isPending}
+                          onClick={() => act.mutate({ path: 'return' })}
+                        >
+                          归还入库
+                        </button>
+                      </>
                     )}
                     {data.asset.status === 'maintenance' && (
                       <button
@@ -610,9 +647,13 @@ export default function MobileAdminScanResult() {
                       </button>
                     )}
                     {data.asset.status === 'idle' && (
-                      <div style={{ fontSize: 12, color: '#86909C', textAlign: 'center' }}>
-                        分配给员工需选人,请在桌面端操作
-                      </div>
+                      <button
+                        style={actPrimary}
+                        disabled={act.isPending}
+                        onClick={() => setAssignOpen(true)}
+                      >
+                        分配给员工
+                      </button>
                     )}
                   </>
                 )}
@@ -631,7 +672,7 @@ export default function MobileAdminScanResult() {
             <div
               style={{
                 display: 'grid',
-                gridTemplateColumns: fromScan ? '1fr 1fr' : '1fr',
+                gridTemplateColumns: '1fr 1fr',   // 编辑 | 复制,「继续扫码」独占一行
                 gap: 10,
                 marginTop: 16,
               }}
@@ -651,10 +692,26 @@ export default function MobileAdminScanResult() {
               >
                 编辑资产
               </button>
+              <button
+                onClick={onCopy}
+                style={{
+                  height: 44,
+                  borderRadius: 22,
+                  background: '#fff',
+                  border: '1px solid #E5E6EB',
+                  color: '#1F2329',
+                  fontSize: 14,
+                  fontWeight: 500,
+                  cursor: 'pointer',
+                }}
+              >
+                复制录入
+              </button>
               {fromScan && (
                 <button
                   onClick={() => setScanOpen(true)}
                   style={{
+                    gridColumn: '1 / -1',
                     height: 44,
                     borderRadius: 22,
                     background: 'linear-gradient(135deg, #3370FF, #5B92FF)',
@@ -673,6 +730,49 @@ export default function MobileAdminScanResult() {
           </div>
         </>
       )}
+
+      <EmployeePickerSheet
+        open={assignOpen}
+        title="分配给员工"
+        confirmLabel="确认分配"
+        pending={act.isPending}
+        onClose={() => setAssignOpen(false)}
+        onConfirm={(userId) => {
+          act.mutate(
+            { path: 'assign', body: { user_id: userId, notify_receipt: notifyReceipt }, successMsg: '已分配' },
+            { onSuccess: () => { setAssignOpen(false); setNotifyReceipt(false) } },
+          )
+        }}
+        extra={
+          <label
+            style={{
+              display: 'flex', alignItems: 'center', gap: 8,
+              fontSize: 13, color: '#4E5969', marginBottom: 10, cursor: 'pointer',
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={notifyReceipt}
+              onChange={(e) => setNotifyReceipt(e.target.checked)}
+            />
+            发送 Lark 领用确认卡片
+          </label>
+        }
+      />
+
+      <EmployeePickerSheet
+        open={transferOpen}
+        title="转移给他人"
+        confirmLabel="确认转移"
+        pending={act.isPending}
+        onClose={() => setTransferOpen(false)}
+        onConfirm={(userId) => {
+          act.mutate(
+            { path: 'transfer', body: { to_user_id: userId }, successMsg: '已转移' },
+            { onSuccess: () => setTransferOpen(false) },
+          )
+        }}
+      />
 
       <CameraScanner
         open={scanOpen}
