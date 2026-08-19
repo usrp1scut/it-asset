@@ -34,10 +34,13 @@ def display_no(seat: Seat) -> str:
 
 
 def _relocate(
-    db: Session, asset: Asset, seat: Seat | None, m: FloorMap, operator_id: int | None
+    db: Session, asset: Asset, seat: Seat | None, m: FloorMap | None, operator_id: int | None
 ) -> None:
     """Single writer for an asset's physical position: seat_id + derived location
-    + a relocate change-log entry (empty seat = moved off the map)."""
+    + a relocate change-log entry (empty seat = moved off the map).
+
+    ``m`` is only needed to build the location text, so it may be None when
+    moving an asset *off* the map."""
     asset.seat_id = seat.id if seat else None
     asset.location = _label(m, seat) if seat else None
     db.add(
@@ -348,6 +351,43 @@ def _move_owned_assets(
         _relocate(db, a, seat, m, operator_id=None)
         n += 1
     return n
+
+
+def follow_owner(
+    db: Session, asset: Asset, user_id: int | None, *, operator_id: int | None = None
+) -> bool:
+    """资产换主时同步工位:跟到新主人的工位,新主人没工位(或已退还/报废)则移出。
+
+    这是「落座时带入名下资产」的另一半:那边由座位驱动(_move_owned_assets),
+    这边由资产驱动。分开写是因为两个方向的触发点完全不同,但都只经 _relocate
+    这一个写入口,保证 seat_id / location / 变更日志三者不会各走各的。
+
+    一人一工位只在**单张图内**保证(见 assign_user),所以有人可能同时在 3F 和
+    27F 有工位。此时优先跟随「资产当前所在那张图」的工位,避免一次转移就把设备
+    跨楼层挪走;否则取 map_id 最小的那个,保证结果确定。
+
+    调用方负责 commit —— 本函数只改对象、不提交。返回是否真的动了位置。
+    """
+    seat: Seat | None = None
+    m: FloorMap | None = None
+    if user_id is not None:
+        seats = list(
+            db.scalars(select(Seat).where(Seat.user_id == user_id).order_by(Seat.map_id))
+        )
+        if seats:
+            cur_map_id = None
+            if asset.seat_id is not None:
+                cur = db.get(Seat, asset.seat_id)
+                cur_map_id = cur.map_id if cur is not None else None
+            seat = next((s for s in seats if s.map_id == cur_map_id), seats[0])
+            m = db.get(FloorMap, seat.map_id)
+            if m is None:          # 图被删了(理论上不该发生)—— 当作没工位
+                seat = None
+    target_seat_id = seat.id if seat is not None else None
+    if target_seat_id == asset.seat_id:
+        return False               # 位置没变就别写日志,免得刷屏
+    _relocate(db, asset, seat, m, operator_id)
+    return True
 
 
 def set_alias(db: Session, m: FloorMap, seat_id: int, *, alias: str | None) -> None:

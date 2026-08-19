@@ -463,3 +463,75 @@ def test_seatmap_requires_roles():
     emp_h = _h(_login("employee"))
     assert client.get("/api/seatmaps", headers=emp_h).status_code == 403
     assert client.post("/api/seatmaps", json={"name": "x"}, headers=emp_h).status_code == 403
+
+
+def _seat_of_asset(h: dict, mid: int, code: str) -> str | None:
+    """该资产当前挂在哪个工位号上(不在图上则 None)——从地图详情反查。"""
+    det = client.get(f"/api/seatmaps/{mid}", headers=h).json()
+    for s in det["seats"]:
+        if any(a["asset_code"] == code for a in s["assets"]):
+            return s["seat_no"]
+    return None
+
+
+def test_asset_ownership_changes_follow_the_seat():
+    """资产侧改所有权时,设备要跟着工位走。
+
+    回归:以前 assign/transfer/return/scrap 完全不碰 seat_id,导致
+    ① 给已落座的人发新设备,设备不上图;
+    ② 转移后设备还赖在原主人桌上;
+    ③ 归还/报废后设备仍挂在工位上(座位图取数不按状态过滤)。
+    """
+    h = _h(_login())
+    tid = _type_id(h, "PC")
+    m = _mk_numbered_map(h, f"跟随-{uuid.uuid4().hex[:4]}", 1, 2)
+    mid, det = m["id"], m["detail"]
+    s1, s2 = _seat(det, "A01"), _seat(det, "A02")
+
+    alice = _login("employee", name=f"Alice-{uuid.uuid4().hex[:4]}")["user"]
+    bob = _login("employee", name=f"Bob-{uuid.uuid4().hex[:4]}")["user"]
+    # 两人先落座(此时都还没有资产)
+    client.post(f"/api/seatmaps/{mid}/seats/{s1['id']}/assign-user",
+                json={"user_id": alice["id"], "move_assets": True}, headers=h)
+    client.post(f"/api/seatmaps/{mid}/seats/{s2['id']}/assign-user",
+                json={"user_id": bob["id"], "move_assets": True}, headers=h)
+
+    # ① 给已落座的 Alice 发一台新设备 → 应直接落到 A01
+    code, _ = _asset(h, tid)
+    assert _seat_of_asset(h, mid, code) is None
+    client.post(f"/api/assets/{code}/assign", json={"user_id": alice["id"]}, headers=h)
+    assert _seat_of_asset(h, mid, code) == "A01"
+    assert _loc(h, code).endswith("-A01")
+
+    # ② 转移给同样已落座的 Bob → 应从 A01 挪到 A02
+    client.post(f"/api/assets/{code}/transfer", json={"to_user_id": bob["id"]}, headers=h)
+    assert _seat_of_asset(h, mid, code) == "A02"
+    assert _loc(h, code).endswith("-A02")
+
+    # ③ 归还入库 → 离图,location 清空
+    client.post(f"/api/assets/{code}/return", json={}, headers=h)
+    assert _seat_of_asset(h, mid, code) is None
+    assert _loc(h, code) is None
+
+    # ④ 报废同样离图(报废的机器不该继续占着工位)
+    code2, _ = _asset(h, tid)
+    client.post(f"/api/assets/{code2}/assign", json={"user_id": alice["id"]}, headers=h)
+    assert _seat_of_asset(h, mid, code2) == "A01"
+    client.post(f"/api/assets/{code2}/scrap", json={"reason": "测试报废"}, headers=h)
+    assert _seat_of_asset(h, mid, code2) is None
+    assert _loc(h, code2) is None
+
+
+def test_assign_to_unseated_person_leaves_asset_off_map():
+    """新主人没工位就别硬塞——不落图,也不该报错。"""
+    h = _h(_login())
+    tid = _type_id(h, "PC")
+    m = _mk_numbered_map(h, f"跟随2-{uuid.uuid4().hex[:4]}", 1, 2)
+    mid = m["id"]
+    nobody = _login("employee", name=f"NoSeat-{uuid.uuid4().hex[:4]}")["user"]
+
+    code, _ = _asset(h, tid)
+    r = client.post(f"/api/assets/{code}/assign", json={"user_id": nobody["id"]}, headers=h)
+    assert r.status_code == 200
+    assert _seat_of_asset(h, mid, code) is None
+    assert _loc(h, code) is None

@@ -49,6 +49,20 @@ def _clear_owner(asset: Asset) -> None:
     asset.owner_name = None
 
 
+def _follow_owner_seat(db: Session, asset: Asset, user_id: int | None) -> None:
+    """所有权变了就同步工位:跟到新主人的工位,没主人/没工位则移出。
+
+    只有个人资产会「跟人走」,但这一层不自己判类别 —— assign/return/transfer
+    入口处的 assert_assignable 已经把基础设施挡在外面了。scrap 不受此限,它对
+    两类都调用(传 None),因为报废的设备无论如何都得离图。
+
+    局部 import:seatmap.service 只依赖 assets.models,反向在函数内引用不成环。
+    """
+    from app.modules.seatmap import service as seatmap_service
+
+    seatmap_service.follow_owner(db, asset, user_id)
+
+
 def _max_seq_for_prefix(db: Session, prefix: str) -> int:
     """Highest numeric suffix among existing ``PREFIX-####`` codes (0 if none).
 
@@ -306,6 +320,8 @@ def assign(
         from_status=AssetStatus.idle, to_status=AssetStatus.in_use,
         from_owner=prev_owner, to_owner=user_id, operator_id=operator_id, reason=note,
     )
+    # 领用人已经落座的话,设备直接跟到 TA 的工位上
+    _follow_owner_seat(db, asset, user_id)
     db.commit()
     db.refresh(asset)
     if notify_receipt:
@@ -343,6 +359,8 @@ def return_asset(db: Session, asset: Asset, operator_id: int, note: str | None) 
         from_status=AssetStatus.in_use, to_status=AssetStatus.idle,
         from_owner=prev_owner, operator_id=operator_id, reason=note,
     )
+    # 已入库就不该再挂在谁的工位上
+    _follow_owner_seat(db, asset, None)
     db.commit()
     db.refresh(asset)
     return asset
@@ -375,6 +393,8 @@ def transfer(
         from_status=AssetStatus.in_use, to_status=AssetStatus.in_use,
         from_owner=prev_owner, to_owner=to_user_id, operator_id=operator_id, reason=reason,
     )
+    # 换人了就别继续留在原主人工位上;新主人没工位则移出图
+    _follow_owner_seat(db, asset, to_user_id)
     db.commit()
     db.refresh(asset)
     return asset
@@ -398,6 +418,8 @@ def scrap(db: Session, asset: Asset, operator_id: int, reason: str | None) -> As
     _clear_owner(asset)
     _log(db, asset, "scrap", from_status=prev, to_status=AssetStatus.scrapped,
          operator_id=operator_id, reason=reason)
+    # 报废的设备必须离图:座位图取数不按状态过滤,不移出就会永远挂在那张桌上
+    _follow_owner_seat(db, asset, None)
     db.commit()
     db.refresh(asset)
     return asset
